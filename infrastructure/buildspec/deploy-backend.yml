@@ -1,0 +1,38 @@
+version: 0.2
+
+# Deploys the two Lambdas and publishes a new AgentCore Runtime version, by
+# running the repository's own deploy scripts.
+#
+# Running the scripts rather than reimplementing them here is the whole point.
+# Each of them exists because of a specific way a hand-typed deploy went wrong:
+# `deploy-lambda.sh` refuses the Runtime artifact (it was once deployed to the
+# Lambdas, whose handler is a different file, and the app returned "Failed to
+# fetch" for everyone); `deploy-runtime.sh` re-sends the full environment on
+# every update (`update-agent-runtime` REPLACES configuration, so omitting it
+# silently drops every variable). A buildspec that duplicated those commands
+# would be a second copy free to drift from the one people read.
+
+phases:
+  install:
+    runtime-versions:
+      nodejs: 22
+
+  pre_build:
+    commands:
+      - echo "--- artifacts handed over by the build stage"
+      - test -s backend/dist/lambda.mjs || (echo "lambda.mjs missing — the build stage did not hand it over" && exit 1)
+      - test -s backend/dist/runtime/index.js || (echo "runtime/index.js missing — the build stage did not hand it over" && exit 1)
+      - chmod +x infrastructure/*.sh
+
+  build:
+    commands:
+      - echo "=== Lambdas (makeui-backend, makeui-worker) ==="
+      # SKIP_BUILD, because the artifact is the one the build stage tested.
+      # Rebuilding here would deploy something no test has run against.
+      - SKIP_BUILD=1 bash infrastructure/deploy-lambda.sh
+      - echo "=== AgentCore Runtime ==="
+      - SKIP_BUILD=1 bash infrastructure/deploy-runtime.sh
+
+  post_build:
+    commands:
+      - echo "backend deploy finished"

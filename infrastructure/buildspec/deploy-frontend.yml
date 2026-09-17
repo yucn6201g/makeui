@@ -1,0 +1,29 @@
+version: 0.2
+
+# Syncs the built frontend to S3 and invalidates CloudFront, by running the
+# repository's own deploy script.
+#
+# That script is not a wrapper around `aws s3 sync`. It exists because two
+# specific things went wrong here and both were invisible: `index.html` uploaded
+# without `Cache-Control` sat in CloudFront's 24-hour default TTL, so deploys
+# did not reach anyone; and `sync --delete` removed the hashed chunks that open
+# tabs lazily import, while CloudFront's 404-to-index rule returned HTML with a
+# 200, so the browser reported a module parse error instead of a missing file.
+
+phases:
+  install:
+    runtime-versions:
+      nodejs: 22
+
+  pre_build:
+    commands:
+      - test -s frontend/dist/index.html || (echo "frontend/dist missing — the build stage did not hand it over" && exit 1)
+      - chmod +x infrastructure/*.sh
+
+  build:
+    commands:
+      - SKIP_BUILD=1 bash infrastructure/deploy-frontend.sh
+
+  post_build:
+    commands:
+      - echo "frontend deploy finished"

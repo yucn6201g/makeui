@@ -1,0 +1,103 @@
+version: 0.2
+
+# Proves the deploy actually landed.
+#
+# Every check below corresponds to a way a deploy has silently succeeded in this
+# project's history and left the product broken. A stage that only reports
+# "deploy finished" would have passed on every one of them.
+
+phases:
+  install:
+    runtime-versions:
+      nodejs: 22
+
+  build:
+    commands:
+      - ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+      - REGION=${AWS_REGION:-ap-northeast-1}
+
+      # 1. The Runtime is READY, not CREATING or FAILED.
+      #
+      # `update-agent-runtime` returns immediately; the version it creates can
+      # still fail to come up. A deploy that reported success and left the
+      # previous version serving is indistinguishable from one that worked,
+      # until someone generates a UI and sees old behaviour.
+      - echo "=== AgentCore Runtime status ==="
+      - |
+        RUNTIME_ID=$(aws bedrock-agentcore-control list-agent-runtimes --region "$REGION" \
+          --query "agentRuntimes[?agentRuntimeName=='${RUNTIME_NAME}'].agentRuntimeId | [0]" --output text)
+        test "$RUNTIME_ID" != "None" || { echo "runtime ${RUNTIME_NAME} not found"; exit 1; }
+        STATUS=$(aws bedrock-agentcore-control get-agent-runtime --agent-runtime-id "$RUNTIME_ID" \
+          --region "$REGION" --query status --output text)
+        VERSION=$(aws bedrock-agentcore-control get-agent-runtime --agent-runtime-id "$RUNTIME_ID" \
+          --region "$REGION" --query agentRuntimeVersion --output text)
+        echo "  ${RUNTIME_NAME} v${VERSION}: ${STATUS}"
+        test "$STATUS" = "READY" || { echo "runtime is not READY"; exit 1; }
+
+      # 2. The Runtime kept its environment.
+      #
+      # `update-agent-runtime` REPLACES configuration rather than patching it.
+      # Omitting the environment drops every variable, the deploy reports READY,
+      # and the next generation fails on a missing bucket name.
+      - echo "=== Runtime environment ==="
+      - |
+        RUNTIME_ID=$(aws bedrock-agentcore-control list-agent-runtimes --region "$REGION" \
+          --query "agentRuntimes[?agentRuntimeName=='${RUNTIME_NAME}'].agentRuntimeId | [0]" --output text)
+        COUNT=$(aws bedrock-agentcore-control get-agent-runtime --agent-runtime-id "$RUNTIME_ID" \
+          --region "$REGION" --query "length(environmentVariables)" --output text)
+        echo "  ${COUNT} variables"
+        test "$COUNT" -ge 8 || { echo "the runtime lost its environment variables"; exit 1; }
+
+      # 3. The API Lambda loads and routes.
+      #
+      # The Runtime bundle was once deployed to the Lambdas, whose handler is a
+      # different file. The function existed, the deploy succeeded, and every
+      # request returned a module-not-found error — the app showed
+      # "Failed to fetch" for everyone.
+      - echo "=== API Lambda ==="
+      - |
+        aws lambda invoke --function-name makeui-backend --region "$REGION" \
+          --cli-binary-format raw-in-base64-out \
+          --payload '{"requestContext":{"http":{"method":"OPTIONS","path":"/health"}},"headers":{"origin":"https://example.com"}}' \
+          /tmp/health.json >/dev/null
+        cat /tmp/health.json
+        grep -q '"statusCode"' /tmp/health.json || { echo "the API Lambda did not return an HTTP response"; exit 1; }
+        grep -qi 'errorType\|Cannot find module' /tmp/health.json && { echo "the API Lambda failed to load"; exit 1; }
+        echo "  handler responds"
+
+      # 4. The frontend entry point is served, and is cacheable the way the
+      #    deploy intends.
+      #
+      # `index.html` uploaded without Cache-Control sits in CloudFront's
+      # 24-hour default TTL, so a deploy reaches nobody until it expires.
+      - echo "=== Frontend ==="
+      - |
+        DOMAIN=$(aws cloudfront list-distributions --region "$REGION" \
+          --query "DistributionList.Items[?Origins.Items[?contains(DomainName, 'makeui-frontend')]].DomainName | [0]" --output text)
+        test "$DOMAIN" != "None" || { echo "no CloudFront distribution for the frontend"; exit 1; }
+        echo "  https://${DOMAIN}"
+        CODE=$(curl -s -o /tmp/index.html -w '%{http_code}' "https://${DOMAIN}/")
+        test "$CODE" = "200" || { echo "index.html returned ${CODE}"; exit 1; }
+        grep -q '<div id="root"' /tmp/index.html || { echo "index.html is not the app shell"; exit 1; }
+        CC=$(curl -s -o /dev/null -D - "https://${DOMAIN}/" | grep -i '^cache-control' || true)
+        echo "  ${CC:-cache-control: (absent)}"
+        echo "$CC" | grep -qi 'no-cache\|max-age=0' || { echo "index.html is cacheable — a deploy will not reach users"; exit 1; }
+
+      # 5. The bundle index.html names is actually there.
+      #
+      # `sync --delete` once removed chunks that open tabs lazily import, and
+      # CloudFront's 404-to-index rule answered with HTML and a 200 — so the
+      # browser reported a module parse error rather than a missing file.
+      - echo "=== Entry chunk ==="
+      - |
+        DOMAIN=$(aws cloudfront list-distributions --region "$REGION" \
+          --query "DistributionList.Items[?Origins.Items[?contains(DomainName, 'makeui-frontend')]].DomainName | [0]" --output text)
+        ENTRY=$(grep -o 'assets/index-[A-Za-z0-9_-]*\.js' /tmp/index.html | head -1)
+        test -n "$ENTRY" || { echo "index.html names no entry bundle"; exit 1; }
+        TYPE=$(curl -s -o /dev/null -w '%{content_type}' "https://${DOMAIN}/${ENTRY}")
+        echo "  ${ENTRY} -> ${TYPE}"
+        echo "$TYPE" | grep -qi 'javascript' || { echo "the entry bundle is not being served as JavaScript"; exit 1; }
+
+  post_build:
+    commands:
+      - echo "smoke test passed"

@@ -1,0 +1,93 @@
+version: 0.2
+
+# Install, typecheck, test and package. Nothing here can reach production —
+# the build role has logs and the artifact bucket and nothing else — so a change
+# to a test cannot deploy itself.
+
+env:
+  variables:
+    # The vendor step downloads nothing; it copies React/Vue/Svelte browser
+    # builds out of node_modules into backend/src/vendor as .txt so esbuild can
+    # inline them. It has to run before any bundling.
+    NODE_OPTIONS: '--max-old-space-size=3072'
+
+phases:
+  install:
+    runtime-versions:
+      nodejs: 22
+    commands:
+      - node --version
+      - npm --version
+
+  pre_build:
+    commands:
+      - echo "--- installing backend"
+      # `npm ci` needs a lockfile and fails loudly without one, which is the
+      # behaviour worth having in CI: an install that silently resolves a
+      # different tree than the developer had is how a build passes here and
+      # fails in production.
+      - cd backend && npm ci && cd ..
+      - echo "--- installing frontend"
+      - cd frontend && npm ci && cd ..
+
+  build:
+    commands:
+      - echo "--- typecheck (backend)"
+      - cd backend && ./node_modules/.bin/tsc --noEmit && cd ..
+      - echo "--- typecheck (frontend)"
+      - cd frontend && ./node_modules/.bin/tsc --noEmit && cd ..
+      - echo "--- backend test suites"
+      - cd backend && npm test && cd ..
+      - echo "--- frontend test suites"
+      - cd frontend && npm test && cd ..
+      - echo "--- packaging the API Lambda bundle (dist/lambda.mjs)"
+      - cd backend && npm run build && cd ..
+      - echo "--- packaging the AgentCore Runtime bundle (dist/runtime/index.js)"
+      - cd backend && npm run build:runtime && cd ..
+      - echo "--- building the frontend"
+      # The API URL and Cognito ids are not in the repository (it is public). The
+      # build project reads them from SSM (/makeui/api-url, /makeui/cognito/*) into
+      # VITE_* variables, and they are written out for Vite here. Without them the
+      # build stops rather than ship a frontend pointed at nothing.
+      - |
+        if [ -n "${VITE_API_URL:-}" ] && [ -n "${VITE_COGNITO_USER_POOL_ID:-}" ] && [ -n "${VITE_COGNITO_CLIENT_ID:-}" ]; then
+          {
+            echo "VITE_API_URL=${VITE_API_URL}"
+            echo "VITE_COGNITO_USER_POOL_ID=${VITE_COGNITO_USER_POOL_ID}"
+            echo "VITE_COGNITO_CLIENT_ID=${VITE_COGNITO_CLIENT_ID}"
+            echo "VITE_COGNITO_REGION=${VITE_COGNITO_REGION:-ap-northeast-1}"
+          } > frontend/.env.production
+          echo "frontend/.env.production written from the build environment"
+        else
+          echo "No VITE_* variables in the build environment (SSM /makeui/api-url, /makeui/cognito/*)" && exit 1
+        fi
+      - cd frontend && npm run build && cd ..
+
+  post_build:
+    commands:
+      # Fail here rather than in the deploy stage. Both of these have been
+      # deployed empty in this project's history — the Lambda bundle because the
+      # wrong artifact was uploaded, the frontend because a build error was not
+      # checked — and the failure surfaced to users, not to the deployer.
+      - test -s backend/dist/lambda.mjs || (echo "backend/dist/lambda.mjs missing or empty" && exit 1)
+      - test -s backend/dist/runtime/index.js || (echo "backend/dist/runtime/index.js missing or empty" && exit 1)
+      - test -s frontend/dist/index.html || (echo "frontend/dist/index.html missing or empty" && exit 1)
+      - echo "--- artifact sizes"
+      - ls -la backend/dist/lambda.mjs backend/dist/runtime/index.js
+      - du -sh frontend/dist
+
+artifacts:
+  files:
+    - '**/*'
+  # Everything, because the deploy stages run the repository's own deploy
+  # scripts against the built output. Carrying only dist/ would mean maintaining
+  # a second copy of the deploy logic in this file.
+  exclude-paths:
+    - 'backend/node_modules/**/*'
+    - 'frontend/node_modules/**/*'
+    - '.git/**/*'
+
+cache:
+  paths:
+    - 'backend/node_modules/**/*'
+    - 'frontend/node_modules/**/*'

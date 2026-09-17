@@ -1,0 +1,23 @@
+# Shell scripts and buildspecs must reach CodeBuild with LF endings.
+#
+# The working tree is Windows and git converts to CRLF on checkout, which is
+# fine locally — bash on Windows tolerates it. CodeBuild runs Linux, where a
+# script stored with CRLF fails on its first line with a message that names a
+# carriage return nobody wrote:
+#
+#     /usr/bin/env: 'bash\r': No such file or directory
+#
+# `eol=lf` pins what is STORED, so the conversion can only ever go one way.
+*.sh        text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+
+# Everything else follows the platform default.
+*           text=auto
+
+# Binary, so git never rewrites bytes inside them.
+*.png       binary
+*.jpg       binary
+*.webp      binary
+*.pptx      binary
+*.zip       binary

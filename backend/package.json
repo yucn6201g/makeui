@@ -1,0 +1,37 @@
+{
+  "name": "makeui-backend",
+  "version": "1.0.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "vendor": "node scripts/vendor-react.mjs",
+    "build": "npm run vendor && esbuild src/handlers/lambda-handler.ts --bundle --platform=node --target=node22 --outfile=dist/lambda.mjs --format=esm --sourcemap --minify --loader:.txt=text --external:@aws-sdk/* --banner:js=\"import{createRequire}from'module';const require=createRequire(import.meta.url);\"",
+    "build:runtime": "npm run vendor && esbuild src/handlers/runtime-handler.ts --bundle --platform=node --target=node22 --outfile=dist/runtime/index.js --format=esm --loader:.txt=text --banner:js=\"import{createRequire}from'module';const require=createRequire(import.meta.url);\"",
+    "test": "npm run vendor && node test/run-all.mjs"
+  },
+  "dependencies": {
+    "@aws-sdk/client-bedrock-agent-runtime": "^3.700.0",
+    "@aws-sdk/client-bedrock-agentcore": "^3.700.0",
+    "@aws-sdk/client-bedrock-runtime": "^3.700.0",
+    "@aws-sdk/client-cognito-identity-provider": "^3.1102.0",
+    "@aws-sdk/client-dynamodb": "^3.700.0",
+    "@aws-sdk/client-lambda": "^3.1102.0",
+    "@aws-sdk/client-s3": "^3.700.0",
+    "@aws-sdk/client-ssm": "^3.700.0",
+    "@strands-agents/sdk": "^1.0.0",
+    "aws-jwt-verify": "^5.2.1",
+    "sucrase": "^3.35.1",
+    "zod": "^4.4.0"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.162",
+    "@types/node": "^22.0.0",
+    "esbuild": "^0.28.2",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "svelte": "^5.56.9",
+    "typescript": "^7.0.2",
+    "vue": "^3.5.41"
+  }
+}

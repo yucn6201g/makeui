@@ -1,0 +1,757 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: MakeUI AI - Infrastructure Stack
+
+Parameters:
+  # The distribution's own domain, supplied rather than derived.
+  #
+  # `PublishedHeadersPolicy` has to name the host that published documents may
+  # load images from, because under `sandbox` the document's origin is opaque
+  # and `'self'` no longer reliably names anything. It cannot get it from
+  # `!GetAtt CloudFrontDistribution.DomainName`: the distribution references the
+  # policy, so the policy referencing the distribution is a cycle CloudFormation
+  # refuses. A CloudFront domain is not knowable before the distribution exists,
+  # so on a first deploy this is set afterwards, on the second.
+  # deploy.sh passes it from the SSM parameter /makeui/cloudfront-domain, which
+  # the first deploy writes; the default is empty because the domain belongs to
+  # one deployment and not to the template.
+  PublishedAssetHost:
+    Type: String
+    Default: ''
+    Description: CloudFront domain published documents may load images from
+
+  # The AgentCore runtime and memory the backend role may use. Both are created
+  # by setup-agentcore.sh after this stack exists, and both ids belong to one
+  # deployment, so they arrive the same way PublishedAssetHost does: deploy.sh
+  # looks them up (the runtime by name, as deploy-runtime.sh does; the memory
+  # from /makeui/agentcore/memory-id) and passes them. Empty on a first deploy,
+  # which leaves the two grants out rather than granting on a malformed ARN.
+  AgentRuntimeArn:
+    Type: String
+    Default: ''
+    Description: ARN of the AgentCore runtime the backend invokes
+  AgentCoreMemoryId:
+    Type: String
+    Default: ''
+    Description: Id of the AgentCore memory the backend reads and writes
+
+  # Whether makeui-backend exists yet. The function is not a resource of this
+  # stack (see the note after BackendLambdaRole), so on a first deploy it does
+  # not exist, and a Lambda permission naming it would fail the whole create.
+  # deploy.sh looks and passes 'true' once it does.
+  BackendFunctionExists:
+    Type: String
+    AllowedValues: ['true', 'false']
+    Default: 'false'
+    Description: Whether the makeui-backend function exists
+
+Conditions:
+  HasAgentRuntime: !Not [!Equals [!Ref AgentRuntimeArn, '']]
+  HasAgentCoreMemory: !Not [!Equals [!Ref AgentCoreMemoryId, '']]
+  HasBackendFunction: !Equals [!Ref BackendFunctionExists, 'true']
+
+Resources:
+  # ============================================================
+  # Cognito User Pool
+  # ============================================================
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      UserPoolName: makeui-users
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: true
+      MfaConfiguration: 'ON'
+      EnabledMfas:
+        - SOFTWARE_TOKEN_MFA
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 12
+          RequireUppercase: true
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Mutable: true
+          Required: true
+      UserPoolTags:
+        Project: makeui
+        Environment: production
+        system: makeui
+
+  AdminGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: admin
+      UserPoolId: !Ref UserPool
+      Description: Administrators who can access the admin panel
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: makeui-client
+      UserPoolId: !Ref UserPool
+      GenerateSecret: false
+      PreventUserExistenceErrors: ENABLED
+      ExplicitAuthFlows:
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+        # Enabled on the live client by hand and written down here so a stack
+        # update does not take it away. The app signs in with SRP; this is the
+        # flow a script can use to get a token (docs/06_startup_and_test.md).
+        - ALLOW_USER_PASSWORD_AUTH
+      AccessTokenValidity: 1
+      IdTokenValidity: 1
+      RefreshTokenValidity: 7
+      TokenValidityUnits:
+        AccessToken: hours
+        IdToken: hours
+        RefreshToken: days
+
+  # ============================================================
+  # DynamoDB Table
+  # ============================================================
+  TokenUsageTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: makeui-token-usage
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+        - AttributeName: sk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+        - AttributeName: sk
+          KeyType: RANGE
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      Tags:
+        - Key: Project
+          Value: makeui
+        - Key: Environment
+          Value: production
+        - Key: system
+          Value: makeui
+
+  # ============================================================
+  # S3 Buckets
+  # ============================================================
+  FrontendBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      BucketName: !Sub 'makeui-frontend-${AWS::AccountId}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Project
+          Value: makeui
+        - Key: Environment
+          Value: production
+        - Key: system
+          Value: makeui
+
+  FrontendBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref FrontendBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowCloudFrontServicePrincipal
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub '${FrontendBucket.Arn}/*'
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub 'arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}'
+
+  KnowledgeBaseBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub 'makeui-knowledge-base-${AWS::AccountId}'
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Project
+          Value: makeui
+        - Key: Environment
+          Value: production
+        - Key: system
+          Value: makeui
+
+  OutputsBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub 'makeui-outputs-${AWS::AccountId}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireOldOutputs
+            Status: Enabled
+            ExpirationInDays: 90
+            Prefix: outputs/
+          - Id: ExpirePublishedContent
+            Status: Enabled
+            ExpirationInDays: 30
+            Prefix: published/
+          # A job's request and result are relayed through S3 between the API
+          # and whichever executor ran it; a week is long after anyone polls.
+          - Id: ExpireJobRelayFiles
+            Status: Enabled
+            ExpirationInDays: 7
+            Prefix: jobs/
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 1
+          # Payloads too large to pass to an invocation directly. Read once,
+          # within seconds of being written.
+          - Id: ExpireJobRelayPayloads
+            Status: Enabled
+            ExpirationInDays: 1
+            Prefix: temp/
+      Tags:
+        - Key: Project
+          Value: makeui
+        - Key: Environment
+          Value: production
+        - Key: system
+          Value: makeui
+
+  OutputsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref OutputsBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowCloudFrontServicePrincipal
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub '${OutputsBucket.Arn}/*'
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub 'arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}'
+
+  # ============================================================
+  # CloudFront
+  # ============================================================
+  ResponseHeadersPolicy:
+    Type: AWS::CloudFront::ResponseHeadersPolicy
+    Properties:
+      ResponseHeadersPolicyConfig:
+        Name: makeui-security-headers
+        SecurityHeadersConfig:
+          StrictTransportSecurity:
+            AccessControlMaxAgeSec: 63072000
+            IncludeSubdomains: true
+            Override: true
+            Preload: true
+          ContentTypeOptions:
+            Override: true
+          FrameOptions:
+            FrameOption: DENY
+            Override: true
+          ReferrerPolicy:
+            ReferrerPolicy: strict-origin-when-cross-origin
+            Override: true
+          ContentSecurityPolicy:
+            # font-src is listed explicitly: without it fonts fall back to
+            # default-src 'self', which silently blocked the Google Fonts
+            # stylesheets index.css imports. The UI was designed around Inter but
+            # production never loaded it — only local dev did, because the Vite
+            # dev server sends no CSP at all.
+            ContentSecurityPolicy: "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://*.amazonaws.com https://*.amazoncognito.com; frame-src 'self' blob:"
+            Override: true
+
+  # What a user publishes is served from THIS domain, under `published/`, by the
+  # behaviour below — the same origin as the app.
+  #
+  # Which means a published document was same-origin with the application: its
+  # inline scripts ran (`script-src 'unsafe-inline'`), `localStorage` was the
+  # app's own — and that is where amazon-cognito-identity-js keeps the id,
+  # access and REFRESH tokens — and `connect-src https://*.amazonaws.com` gave
+  # it somewhere to send them. Publishing is a share-this-link feature, so
+  # "somebody else opens it" is the intended flow, not the unlikely one.
+  #
+  # `sandbox` without `allow-same-origin` gives the document an opaque origin.
+  # Its own scripts still run; `localStorage` is no longer the app's, and no
+  # longer reachable. Everything else is what it was, except `connect-src`,
+  # which measurement allows to be 'none': of twenty-five recent generated
+  # documents, none contained a `fetch` or an XMLHttpRequest and none loaded an
+  # external script. Six used Google Fonts and one referenced `/stock/`, so
+  # those two stay — named by URL rather than by 'self', which under an opaque
+  # origin matches nothing.
+  #
+  # Created by hand before it was written here, and IMPORTED into the stack
+  # afterwards — an import needs a DeletionPolicy on the resource, and Retain is
+  # the one that cannot take the sandbox away by accident.
+  PublishedHeadersPolicy:
+    Type: AWS::CloudFront::ResponseHeadersPolicy
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      ResponseHeadersPolicyConfig:
+        Name: makeui-published-sandbox
+        Comment: 'Published docs share the app domain: sandboxed, opaque origin.'
+        SecurityHeadersConfig:
+          StrictTransportSecurity:
+            AccessControlMaxAgeSec: 31536000
+            IncludeSubdomains: true
+            Override: true
+          ContentTypeOptions:
+            Override: true
+          FrameOptions:
+            FrameOption: DENY
+            Override: true
+          ReferrerPolicy:
+            # No referrer at all: the path of a published link is a capability,
+            # and a page that links out should not hand it to the destination.
+            ReferrerPolicy: no-referrer
+            Override: true
+          ContentSecurityPolicy:
+            ContentSecurityPolicy: !Sub "sandbox allow-scripts allow-forms allow-popups allow-modals allow-downloads; default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com data:; img-src https://${PublishedAssetHost} data: blob:; media-src https://${PublishedAssetHost} data: blob:; frame-src blob:; connect-src 'none'; base-uri 'none'; form-action 'none'"
+            Override: true
+
+  CloudFrontOAC:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: makeui-oac
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      Tags:
+        - Key: Project
+          Value: makeui
+        - Key: Environment
+          Value: production
+        - Key: system
+          Value: makeui
+      DistributionConfig:
+        Enabled: true
+        HttpVersion: http2and3
+        # Both are what the distribution already has. Stated because an update
+        # sends the whole DistributionConfig, and a value left to a default is
+        # a value this file does not control.
+        IPV6Enabled: true
+        PriceClass: PriceClass_All
+        DefaultRootObject: index.html
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: true
+        Origins:
+          - Id: S3Origin
+            DomainName: !GetAtt FrontendBucket.RegionalDomainName
+            S3OriginConfig:
+              OriginAccessIdentity: ''
+            OriginAccessControlId: !GetAtt CloudFrontOAC.Id
+          - Id: OutputsS3Origin
+            DomainName: !GetAtt OutputsBucket.RegionalDomainName
+            S3OriginConfig:
+              OriginAccessIdentity: ''
+            OriginAccessControlId: !GetAtt CloudFrontOAC.Id
+        DefaultCacheBehavior:
+          TargetOriginId: S3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods:
+            - GET
+            - HEAD
+          CachedMethods:
+            - GET
+            - HEAD
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+          ResponseHeadersPolicyId: !Ref ResponseHeadersPolicy
+          Compress: true
+        CacheBehaviors:
+          - PathPattern: 'published/*'
+            TargetOriginId: OutputsS3Origin
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods:
+              - GET
+              - HEAD
+            CachedMethods:
+              - GET
+              - HEAD
+            CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+            ResponseHeadersPolicyId: !Ref PublishedHeadersPolicy
+            Compress: true
+          # Stock photographs generated pages point at (tools/assign-images.ts),
+          # kept in the outputs bucket. Added on the live distribution before it
+          # was added here; without it `/stock/...` falls through to the SPA's
+          # index.html and every placed image breaks. The app's own headers,
+          # not the sandbox: these are images, not documents.
+          - PathPattern: 'stock/*'
+            TargetOriginId: OutputsS3Origin
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods:
+              - GET
+              - HEAD
+            CachedMethods:
+              - GET
+              - HEAD
+            CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+            ResponseHeadersPolicyId: !Ref ResponseHeadersPolicy
+            Compress: true
+        CustomErrorResponses:
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+            ErrorCachingMinTTL: 10
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+            ErrorCachingMinTTL: 10
+
+  # ============================================================
+  # Backend Lambda role
+  # ============================================================
+  BackendLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: makeui-lambda-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: makeui-lambda-access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: SSMReadAccess
+                Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                  - ssm:GetParameters
+                # Named reads only. `ssm:GetParametersByPath` was granted here
+                # for a Parameter Store listing on the admin panel's model tab
+                # and removed with it — the tab now shows only what the models
+                # resolve to, which these two already answer. Revoked on the live
+                # role as well as here, because the pipeline deploys code and not
+                # this template.
+                Resource: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/makeui/*'
+              - Sid: DynamoDBAccess
+                Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  # The usage listing reads every account's CONFIG row in one
+                  # call per hundred rather than a GetItem each. Missing, it
+                  # fails closed in the WORST way: the catch leaves each entry
+                  # unread, the listing substitutes the defaults, and an
+                  # administrator sees 「無制限」 over people who are capped.
+                  - dynamodb:BatchGetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  # Deleting a project takes its versions and its chat, and
+                  # deleting an ACCOUNT takes its whole partition — see
+                  # services/account-purge.ts. `BatchWriteItem` is how the
+                  # second one is affordable: twenty-five rows a call against a
+                  # user with three hundred versions.
+                  - dynamodb:DeleteItem
+                  - dynamodb:BatchWriteItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                Resource:
+                  - !GetAtt TokenUsageTable.Arn
+                  - !Sub '${TokenUsageTable.Arn}/index/*'
+              - Sid: S3OutputsAccess
+                Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  # Documents go when their project does, and every document an
+                  # account owns goes when the account does.
+                  - s3:DeleteObject
+                Resource: !Sub '${OutputsBucket.Arn}/*'
+              - Sid: S3OutputsListAccess
+                Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource: !GetAtt OutputsBucket.Arn
+              # `S3KBUploadAccess` (PutObject on the knowledge-base bucket's
+              # `custom/`) stood here and was not on the live role, which is
+              # right: no code writes there. Its sibling, a hand-made
+              # `makeui-kb-upload` policy granting uploads under `user/` and
+              # ingestion jobs on a knowledge base since deleted, was removed
+              # from the live role on 2026-09-16 for the same reason.
+              - Sid: BedrockInvokeModel
+                Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                Resource:
+                  - arn:aws:bedrock:*::foundation-model/*
+                  - !Sub 'arn:aws:bedrock:*:${AWS::AccountId}:inference-profile/jp.anthropic.*'
+              - Sid: BedrockGuardrail
+                Effect: Allow
+                Action:
+                  - bedrock:ApplyGuardrail
+                Resource: !Sub 'arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:guardrail/*'
+              - Sid: BedrockKBRetrieve
+                Effect: Allow
+                Action:
+                  - bedrock:Retrieve
+                Resource: !Sub 'arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:knowledge-base/*'
+              - Sid: AgentCoreAccess
+                Effect: Allow
+                Action:
+                  - bedrock-agentcore:RetrieveMemoryRecords
+                  - bedrock-agentcore:CreateMemoryRecord
+                Resource: '*'
+              # Written down late. This statement existed on the live role and
+              # not in this file — it had been applied by hand — so the template
+              # would have removed it on the next stack update, taking the whole
+              # admin panel with it. It is also where two gaps were found: the
+              # 有効/無効 toggle has always called AdminEnableUser and
+              # AdminDisableUser without permission to, and naming a user needs
+              # AdminUpdateUserAttributes.
+              - Sid: CognitoAdminAccess
+                Effect: Allow
+                Action:
+                  - cognito-idp:ListUsers
+                  - cognito-idp:AdminCreateUser
+                  - cognito-idp:AdminDeleteUser
+                  - cognito-idp:AdminGetUser
+                  - cognito-idp:AdminAddUserToGroup
+                  - cognito-idp:AdminUpdateUserAttributes
+                  - cognito-idp:AdminEnableUser
+                  - cognito-idp:AdminDisableUser
+                  # User groups. Membership and the one-administrator rule are
+                  # both Cognito groups — see services/user-groups.ts — so the
+                  # role needs to read and write them, not only add to them.
+                  - cognito-idp:ListGroups
+                  - cognito-idp:GetGroup
+                  - cognito-idp:CreateGroup
+                  - cognito-idp:DeleteGroup
+                  - cognito-idp:ListUsersInGroup
+                  - cognito-idp:AdminListGroupsForUser
+                  - cognito-idp:AdminRemoveUserFromGroup
+                Resource: !Sub 'arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${UserPool}'
+        # The three below were added to the live role by hand as AgentCore and
+        # the worker arrived, and written here on 2026-09-16 when the stack was
+        # brought back in line with production. Separate policies rather than
+        # statements above because that is how they exist on the role; a stack
+        # update rewrites what it declares, so this file must name each one.
+        #
+        # The API hands a job to the AgentCore runtime (handlers/lambda-handler.ts).
+        - !If
+          - HasAgentRuntime
+          - PolicyName: makeui-lambda-invoke-runtime
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                - Sid: InvokeAgentRuntime
+                  Effect: Allow
+                  Action:
+                    - bedrock-agentcore:InvokeAgentRuntime
+                  Resource:
+                    - !Ref AgentRuntimeArn
+                    - !Sub '${AgentRuntimeArn}/*'
+          - !Ref AWS::NoValue
+        # Conversation memory, scoped to the one memory store.
+        - !If
+          - HasAgentCoreMemory
+          - PolicyName: makeui-lambda-memory
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                - Sid: AgentCoreMemory
+                  Effect: Allow
+                  Action:
+                    - bedrock-agentcore:RetrieveMemoryRecords
+                    - bedrock-agentcore:BatchCreateMemoryRecords
+                    - bedrock-agentcore:BatchUpdateMemoryRecords
+                    - bedrock-agentcore:BatchDeleteMemoryRecords
+                    - bedrock-agentcore:DeleteMemoryRecord
+                    - bedrock-agentcore:ListMemoryRecords
+                    - bedrock-agentcore:GetMemoryRecord
+                    - bedrock-agentcore:CreateEvent
+                    - bedrock-agentcore:ListEvents
+                  Resource: !Sub 'arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:memory/${AgentCoreMemoryId}'
+          - !Ref AWS::NoValue
+        # The fallback when the runtime cannot take a job: the API invokes the
+        # worker. Both functions share this role, so both are named.
+        - PolicyName: makeui-lambda-self-invoke
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: InvokeWorker
+                Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource:
+                  - !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:makeui-backend'
+                  - !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:makeui-worker'
+      Tags:
+        - Key: Project
+          Value: makeui
+        - Key: system
+          Value: makeui
+
+  # The functions themselves — makeui-backend and makeui-worker — are not here.
+  #
+  # `BackendLambda` was, from the first deploy until 2026-09-16, and it never
+  # described the function it named. Its Code was a placeholder that
+  # deploy-lambda.sh replaces on every push; its Handler said `index.handler`
+  # where the bundle exports `lambda.handler`; its Environment was stamped once
+  # and then owned by three writers — this file, deploy-lambda.sh, which copies
+  # MODEL_PRICING from SSM on every deploy, and set-model-pricing.sh, which
+  # switches MODEL_PRICING_ENFORCE. Any stack update that touched the function
+  # sent all of it back, so the next one would have restored the placeholder
+  # handler and taken the API down. makeui-worker was never in the stack at all.
+  #
+  # So both are managed in one place, by the scripts that already did most of
+  # it: deploy-lambda.sh for code and environment, docs/04_backend.md for what
+  # the environment must contain. The resource was removed with
+  # DeletionPolicy: Retain, so removing it deleted nothing. The HTTP API in
+  # front of it (makeui-api) is likewise outside this stack.
+  #
+  # A value that has one live source belongs in that source only.
+
+  # The nightly sweep for storage under an id no account answers to.
+  #
+  # Deleting an account now takes its partition and its documents with it, so
+  # this is the net under that rather than the mechanism: it finds what predates
+  # the fix, what a half-finished purge left when DynamoDB threw partway, and
+  # whatever a future path forgets. It refuses to act if the directory cannot be
+  # listed or if more than ten owners look orphaned at once — see
+  # services/account-purge.ts, `sweepOrphans`.
+  #
+  # 18:20 UTC is 03:20 in Asia/Tokyo: after the day's work and before the next.
+  #
+  # Created by hand, then imported (hence Retain). It names the function by ARN
+  # because the function is not a resource of this stack.
+  OrphanSweepRule:
+    Type: AWS::Events::Rule
+    Condition: HasBackendFunction
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Tags:
+        - Key: system
+          Value: makeui
+      Name: makeui-orphan-sweep
+      Description: Removes storage owned by accounts that no longer exist
+      ScheduleExpression: 'cron(20 18 * * ? *)'
+      State: ENABLED
+      Targets:
+        - Id: BackendLambda
+          Arn: !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:makeui-backend'
+          Input: '{"__sweep":true}'
+
+  # Imported as well: statement `makeui-orphan-sweep` on the function's policy.
+  OrphanSweepPermission:
+    Type: AWS::Lambda::Permission
+    Condition: HasBackendFunction
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      FunctionName: !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:makeui-backend'
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !Sub 'arn:aws:events:${AWS::Region}:${AWS::AccountId}:rule/makeui-orphan-sweep'
+
+  # `BackendLambdaUrl` and `BackendLambdaUrlPermission` stood here: a Function
+  # URL with `AuthType: NONE`, CORS `AllowOrigins: ['*']`, and
+  # `lambda:InvokeFunctionUrl` granted to Principal `*`.
+  #
+  # Nothing used it. The frontend calls API Gateway, and no script or buildspec
+  # named it. What it was, was a second front door on the same handler — one
+  # that bypasses API Gateway and, since the URL carries its own wide-open CORS
+  # configuration, the origin allowlist as well. It answered 403 only because an
+  # Organizations policy outside this account blocks public Function URLs, which
+  # is somebody else's control and not this project's.
+  #
+  # Deleted, along with both `InvokeFunctionUrl` grants — there were two,
+  # `public-url-access` and `public-url-access-v2`, the second presumably added
+  # when the first appeared not to work.
+
+Outputs:
+  UserPoolId:
+    Description: Cognito User Pool ID
+    Value: !Ref UserPool
+  UserPoolClientId:
+    Description: Cognito User Pool Client ID
+    Value: !Ref UserPoolClient
+  UserPoolArn:
+    Description: Cognito User Pool ARN
+    Value: !GetAtt UserPool.Arn
+  CloudFrontDomainName:
+    Description: CloudFront Distribution Domain Name
+    Value: !GetAtt CloudFrontDistribution.DomainName
+  CloudFrontDistributionId:
+    Description: CloudFront Distribution ID
+    Value: !Ref CloudFrontDistribution
+  FrontendBucketName:
+    Description: Frontend S3 Bucket Name
+    Value: !Ref FrontendBucket
+  OutputsBucketName:
+    Description: Outputs S3 Bucket Name
+    Value: !Ref OutputsBucket
+  OutputsBucketArn:
+    Description: Outputs S3 Bucket ARN
+    Value: !GetAtt OutputsBucket.Arn
+  KnowledgeBaseBucket:
+    Description: Knowledge Base S3 Bucket Name
+    Value: !Ref KnowledgeBaseBucket
+  KnowledgeBaseBucketArn:
+    Description: Knowledge Base S3 Bucket ARN
+    Value: !GetAtt KnowledgeBaseBucket.Arn
+  TokenUsageTable:
+    Description: DynamoDB Token Usage Table Name
+    Value: !Ref TokenUsageTable
+  TokenUsageTableArn:
+    Description: DynamoDB Token Usage Table ARN
+    Value: !GetAtt TokenUsageTable.Arn

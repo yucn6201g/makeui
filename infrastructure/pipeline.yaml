@@ -1,0 +1,505 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  MakeUI AI - CI/CD pipeline (CodeCommit + CodeBuild + CodePipeline).
+
+  Deployed as its own stack, separate from makeui-infra, because the two have
+  different lifetimes and different blast radii: the infrastructure stack owns
+  the Cognito pool, the buckets and the DynamoDB table (all Retain), and a
+  pipeline change should never be able to put any of those into an UPDATE_ROLLBACK.
+
+Parameters:
+  RepositoryName:
+    Type: String
+    Default: makeui
+    Description: CodeCommit repository holding the source.
+
+  BranchName:
+    Type: String
+    Default: main
+
+  RuntimeName:
+    Type: String
+    Default: makeuiBackend
+    Description: >
+      AgentCore Runtime to deploy to. Not discoverable from CloudFormation —
+      AgentCore has no CloudFormation resource type — so the deploy script
+      resolves it by name and this parameter records which one.
+
+Resources:
+  # ============================================================
+  # Source
+  # ============================================================
+  Repository:
+    Type: AWS::CodeCommit::Repository
+    # The source of truth for the product. A stack rollback must never take it.
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Tags:
+        - Key: system
+          Value: makeui
+      RepositoryName: !Ref RepositoryName
+      RepositoryDescription: MakeUI AI - application source
+
+  # ============================================================
+  # Artifacts
+  # ============================================================
+  ArtifactBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      Tags:
+        - Key: system
+          Value: makeui
+      BucketName: !Sub 'makeui-pipeline-artifacts-${AWS::AccountId}'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      # Build artifacts are worth nothing a week later and cost storage forever.
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-artifacts
+            Status: Enabled
+            ExpirationInDays: 30
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 3
+
+  # ============================================================
+  # Build roles
+  # ============================================================
+  #
+  # Two roles, not one. The build stage compiles and tests and needs nothing but
+  # logs and the artifact bucket; the deploy stages can replace the running
+  # product. Giving the build stage deploy rights would mean a change to a test
+  # could reach production without passing through the deploy stage.
+  BuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Tags:
+        - Key: system
+          Value: makeui
+      RoleName: makeui-codebuild-build
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: codebuild.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: build
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/makeui-*'
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:PutObject
+                Resource: !Sub '${ArtifactBucket.Arn}/*'
+              - Effect: Allow
+                Action: s3:GetBucketLocation
+                Resource: !GetAtt ArtifactBucket.Arn
+              # The frontend's public configuration — the same values its bundle
+              # serves to every visitor — kept out of the repository. Read, never write.
+              - Effect: Allow
+                Action: ssm:GetParameters
+                Resource:
+                  - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/makeui/api-url'
+                  - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/makeui/cognito/user-pool-id'
+                  - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/makeui/cognito/client-id'
+
+  DeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Tags:
+        - Key: system
+          Value: makeui
+      RoleName: makeui-codebuild-deploy
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: codebuild.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: deploy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/makeui-*'
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:PutObject
+                Resource: !Sub '${ArtifactBucket.Arn}/*'
+              - Effect: Allow
+                Action: s3:GetBucketLocation
+                Resource: !GetAtt ArtifactBucket.Arn
+              # The frontend bucket and the outputs bucket (the Runtime artifact
+              # is uploaded there before AgentCore reads it).
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                Resource:
+                  - !Sub 'arn:aws:s3:::makeui-frontend-${AWS::AccountId}'
+                  - !Sub 'arn:aws:s3:::makeui-frontend-${AWS::AccountId}/*'
+                  - !Sub 'arn:aws:s3:::makeui-outputs-${AWS::AccountId}'
+                  - !Sub 'arn:aws:s3:::makeui-outputs-${AWS::AccountId}/*'
+              - Effect: Allow
+                Action:
+                  - lambda:UpdateFunctionCode
+                  # deploy-lambda.sh reconciles the environment (MODEL_PRICING
+                  # from SSM, ALLOWED_ORIGIN when missing). Only called when a
+                  # value actually changes, which is why its absence went unseen.
+                  - lambda:UpdateFunctionConfiguration
+                  - lambda:GetFunction
+                  - lambda:GetFunctionConfiguration
+                  - lambda:PublishVersion
+                Resource:
+                  - !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:makeui-backend'
+                  - !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:makeui-worker'
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource:
+                  - !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:makeui-backend'
+              - Effect: Allow
+                Action:
+                  - cloudfront:CreateInvalidation
+                  - cloudfront:GetDistribution
+                  - cloudfront:ListDistributions
+                Resource: '*'
+              # The CORS check in deploy-lambda.sh reads the HTTP API (outside
+              # every stack) by name: GetApis, then GetApi. Read only.
+              - Effect: Allow
+                Action: apigateway:GET
+                Resource:
+                  - !Sub 'arn:aws:apigateway:${AWS::Region}::/apis'
+                  - !Sub 'arn:aws:apigateway:${AWS::Region}::/apis/*'
+              # AgentCore has no resource-level ARNs for these calls.
+              - Effect: Allow
+                Action:
+                  - bedrock-agentcore:UpdateAgentRuntime
+                  - bedrock-agentcore:GetAgentRuntime
+                  - bedrock-agentcore:ListAgentRuntimes
+                  - bedrock-agentcore:ListAgentRuntimeVersions
+                Resource: '*'
+              # The runtime executes under its own role; updating the runtime
+              # means handing that role over, which needs PassRole.
+              - Effect: Allow
+                Action: iam:PassRole
+                Resource: !Sub 'arn:aws:iam::${AWS::AccountId}:role/makeui-*'
+              - Effect: Allow
+                Action: ssm:GetParameter
+                Resource: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/makeui/*'
+
+  PipelineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Tags:
+        - Key: system
+          Value: makeui
+      RoleName: makeui-codepipeline
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: codepipeline.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: pipeline
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:PutObject
+                  - s3:GetBucketVersioning
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt ArtifactBucket.Arn
+                  - !Sub '${ArtifactBucket.Arn}/*'
+              - Effect: Allow
+                Action:
+                  - codecommit:GetBranch
+                  - codecommit:GetCommit
+                  - codecommit:UploadArchive
+                  - codecommit:GetUploadArchiveStatus
+                  - codecommit:CancelUploadArchive
+                Resource: !GetAtt Repository.Arn
+              - Effect: Allow
+                Action:
+                  - codebuild:StartBuild
+                  - codebuild:BatchGetBuilds
+                Resource:
+                  - !GetAtt BuildProject.Arn
+                  - !GetAtt DeployBackendProject.Arn
+                  - !GetAtt DeployFrontendProject.Arn
+                  - !GetAtt SmokeTestProject.Arn
+
+  # ============================================================
+  # Build projects
+  # ============================================================
+  BuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Tags:
+        - Key: system
+          Value: makeui
+      Name: makeui-build
+      Description: Install, typecheck, test and package every artifact.
+      ServiceRole: !GetAtt BuildRole.Arn
+      Artifacts: { Type: CODEPIPELINE }
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: infrastructure/buildspec/build.yml
+      Environment:
+        Type: LINUX_CONTAINER
+        # The build runs esbuild over a large TypeScript project and both test
+        # suites, which spawn esbuild again per test file. SMALL is measurably
+        # slower for no saving worth having.
+        ComputeType: BUILD_GENERAL1_MEDIUM
+        Image: aws/codebuild/amazonlinux2-x86_64-standard:5.0
+        # Written to frontend/.env.production by build.yml — see the comment there.
+        EnvironmentVariables:
+          - { Name: VITE_API_URL, Type: PARAMETER_STORE, Value: /makeui/api-url }
+          - { Name: VITE_COGNITO_USER_POOL_ID, Type: PARAMETER_STORE, Value: /makeui/cognito/user-pool-id }
+          - { Name: VITE_COGNITO_CLIENT_ID, Type: PARAMETER_STORE, Value: /makeui/cognito/client-id }
+          - { Name: VITE_COGNITO_REGION, Type: PLAINTEXT, Value: !Ref AWS::Region }
+      TimeoutInMinutes: 20
+      Cache:
+        Type: LOCAL
+        Modes:
+          - LOCAL_CUSTOM_CACHE
+
+  DeployBackendProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Tags:
+        - Key: system
+          Value: makeui
+      Name: makeui-deploy-backend
+      Description: Deploy the two Lambdas and publish a new AgentCore Runtime version.
+      ServiceRole: !GetAtt DeployRole.Arn
+      Artifacts: { Type: CODEPIPELINE }
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: infrastructure/buildspec/deploy-backend.yml
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/amazonlinux2-x86_64-standard:5.0
+        EnvironmentVariables:
+          - Name: RUNTIME_NAME
+            Value: !Ref RuntimeName
+      # The runtime wait loop polls until READY, which takes a few minutes.
+      TimeoutInMinutes: 30
+
+  DeployFrontendProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Tags:
+        - Key: system
+          Value: makeui
+      Name: makeui-deploy-frontend
+      Description: Sync the built frontend to S3 and invalidate CloudFront.
+      ServiceRole: !GetAtt DeployRole.Arn
+      Artifacts: { Type: CODEPIPELINE }
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: infrastructure/buildspec/deploy-frontend.yml
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/amazonlinux2-x86_64-standard:5.0
+      TimeoutInMinutes: 20
+
+  SmokeTestProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Tags:
+        - Key: system
+          Value: makeui
+      Name: makeui-smoke-test
+      Description: >
+        Prove the deploy actually landed. Every check here corresponds to a way
+        a deploy has silently failed in this project's history.
+      ServiceRole: !GetAtt DeployRole.Arn
+      Artifacts: { Type: CODEPIPELINE }
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: infrastructure/buildspec/smoke-test.yml
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/amazonlinux2-x86_64-standard:5.0
+        EnvironmentVariables:
+          - Name: RUNTIME_NAME
+            Value: !Ref RuntimeName
+      TimeoutInMinutes: 15
+
+  # ============================================================
+  # Pipeline
+  # ============================================================
+  Pipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      Tags:
+        - Key: system
+          Value: makeui
+      Name: makeui
+      RoleArn: !GetAtt PipelineRole.Arn
+      ArtifactStore:
+        Type: S3
+        Location: !Ref ArtifactBucket
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: Source
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Provider: CodeCommit
+                Version: '1'
+              Configuration:
+                RepositoryName: !GetAtt Repository.Name
+                BranchName: !Ref BranchName
+                # CloudWatch Events rather than polling: polling costs a minute
+                # of latency on every push and an API call every minute forever.
+                PollForSourceChanges: false
+              OutputArtifacts:
+                - Name: source
+
+        - Name: Build
+          Actions:
+            - Name: BuildAndTest
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: '1'
+              Configuration:
+                ProjectName: !Ref BuildProject
+              InputArtifacts:
+                - Name: source
+              OutputArtifacts:
+                - Name: built
+
+        # Backend before frontend, deliberately. The frontend calls the API; if
+        # a release changes both, the order that leaves a working product between
+        # the two deploys is the one where the API is ahead of the client.
+        - Name: DeployBackend
+          Actions:
+            - Name: DeployBackend
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: '1'
+              Configuration:
+                ProjectName: !Ref DeployBackendProject
+              InputArtifacts:
+                - Name: built
+
+        - Name: DeployFrontend
+          Actions:
+            - Name: DeployFrontend
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: '1'
+              Configuration:
+                ProjectName: !Ref DeployFrontendProject
+              InputArtifacts:
+                - Name: built
+
+        - Name: Verify
+          Actions:
+            - Name: SmokeTest
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: '1'
+              Configuration:
+                ProjectName: !Ref SmokeTestProject
+              InputArtifacts:
+                - Name: built
+
+  # ============================================================
+  # Push trigger
+  # ============================================================
+  PipelineTriggerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Tags:
+        - Key: system
+          Value: makeui
+      RoleName: makeui-pipeline-trigger
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: events.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: start-pipeline
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: codepipeline:StartPipelineExecution
+                Resource: !Sub 'arn:aws:codepipeline:${AWS::Region}:${AWS::AccountId}:${Pipeline}'
+
+  PipelineTrigger:
+    Type: AWS::Events::Rule
+    Properties:
+      Tags:
+        - Key: system
+          Value: makeui
+      Name: makeui-pipeline-on-push
+      Description: Start the pipeline when the tracked branch moves.
+      EventPattern:
+        source: [aws.codecommit]
+        detail-type: ['CodeCommit Repository State Change']
+        resources: [!GetAtt Repository.Arn]
+        detail:
+          event: [referenceCreated, referenceUpdated]
+          referenceType: [branch]
+          referenceName: [!Ref BranchName]
+      Targets:
+        - Id: pipeline
+          Arn: !Sub 'arn:aws:codepipeline:${AWS::Region}:${AWS::AccountId}:${Pipeline}'
+          RoleArn: !GetAtt PipelineTriggerRole.Arn
+
+Outputs:
+  PipelineName:
+    Value: !Ref Pipeline
+  RepositoryCloneUrl:
+    Value: !GetAtt Repository.CloneUrlHttp
+  ArtifactBucket:
+    Value: !Ref ArtifactBucket
+  PipelineConsoleUrl:
+    Value: !Sub 'https://${AWS::Region}.console.aws.amazon.com/codesuite/codepipeline/pipelines/${Pipeline}/view?region=${AWS::Region}'
