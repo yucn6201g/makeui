@@ -36,7 +36,6 @@ const SOURCES = {
 };
 
 /**
- * Svelte has no single-file browser build, so one is made here.
  *
  * The legacy flag is imported for its side effect: the compiler emits
  * `import 'svelte/internal/flags/legacy'` for any component that does not use
@@ -68,13 +67,6 @@ const BUNDLES = {
       `window.ReactDOM = Object.assign({}, ReactDOM, { createRoot, hydrateRoot });`,
     global: '__react_runtime',
   },
-  'svelte.runtime.txt': {
-    entry:
-      `import 'svelte/internal/flags/legacy';` +
-      `export * from 'svelte/internal/client';` +
-      `export * as __public from 'svelte';`,
-    global: '__svelte_internal',
-  },
 };
 
 mkdirSync(out, { recursive: true });
@@ -89,7 +81,6 @@ for (const [name, [pkg, rel]] of Object.entries(SOURCES)) {
   copyFileSync(from, to);
   console.log(`vendored ${name}  ${Math.round(statSync(to).size / 1024)}KB`);
 }
-
 
 for (const [name, spec] of Object.entries(BUNDLES)) {
   const built = buildSync({

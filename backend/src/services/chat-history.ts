@@ -32,13 +32,24 @@ export interface StoredMessage {
   toolsUsed?: string[];
   tokenUsage?: { inputTokens: number; outputTokens: number };
   /**
+   * No `unrepairedDefects` here, and it was removed rather than never added.
+   *
+   * It counted what the repair budget declined to spend a call on, and the chat
+   * rendered it beside the score as 「未修正 N件」 — a centimetre from the reply's
+   * own 「未解決の指摘 N件」, which counts what was still open when the run ended.
+   * They answer different questions and disagreed on screen, which is how the
+   * user met them. The list is the one a person can act on, so it is the one
+   * that stays. The budget figure is still in the job metadata and in the log,
+   * where the measurement it was taken for lives.
+   */
+  /**
    * Which model and design system produced the reply, for the thread to show.
    *
    * `effort` and `scoreVerified` belong here for the same reason the tier does:
    * the thread has to be able to say tomorrow what built each screen, and
    * `scoreVerified` decides whether its score is shown as comparable.
    */
-  runInfo?: { modelTier: string; preset: string; effort?: string; scoreVerified?: boolean; scoreParts?: ScoreParts; unrepairedDefects?: number };
+  runInfo?: { modelTier: string; preset: string; effort?: string; scoreVerified?: boolean; scoreParts?: ScoreParts };
   /** A plan awaiting approval, with the specification an approval would build. */
   proposal?: { plan: string; spec: string; prompt: string };
   /**

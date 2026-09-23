@@ -1,7 +1,7 @@
 # MakeUI
 
 自然言語から、**そのまま開発を続けられる**マルチ画面の UI プロジェクトを生成する
-SaaS です。出力は React / Vue / Svelte のいずれかで、スクリーンショットではなく
+SaaS です。出力は React / Vue のいずれかで、スクリーンショットではなく
 `npm install` して続きが書けるファイル一式を返します。
 
 AWS 上で動作します（Bedrock AgentCore Runtime / Memory / Browser、Bedrock

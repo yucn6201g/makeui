@@ -78,7 +78,6 @@ export const FIX_RATE: Record<string, { fixed: number; of: number }> = {
   'required-prop-missing': { fixed: 16, of: 16 },
   'preset-drift': { fixed: 14, of: 14 },
   'component-unresolved': { fixed: 13, of: 13 },
-  'svelte-legacy-idiom': { fixed: 13, of: 13 },
   'import-missing': { fixed: 11, of: 11 },
 };
 

@@ -34,7 +34,6 @@ const SCAFFOLDED = new Set([
   '.gitignore',
   '.editorconfig',
   'README.md',
-  'svelte.config.js',
   'src/vite-env.d.ts',
   'src/vue-shims.d.ts',
 ]);

@@ -36,7 +36,7 @@ import { renameFile } from './rename-extension.js'
  * and one list means a `.vue` imported without its extension resolves by the
  * same rule a `.tsx` does.
  */
-const SOURCE_EXT = ['.vue', '.svelte', '.tsx', '.ts', '.jsx', '.js', '.mjs']
+const SOURCE_EXT = ['.vue', '.tsx', '.ts', '.jsx', '.js', '.mjs']
 
 function isSourceFile(path: string, kind: OutputKind = 'react'): boolean {
   return RUNTIMES[kind].sourceExt.some((e) => path.endsWith(e))
@@ -51,9 +51,9 @@ function isSourceFile(path: string, kind: OutputKind = 'react'): boolean {
  * compiled fine and is how a Vue project reached the verifier as raw text.
  */
 export function isReactBundle(html: string): boolean {
-  if (/data-file=["'][^"']+\.(?:tsx|jsx|vue|svelte)["']/i.test(html)) return true
+  if (/data-file=["'][^"']+\.(?:tsx|jsx|vue)["']/i.test(html)) return true
   if (!isFencedTransport(html)) return false
-  return [...readProjectFiles(html).keys()].some((p) => /\.(tsx|jsx|vue|svelte)$/i.test(p))
+  return [...readProjectFiles(html).keys()].some((p) => /\.(tsx|jsx|vue)$/i.test(p))
 }
 
 /**
@@ -67,7 +67,7 @@ export function isReactBundle(html: string): boolean {
  * components importing "../lib/store.svelte", every one of them present in the
  * project, every one reported unresolved, and the application rendered nothing.
  */
-const SOURCE_EXT_SUFFIX = /(?:\.(?:vue|svelte|tsx|ts|jsx|js|mjs))+$/
+const SOURCE_EXT_SUFFIX = /(?:\.(?:vue|tsx|ts|jsx|js|mjs))+$/
 
 function normalize(path: string): string {
   const out: string[] = []
@@ -419,7 +419,7 @@ function exportShape(path: string, sources: Map<string, string>, paths: Set<stri
   const shape: ExportShape = { names: new Set(), hasDefault: false, unknown: false }
   // A component file of another framework exports its component as default and
   // nothing a named import could be checked against.
-  if (/\.(vue|svelte)$/.test(path)) return { ...shape, hasDefault: true, unknown: true }
+  if (/\.(vue)$/.test(path)) return { ...shape, hasDefault: true, unknown: true }
   const body = stripComments(sources.get(path) ?? '')
   const def = /export\s+default\s+(?:async\s+)?(?:function\s*\*?\s*|class\s+)?([A-Za-z_$][\w$]*)?/.exec(body)
   if (def) {
@@ -479,7 +479,7 @@ export function missingExports(source: string): {
   const shapes = new Map<string, ExportShape>()
   const out: ReturnType<typeof missingExports> = []
   for (const [importer, raw] of sources) {
-    if (/\.(vue|svelte)$/.test(importer) && !/<script/.test(raw)) continue
+    if (/\.(vue)$/.test(importer) && !/<script/.test(raw)) continue
     const body = stripComments(raw)
     for (const m of body.matchAll(/import\s+(?!type\s)(?:[A-Za-z_$][\w$]*\s*,\s*)?\{([^}]*)\}\s*from\s*['"](\.[^'"]+)['"]/g)) {
       const target = resolve(m[2], importer, paths)
@@ -711,54 +711,6 @@ export function normalizeRouterLinks(source: string, kind: OutputKind): { html: 
 }
 
 /**
- * `$derived(() => {…})()` → `$derived.by(() => {…})`.
- *
- * Svelte 5 has two forms and the model reaches for a third that does not exist:
- * `$derived(expr)` for an expression, `$derived.by(fn)` when the computation
- * needs statements. Writing `$derived(fn)()` — calling the function to get its
- * value — is the natural guess and is rejected, because the rune has to BE the
- * initializer and here the initializer is a call expression. Measured on a
- * generated screen: `$derived(...) can only be used as a variable declaration
- * initializer …`, and the whole project failed to build.
- *
- * `$derived.by(fn)` means exactly what the IIFE was reaching for, so this is a
- * rename rather than a repair — and like the router links it runs in the modes
- * that have no repair passes at all.
- *
- * The end of the call is found by counting parentheses rather than by regex,
- * because the body is arbitrary code; anything that does not balance is left
- * alone rather than guessed at.
- */
-export function normalizeSvelteRunes(source: string, kind: OutputKind): { html: string; rewritten: number } {
-  if (kind !== 'svelte') return { html: source, rewritten: 0 }
-
-  const OPEN = '$derived('
-  let out = source
-  let n = 0
-  for (let i = out.indexOf(OPEN); i !== -1; i = out.indexOf(OPEN, i + 1)) {
-    let depth = 0
-    let end = -1
-    for (let j = i + OPEN.length - 1; j < out.length; j++) {
-      const c = out[j]
-      if (c === '(') depth++
-      else if (c === ')') {
-        depth--
-        if (depth === 0) {
-          end = j
-          break
-        }
-      }
-    }
-    // Unbalanced, or not the immediately-invoked form: leave it exactly as it is.
-    if (end === -1 || out.slice(end + 1, end + 3) !== '()') continue
-    const body = out.slice(i + OPEN.length, end)
-    out = `${out.slice(0, i)}$derived.by(${body})${out.slice(end + 3)}`
-    n++
-  }
-  return { html: out, rewritten: n }
-}
-
-/**
  * Element names a template may use without importing anything.
  *
  * Not exhaustive HTML — it does not need to be. Only names carrying a capital or
@@ -768,9 +720,6 @@ export function normalizeSvelteRunes(source: string, kind: OutputKind): { html: 
 const FRAMEWORK_BUILTIN_TAGS = new Set([
   // Vue
   'component', 'transition', 'transition-group', 'keep-alive', 'teleport', 'suspense', 'slot',
-  // Svelte
-  'svelte:component', 'svelte:element', 'svelte:window', 'svelte:document', 'svelte:body',
-  'svelte:head', 'svelte:options', 'svelte:fragment', 'svelte:boundary', 'svelte:self',
 ])
 
 /**
@@ -826,7 +775,7 @@ export function unresolvedComponentDefects(
 ): { id: string; instruction: string }[] {
   if (kind === 'react') return [] // JSX names are identifiers; an undefined one is already a reference error.
 
-  const ext = kind === 'vue' ? '.vue' : '.svelte'
+  const ext = '.vue'
   const found = new Map<string, Set<string>>()
 
   for (const [path, body] of readProjectFiles(source)) {
@@ -869,70 +818,10 @@ export function unresolvedComponentDefects(
         'どのファイルからも import されていないコンポーネントをテンプレートで使っています。' +
         'コンパイルは通り画面も描画されますが、その要素は何も表示せず、クリックしても動きません:\n' +
         lines.join('\n') +
-        '\nvue-router / svelte-routing などのパッケージは使えません。' +
+        '\nvue-router などのパッケージは使えません。' +
         '画面遷移は自前のハッシュルーターで行い、リンクは <a href="#/screen"> か ' +
         'クリックハンドラから navigate() を呼ぶ形に書き換えてください。' +
         '自作コンポーネントであれば、そのファイルを作成して import してください。',
-    },
-  ]
-}
-
-/**
- * Svelte 4 idioms in a Svelte 5 project.
- *
- * Not a style preference. `export let` and a rune in the same component is a
- * hard compile error, and the message the compiler gives names neither half:
- * measured on a generated project, `export let class: additionalClass = ''`
- * came back as `Unexpected keyword 'class'` — true, but it points at a symptom
- * of the model having reached for the Svelte 4 prop idiom and then mangled the
- * one prop name that is a reserved word.
- *
- * Naming the idiom is what makes the repair possible. A parser position tells a
- * repair pass to fix line 7; this tells it the component's whole prop
- * declaration belongs in `$props()`.
- */
-export function legacyIdiomDefects(source: string, kind: OutputKind): { id: string; instruction: string }[] {
-  if (kind !== 'svelte') return []
-
-  const props: string[] = []
-  const events: string[] = []
-  const slots: string[] = []
-  for (const [path, body] of readProjectFiles(source)) {
-    if (!path.endsWith('.svelte')) continue
-    const script = [...body.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)].map((m) => m[1]).join('\n')
-    if (/(^|\s)export\s+let\s/.test(script)) props.push(path)
-    if (/\son:[a-z]+[=\s>]/.test(body)) events.push(path)
-    if (/<slot\b/.test(body)) slots.push(path)
-  }
-  if (props.length === 0 && events.length === 0 && slots.length === 0) return []
-
-  const parts: string[] = []
-  if (props.length)
-    parts.push(
-      `- \`export let\` でプロパティを宣言しているファイル: ${props.slice(0, 6).join(', ')}\n` +
-        '  これは Svelte 4 の書き方です。同じファイルが $state / $derived / $effect を使っていると' +
-        '**コンパイルエラー**になります。宣言全体を $props() の分割代入1つに置き換えてください:\n' +
-        "  let { variant = 'primary', disabled = false, class: className = '', children } = $props();"
-    )
-  if (events.length)
-    parts.push(
-      `- \`on:イベント名\` を使っているファイル: ${events.slice(0, 6).join(', ')}\n` +
-        '  Svelte 5 のハンドラは onclick / oninput のような通常の属性です。'
-    )
-  if (slots.length)
-    parts.push(
-      `- \`<slot />\` を使っているファイル: ${slots.slice(0, 6).join(', ')}\n` +
-        '  Svelte 5 では children を $props() から受け取り {@render children?.()} で描画します。'
-    )
-
-  return [
-    {
-      id: 'svelte-legacy-idiom',
-      instruction:
-        'Svelte 4 の書き方と Svelte 5 のルーンが混在しています。' +
-        'このプロジェクトはルーン専用です:\n' +
-        parts.join('\n') +
-        '\nレイアウト・文言・スタイルは変更しないでください。',
     },
   ]
 }
@@ -974,7 +863,7 @@ export function frameworkConfusionDefects(
 ): { id: string; instruction: string }[] {
   if (kind === 'react') return []
 
-  const ext = kind === 'vue' ? '.vue' : '.svelte'
+  const ext = '.vue'
   const guilty: string[] = []
   for (const [path, body] of readProjectFiles(source)) {
     if (!path.endsWith(ext)) continue
@@ -1403,7 +1292,7 @@ function resolveSpec(files: Map<string, string>, from: string, spec: string): st
   }
   const base = stack.join('/')
   return [...files.keys()].find(
-    (k) => k === base || k.replace(/\.(tsx|ts|jsx|js|vue|svelte)$/, '') === base ||
+    (k) => k === base || k.replace(/\.(tsx|ts|jsx|js|vue)$/, '') === base ||
            k.replace(/\/index\.(tsx|ts|jsx|js)$/, '') === base
   )
 }
@@ -1802,7 +1691,7 @@ export function destructuredKeyDefects(source: string): { id: string; instructio
         }
         const base = stack.join('/')
         const target = [...files.keys()].find(
-          (k) => k === base || k.replace(/\.(tsx|ts|jsx|js|vue|svelte)$/, '') === base ||
+          (k) => k === base || k.replace(/\.(tsx|ts|jsx|js|vue)$/, '') === base ||
                  k.replace(/\/index\.(tsx|ts|jsx|js)$/, '') === base
         )
         if (!target) continue
@@ -2014,7 +1903,7 @@ export function rootPropsNeverPassedDefects(source: string): { id: string; instr
   if (new RegExp(`<\\s*${rootName}\\s+[^/>]*[\\w-]+\\s*=`).test(entry)) return []
 
   const rootPath = [...files.keys()].find((p) =>
-    new RegExp(`(?:^|/)${rootName}\\.(svelte|vue|tsx|jsx)$`).test(p)
+    new RegExp(`(?:^|/)${rootName}\\.(vue|tsx|jsx)$`).test(p)
   )
   if (!rootPath) return []
   const root = files.get(rootPath) ?? ''
@@ -2097,7 +1986,7 @@ export function requiredPropNeverPassedDefects(source: string): { id: string; in
   const found: { child: string; parent: string; prop: string }[] = []
 
   for (const [path, body] of files) {
-    if (!/\.(svelte|vue|tsx|jsx)$/.test(path)) continue
+    if (!/\.(vue|tsx|jsx)$/.test(path)) continue
     const name = path.split('/').pop()?.replace(/\.\w+$/, '') ?? ''
     if (!/^[A-Z]/.test(name)) continue
 

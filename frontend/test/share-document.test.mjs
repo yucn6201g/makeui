@@ -92,10 +92,9 @@ const REACT = project(
     /<title>\s*<\/title>/.test(index.content), false);
 }
 
-// Vue and Svelte are the same path — the gate asks `detectKind`, not for `.tsx`.
+// Vue is the same path — the gate asks `detectKind`, not for `.tsx`.
 for (const [name, files] of [
   ['vue', [['src/main.ts', "import { createApp } from 'vue'"], ['src/App.vue', '<template><h1>hi</h1></template>']]],
-  ['svelte', [['src/main.ts', "import App from './App.svelte'"], ['src/App.svelte', '<h1>hi</h1>']]],
 ]) {
   const build = spy({ html: '<html>ok</html>', error: null });
   const out = await shareDocument(project(...files), build);

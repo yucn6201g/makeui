@@ -119,5 +119,13 @@ for (const [what, call] of [
 // which is the one place phases are set from outside the run.
 check('resuming still restores a transcript', /if \(priorPhases && priorPhases.length > 0\) setPhases\(priorPhases\)/.test(hook), true);
 
+// Every poller hands the transcript the running total. The plan hook did not, so
+// every step of a plan — the whole design phase — showed no tokens.
+for (const name of ['useGenerate', 'useModify', 'usePlan']) {
+  const src = fs2.readFileSync(path.join(root, `src/hooks/${name}.ts`), 'utf8');
+  check(`${name} passes the running total to the transcript`,
+    /appendPhase\(prev, data\.streamPhase!, data\.streamTail \?\? '', data\.streamChars \?\? 0, data\.streamTokens\)/.test(src), true);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

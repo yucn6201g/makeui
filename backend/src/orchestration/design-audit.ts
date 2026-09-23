@@ -1,6 +1,7 @@
 import { withoutProse, type InteractionDefect } from './interaction-audit.js'
 import type { OutputKind } from '../config/frameworks.js';
 import { readProjectFiles } from '../tools/project-transport.js';
+import { UTILITY_CLASS, definedClasses, UTILITY_BLOCK_MARKER } from '../tools/utility-css.js';
 
 /**
  * Machine-checkable audit of the tells that make output read as machine-made.
@@ -204,31 +205,13 @@ export function auditAiTells(
   return defects
 }
 
-/**
- * A Tailwind utility, recognised by its value as well as its prefix.
- *
- * Prefixes alone matched the project's own names: `my-reservations-screen` read as
- * a vertical margin. So spacing and sizing need a number or a keyword after the
- * dash, colours need a palette step, and the bare words (`flex`, `grid`, `fixed`)
- * only count because a project that defines them is excluded before this is asked.
+/*
+ * The detector lives in `tools/utility-css.ts` now, beside the generator that
+ * writes the CSS for what it finds: one definition of "this is a utility
+ * class", read by the pass that repairs them and by the audit that reports
+ * whatever the repair could not. Re-exported because the test imports it here.
  */
-export const UTILITY_CLASS = new RegExp('^(?:' + [
-  '-?[mp][trblxy]?-(?:\\d|px|auto)',
-  '[wh]-(?:\\d|full|screen|auto|px|min|max|fit)',
-  '(?:min|max)-[wh]-',
-  'gap-(?:[xy]-)?\\d', 'space-[xy]-\\d',
-  'flex(?:-(?:col|row|wrap|1|none|auto|grow|shrink))?$', 'grid(?:-(?:cols|rows)-\\d+)?$', 'col-span-\\d',
-  'items-(?:center|start|end|stretch|baseline)$', 'justify-(?:center|start|end|between|around|evenly)$',
-  'text-(?:xs|sm|base|lg|[2-9]?xl|center|left|right|white|black|(?:gray|slate|zinc|neutral|red|green|blue|indigo|yellow|orange|purple|pink)-\\d{2,3})$',
-  'font-(?:thin|light|normal|medium|semibold|bold|extrabold|black)$',
-  'bg-(?:white|black|transparent|gradient-to-\\w+|(?:gray|slate|zinc|neutral|red|green|blue|indigo|yellow|orange|purple|pink)-\\d{2,3})$',
-  'border(?:-[trblxy])?(?:-\\d|-(?:gray|slate|zinc|neutral)-\\d{2,3})?$',
-  'rounded(?:-(?:sm|md|lg|xl|2xl|3xl|full|none))?$', 'shadow(?:-(?:sm|md|lg|xl|2xl|none))?$',
-  '(?:inset|top|left|right|bottom)-\\d', 'z-\\d+$', 'opacity-\\d+$',
-  'leading-(?:none|tight|snug|normal|relaxed|loose|\\d)$', 'tracking-(?:tighter|tight|normal|wide|wider|widest)$',
-  'mx-auto$', 'min-h-screen$', 'inline-(?:block|flex)$', '(?:fixed|absolute|relative|sticky)$', 'truncate$',
-  'overflow-(?:hidden|auto|x-auto|y-auto)$', '(?:sm|md|lg|xl|hover|focus):', 'cursor-pointer$', 'duration-\\d+$', 'sr-only$',
-].join('|') + ')')
+export { UTILITY_CLASS }
 
 /**
  * Whether the stylesheet is the design or merely a decoration beside it.
@@ -315,12 +298,12 @@ export function auditStylingDiscipline(html: string, outputKind: OutputKind): In
     for (const [p, body] of files) {
       const css = p.endsWith('.css')
         ? body
-        : /\.(vue|svelte)$/.test(p) ? [...body.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)].map((m) => m[1]).join('\n') : ''
-      for (const m of css.matchAll(/\.(-?[_a-zA-Z][\w-]*)/g)) defined.add(m[1])
+        : /\.(vue)$/.test(p) ? [...body.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)].map((m) => m[1]).join('\n') : ''
+      for (const c of definedClasses(css)) defined.add(c)
     }
     const byFile = new Map<string, Set<string>>()
     for (const [p, body] of files) {
-      if (!/\.(tsx|jsx|vue|svelte)$/.test(p)) continue
+      if (!/\.(tsx|jsx|vue)$/.test(p)) continue
       const values = [
         ...[...body.matchAll(/\bclass(?:Name)?\s*=\s*["']([^"']*)["']/g)].map((m) => m[1]),
         ...[...body.matchAll(/\bclass(?:Name)?\s*=\s*\{\s*`([^`]*)`/g)].map((m) => m[1].replace(/\$\{[^}]*\}/g, ' ')),
@@ -350,7 +333,19 @@ export function auditStylingDiscipline(html: string, outputKind: OutputKind): In
     }
   }
 
-  const sheets = [...files.entries()].filter(([p]) => p.endsWith('.css')).map(([, b]) => b)
+  /*
+   * Up to the utility block, not past it.
+   *
+   * `fixDeadUtilityClasses` appends the CSS for whatever utility classes the
+   * build left inert — seventy rules on the worst document in the corpus. Those
+   * are the project's classes working, not the project's design: a stylesheet
+   * that is nothing but `flex` and `p-4` is exactly what the count below exists
+   * to find, and counting them would answer "richly styled" for it. So the
+   * block is marked where it starts and the count stops there.
+   */
+  const sheets = [...files.entries()]
+    .filter(([p]) => p.endsWith('.css'))
+    .map(([, b]) => (b.includes(UTILITY_BLOCK_MARKER) ? b.slice(0, b.indexOf(UTILITY_BLOCK_MARKER)) : b))
   // Counted per file and summed rather than over a concatenation: `^` is
   // anchored per line, and joining would only matter at the seams.
   const rules = sheets.reduce((n, body) => n + count(body, /^\s*\.[\w-]+/gm), 0)
@@ -429,7 +424,7 @@ export function auditStylingDiscipline(html: string, outputKind: OutputKind): In
      */
     const definedIn = new Map<string, Set<string>>()
     for (const [path, body] of files) {
-      if (!/\.(vue|svelte)$/.test(path)) continue
+      if (!/\.(vue)$/.test(path)) continue
       for (const block of body.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)) {
         scopedBlocks++
         scopedRules += count(block[1], /^\s*[.:#[a-zA-Z][^{}]*\{/gm)

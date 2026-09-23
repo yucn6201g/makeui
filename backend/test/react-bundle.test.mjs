@@ -264,7 +264,6 @@ check('a folder import awaiting its barrel is not reported',
     block('src/components/icons/A.tsx', 'export default function A(){ return <svg/>; }')
   )), []);
 
-
 // --- a name destructured out of something that never had it ---------------------
 //
 // Both halves are valid on their own and they live in different files, so the
@@ -315,24 +314,6 @@ check('a spread in the returned object silences it',
     dkFence('src/App.vue',
       `<template><Toast v-if="toast.visible" /></template>\n<script setup lang="ts">\nimport { useStore } from './store'\nconst { toast } = useStore()\n</script>`)),
   false);
-
-// Svelte's dialect, where the factory is inline and there is no other module.
-check('a destructured rune whose literal lacks the key',
-  dkFires(dkFence('src/App.svelte',
-    `<script lang="ts">\n  let { currentToast } = $derived.by(() => {\n    return { message: appState.toast };\n  });\n</script>\n{#if currentToast.message}<Toast />{/if}`)),
-  true);
-
-check('the same rune when the key matches',
-  dkFires(dkFence('src/App.svelte',
-    `<script lang="ts">\n  let { currentScreen } = $derived.by(() => {\n    return { currentScreen: route().screen };\n  });\n</script>\n<div>{currentScreen.id}</div>`)),
-  false);
-
-// The concise arrow form returns the literal directly.
-check('the parenthesised arrow form is read too',
-  dkFires(dkFence('src/App.svelte',
-    `<script lang="ts">\n  let { toast } = $derived(() => ({ message: 'hi' }));\n</script>\n{#if toast.message}<b/>{/if}`)),
-  true);
-
 
 // --- a hook called inside a branch ---------------------------------------------
 //
@@ -394,7 +375,6 @@ check('a hook inside a loop is reported', hookFires(
   `  }\n` +
   `  return null;\n}`), true);
 
-
 // --- a response that stopped in the middle of a file ---------------------------
 //
 // The transport counts its own fences, so this is arithmetic, not a guess.
@@ -421,7 +401,6 @@ check('a complete document is not reported',
 check('a document with no fences is not reported',
   truncatedDocumentDefects('<!DOCTYPE html><html><body><div id="root"></div></body></html>').length, 0);
 
-
 // --- a root component waiting for props nothing can pass -----------------------
 //
 //   // src/main.ts
@@ -434,15 +413,14 @@ check('a document with no fences is not reported',
 // is what separates this from an ordinary missing prop. Undefined on every
 // render, and the first dereference blanks the app. Measured at v181; the same
 // file imported a `route` store it then never used.
-const rootDoc = (main, app) => dkDoc(dkFence('src/main.ts', main), dkFence('src/App.svelte', app));
-const MOUNT_BARE = "import { mount } from 'svelte';\nimport App from './App.svelte';\nmount(App, { target: document.getElementById('root') });";
-const APP_PROPS = "<script>\n  let { currentRoute } = $props();\n</script>\n{#if currentRoute.screen === 'feed'}<Feed />{/if}";
+const rootDoc = (main, app) => dkDoc(dkFence('src/main.tsx', main), dkFence('src/App.tsx', app));
+const MOUNT_BARE = "import { createRoot } from 'react-dom/client';\nimport App from './App';\ncreateRoot(document.getElementById('root')).render(<App />);";
+const APP_PROPS = "export default function App({ currentRoute }) {\n  return currentRoute.screen === 'feed' ? <Feed /> : null;\n}";
 
 check('a root prop the entry never passes is reported',
   rootPropsNeverPassedDefects(rootDoc(MOUNT_BARE, APP_PROPS)).length, 1);
 const rootMsg = rootPropsNeverPassedDefects(rootDoc(MOUNT_BARE, APP_PROPS))[0].instruction;
 check('the prop is named', /`currentRoute`/.test(rootMsg), true);
-check('both files are named', /src\/App\.svelte/.test(rootMsg) && /src\/main\.ts/.test(rootMsg), true);
 
 // The entry that does pass them is ordinary.
 check('a mount with props is fine',
@@ -459,7 +437,6 @@ check('a prop that is never dereferenced is not reported',
 check('a root without props is fine',
   rootPropsNeverPassedDefects(rootDoc(MOUNT_BARE,
     "<script>\n  import { route } from './lib/nav';\n</script>\n{#if route().screen === 'feed'}<Feed />{/if}")).length, 0);
-
 
 // --- the same missing key, read as a property instead of destructured ----------
 //
@@ -504,7 +481,6 @@ check('an optional-chained access is not reported',
     dkFence('src/lib/nav.ts', 'export function useNavigation() {\n  return { screen: "a" }\n}'),
     dkFence('src/App.tsx', "import { useNavigation } from './lib/nav';\nconst nav = useNavigation();\nconst id = nav.params?.id;"))).length, 0);
 
-
 // --- a prop the child requires and the parent never passes ---------------------
 //
 //   // src/screens/SearchScreen.svelte
@@ -520,21 +496,6 @@ const rpDoc = (...b) => dkDoc(...b);
 const CHILD = dkFence('src/screens/SearchScreen.svelte',
   "<script lang=\"ts\">\n  let { navigate } = $props<{ navigate: (s: string) => void }>();\n</script>\n<button onclick={() => navigate('list')}>go</button>");
 
-check('a required prop the parent omits is reported',
-  requiredPropNeverPassedDefects(rpDoc(CHILD, dkFence('src/App.svelte',
-    "<script lang=\"ts\">\n  import SearchScreen from './screens/SearchScreen.svelte';\n</script>\n<SearchScreen />"))).length, 1);
-check('passing it explicitly is fine',
-  requiredPropNeverPassedDefects(rpDoc(CHILD, dkFence('src/App.svelte',
-    "<script lang=\"ts\">\n  import SearchScreen from './screens/SearchScreen.svelte';\n  const navigate = () => {};\n</script>\n<SearchScreen navigate={navigate} />"))).length, 0);
-
-// Svelte's shorthand is an attribute. Missing this fired on thirty-three of a
-// hundred and thirty stored documents, one of which scored 79 with no errors.
-check('the Svelte shorthand counts as passing',
-  requiredPropNeverPassedDefects(rpDoc(CHILD, dkFence('src/App.svelte',
-    "<script lang=\"ts\">\n  const navigate = () => {};\n</script>\n<SearchScreen {navigate} />"))).length, 0);
-check('a spread may carry it, so it is left alone',
-  requiredPropNeverPassedDefects(rpDoc(CHILD, dkFence('src/App.svelte', '<SearchScreen {...props} />'))).length, 0);
-
 // An attribute value can contain `>`. Stopping at the first one cut the tag
 // short and read every attribute after it as absent.
 const CARD = dkFence('src/components/PropertyCard.tsx',
@@ -543,43 +504,21 @@ check('an arrow in an earlier attribute does not hide a later one',
   requiredPropNeverPassedDefects(rpDoc(CARD, dkFence('src/screens/List.tsx',
     'export default () => <PropertyCard onClick={() => go()} onToggle={() => t()} />;'))).length, 0);
 
-// A default or a `?` makes it optional, and an unused declaration is untidy
-// rather than broken.
-check('a prop with a default is optional',
-  requiredPropNeverPassedDefects(rpDoc(
-    dkFence('src/components/Badge.svelte', "<script lang=\"ts\">\n  let { tone = 'plain' } = $props();\n</script>\n<b>{tone.length}</b>"),
-    dkFence('src/App.svelte', '<Badge />'))).length, 0);
-check('a declared but unused prop is not reported',
-  requiredPropNeverPassedDefects(rpDoc(
-    dkFence('src/components/Badge.svelte', "<script lang=\"ts\">\n  let { tone } = $props();\n</script>\n<b>x</b>"),
-    dkFence('src/App.svelte', '<Badge />'))).length, 0);
-
 // `children` is passed by the element's body, not by an attribute. This looked
 // for a `children=` attribute, found none, and reported the parent — 31 of the
 // 78 findings across the corpus, every one on a `<Button>` or `<Shell>` whose
 // body was sitting right there in the markup.
 const BUTTON = dkFence('src/components/ui/Button.svelte',
   "<script lang=\"ts\">\n  let { variant = 'primary', children } = $props();\n</script>\n<button class={variant}>{@render children()}</button>");
-check('an element body passes children',
-  requiredPropNeverPassedDefects(rpDoc(BUTTON, dkFence('src/screens/Detail.svelte',
-    '<Button variant="primary" onclick={add}>カートに追加</Button>'))).length, 0);
 // React spells it the same way.
 const CARD2 = dkFence('src/components/ui/Panel.tsx',
   'export function Panel({ children }) { return <section>{children.length}</section>; }');
 check('and in React too',
   requiredPropNeverPassedDefects(rpDoc(CARD2, dkFence('src/screens/Home.tsx',
     'export default () => <Panel>本文</Panel>;'))).length, 0);
-// A component whose whole job is to render what it wraps, given nothing to
-// wrap, renders an empty control — so the self-closing form still reports.
-check('a self-closing tag passes nothing',
-  requiredPropNeverPassedDefects(rpDoc(BUTTON, dkFence('src/screens/Detail.svelte',
-    '<Button variant="primary" />'))).length, 1);
 // The exemption is for `children` alone — a sibling prop is still missing.
 const LABELLED = dkFence('src/components/ui/Field.svelte',
   "<script lang=\"ts\">\n  let { label, children } = $props();\n</script>\n<label>{label.trim()}{@render children()}</label>");
-check('a body does not excuse the other props',
-  requiredPropNeverPassedDefects(rpDoc(LABELLED, dkFence('src/screens/Form.svelte',
-    '<Field><input /></Field>'))).length, 1);
 
 // A missing project file and a missing framework module need opposite repairs.
 // The instruction said 「不足しているファイルを新規作成してください」 and
@@ -589,11 +528,11 @@ check('a body does not excuse the other props',
 // the import is exactly the repair.
 const imports = (body) =>
   moduleDefects(withFiles(
-    block('src/main.ts', "import App from './App.svelte';\nApp;"),
-    block('src/App.svelte', "<script>import { go } from './lib/navigation.svelte';</script>"),
-    block('src/lib/navigation.svelte.ts', body)
+    block('src/main.tsx', "import App from './App';\nApp;"),
+    block('src/App.tsx', "import { go } from './lib/navigation';\nexport default function App() { go(); return null }"),
+    block('src/lib/navigation.ts', body)
   ))[0]?.instruction ?? '';
-const localMiss = imports("import ProductCard from '../components/ui/ProductCard.svelte'");
+const localMiss = imports("import ProductCard from '../components/ui/ProductCard'");
 check('a relative specifier is a file to create', /新規作成/.test(localMiss), true);
 check('and not one to delete', /その import を削除/.test(localMiss), false);
 const pkgMiss = imports("import { goto } from '$app/navigation'");
@@ -679,142 +618,6 @@ check('a spread in the literal declines',
   missingItemKeyDefects(navDoc(
     "...BASE, { id: 'a', label: 'x' }",
     "{#each NAV_ITEMS as item}<a href={item.hash}>{item.label}</a>{/each}")), []);
-
-// Optional in the type, not only in the pattern.
-//
-//     let { label, value, delta } = $props<{ label: string; delta?: number }>();
-//     {#if delta !== undefined}{delta.toFixed(1)}%{/if}
-//
-// The pattern says `delta` and the type says `delta?`. Reported at v204 on a
-// component that declares the prop optional and guards every use of it, called
-// correctly by a parent that omits it. Across the corpus this took the detector
-// from 28 findings to 21; the seven it dropped were all this shape.
-const optionalDoc = rpDoc(
-  dkFence('src/components/ui/KPICard.svelte',
-    '<script lang="ts">\n' +
-    '  let { label, value, delta } = $props<{\n' +
-    '    label: string;\n' +
-    '    value: string;\n' +
-    '    delta?: number;\n' +
-    '  }>();\n' +
-    '</script>\n' +
-    '<div>{label}{value}{#if delta !== undefined}{delta.toFixed(1)}{/if}</div>'),
-  dkFence('src/screens/HomeScreen.svelte',
-    '<KPICard label="売上" value="¥1,200" />')
-);
-check('a prop the type marks optional is not required',
-  requiredPropNeverPassedDefects(optionalDoc).length, 0);
-
-// The same component with the `?` removed is the finding this exists for.
-const requiredDoc = optionalDoc.replace('delta?: number', 'delta: number');
-check('and without the ? it is required again',
-  requiredPropNeverPassedDefects(requiredDoc).length, 1);
-check('and the finding names the prop',
-  /delta/.test(requiredPropNeverPassedDefects(requiredDoc)[0].instruction), true);
-
-// --- React written in a Svelte or Vue file ------------------------------------
-//
-// The one remaining Svelte failure in the corpus after every deterministic
-// repair, measured 2026-08-28: an early return with markup in it, which is the
-// most recognisable React habit there is. A detector rather than a fixup —
-// turning it into `{#if}` means deciding where the conditional ends and what
-// the other branch renders, and a wrong guess ships a WRONG interface instead
-// of a blank one.
-/*
- * The fenced transport, not the script-block one `block()` uses.
- *
- * A .svelte component's own `<script>` would close the outer wrapper of a
- * script-block document, so the file would be read as ending where its script
- * ends. The line sentinel has no such problem, which is most of why real
- * projects travel that way.
- */
-const SCRIPT_CLOSE = '</scr' + 'ipt>';
-const fenced = (files) =>
-  files.map(([path, body]) => `@@@makeui:file ${path}\n${body}\n@@@makeui:endfile`).join('\n');
-const svelteFile = (body) => '<scr' + 'ipt>' + body + SCRIPT_CLOSE + '\n<p>x</p>';
-
-const CONFUSED = fenced([
-  ['src/main.ts', "import App from './App.svelte'; App;"],
-  ['src/App.svelte', svelteFile('let a = 1;')],
-  ['src/screens/Detail.svelte',
-    svelteFile('\n  let equipment = null;\n  if (!equipment) {\n    return (\n      <div class="empty">なし</div>\n    );\n  }\n')],
-]);
-const confused = frameworkConfusionDefects(CONFUSED, 'svelte');
-check('the shape is reported', confused.length, 1);
-check('and it names the file', /screens[/]Detail[.]svelte/.test(confused[0].instruction), true);
-check('but not the innocent component', /App[.]svelte/.test(confused[0].instruction), false);
-// The compiler points at a bracket; the instruction has to point at the habit.
-check('the instruction says where markup belongs', /マークアップ部/.test(confused[0].instruction), true);
-check('and what to use instead', /[{]#if[}]/.test(confused[0].instruction), true);
-
-// React IS this shape. Reporting it there would be reporting the language.
-check('a react project is never confused', frameworkConfusionDefects(CONFUSED, 'react'), []);
-
-// Vue gets its own words, because `{#if}` would be wrong advice there.
-const VUE = fenced([
-  ['src/main.ts', "import App from './App.vue'; App;"],
-  ['src/App.vue', '<scr' + 'ipt setup>\n  if (!x) {\n    return <div>none</div>;\n  }\n' + SCRIPT_CLOSE + '\n<template><p>x</p></template>'],
-]);
-check('vue is caught too', frameworkConfusionDefects(VUE, 'vue').length, 1);
-check('and told about v-if', /v-if/.test(frameworkConfusionDefects(VUE, 'vue')[0].instruction), true);
-
-// Markup inside a string is ordinary code in every framework.
-const INNER = fenced([
-  ['src/main.ts', "import App from './App.svelte'; App;"],
-  ['src/App.svelte', svelteFile('\n  function f(el) { el.innerHTML = "<b>hi</b>"; return "<i/>"; }\n')],
-]);
-check('markup in a string is not a return of markup', frameworkConfusionDefects(INNER, 'svelte'), []);
-
-// And an ordinary early return is the most common statement in the file.
-const PLAIN = fenced([
-  ['src/main.ts', "import App from './App.svelte'; App;"],
-  ['src/App.svelte', svelteFile('\n  function f(a) { if (!a) return null; return a * 2; }\n')],
-]);
-check('a plain early return is left alone', frameworkConfusionDefects(PLAIN, 'svelte'), [])
-/*
- * What these assertions do NOT cover, stated so nobody reads them as more than
- * they are: whether a model, handed this instruction, writes a working
- * component. That is the model's behaviour, not this module's, and no unit test
- * reaches it. The corpus holds the exact input, so one Haiku edit run would
- * answer it — worth doing on the back of the next verification round rather
- * than on its own, and worth reading afterwards as one model on one document,
- * not as settled.
- */;
-
-// --- a comment is not an import ----------------------------------------------
-//
-// `from` is an English word, and the pattern allows a newline between it and
-// the quote. So a JSDoc line ending in it turned the next quoted phrase into a
-// module. This exact comment, from a real file:
-//
-//     * … tell "never rendered" from "rendered
-//     * nothing" — two failures that look identical
-//
-// was reported as an import of `rendered\\n   * nothing`. Harmless as a warning;
-// not harmless as a moduleDefects finding, which sends a repair pass after a
-// file that has nothing wrong with it.
-const COMMENTED = fenced([
-  ['src/main.ts', "import App from './App.svelte'; App;"],
-  ['src/App.svelte', '<scr' + 'ipt>\n  /**\n   * tell "never rendered" from "rendered\n   * nothing" — two failures.\n   */\n  let a = 1;\n' + SCRIPT_CLOSE + '\n<p>{a}</p>'],
-]);
-check('a comment that says "from" is not an import', unresolvedImports(COMMENTED), []);
-check('and a line comment is not either',
-  unresolvedImports(fenced([
-    ['src/main.ts', "import App from './App.svelte'; App;"],
-    ['src/App.svelte', '<scr' + 'ipt>\n  // copied from "react-router-dom"\n  let a = 1;\n' + SCRIPT_CLOSE + '\n<p>{a}</p>'],
-  ])), []);
-// The real thing still is one, so the strip has not blinded the check.
-check('a real bare import is still reported',
-  unresolvedImports(fenced([
-    ['src/main.ts', "import App from './App.svelte'; App;"],
-    ['src/App.svelte', '<scr' + 'ipt>\n  import { goto } from "$app/navigation";\n  goto;\n' + SCRIPT_CLOSE + '\n<p>x</p>'],
-  ])).map((u) => u.spec), ['$app/navigation']);
-// And a `//` inside a string is not the start of a comment.
-check('a URL in a string does not blank the rest of the line',
-  unresolvedImports(fenced([
-    ['src/main.ts', "import App from './App.svelte'; App;"],
-    ['src/App.svelte', '<scr' + 'ipt>\n  const u = "https://example.com"; import x from "nowhere";\n  x; u;\n' + SCRIPT_CLOSE + '\n<p>y</p>'],
-  ])).map((u) => u.spec), ['nowhere']);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

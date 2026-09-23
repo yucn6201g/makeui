@@ -94,9 +94,9 @@ export interface StyleEdit {
  */
 export function isReactDocument(html: string): boolean {
   // A fenced project: a whole-line opener naming a component file.
-  if (/^@@@makeui:file .*\.(?:tsx|jsx|vue|svelte)\s*$/m.test(html)) return true;
+  if (/^@@@makeui:file .*\.(?:tsx|jsx|vue)\s*$/m.test(html)) return true;
   // The transport stored projects still travel in.
-  return /data-file=["'][^"']+\.(?:tsx|jsx|vue|svelte)["']/i.test(html);
+  return /data-file=["'][^"']+\.(?:tsx|jsx|vue)["']/i.test(html);
 }
 
 function escapeSelector(selector: string): string {

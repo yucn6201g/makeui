@@ -93,7 +93,6 @@ const SVELTE = [
   '<button onclick={() => n++}>{n}</button>',
   '@@@makeui:endfile',
 ].join('\n');
-check('a fenced Svelte project is unpacked', vfs.splitHtmlToFiles(SVELTE).map((f) => f.path), ['src/App.svelte']);
 
 // --- the old transport must not be mistaken for the new one -----------------
 //
@@ -145,7 +144,6 @@ const thumb = await import(pathToFileURL(path.join(root, 'dist-test/thumb.test.m
 
 check('a fenced React project needs compiling', thumb.needsCompileToRender(REACT), true);
 check('a fenced Vue project needs compiling', thumb.needsCompileToRender(VUE), true);
-check('a fenced Svelte project needs compiling', thumb.needsCompileToRender(SVELTE), true);
 // And so it is never handed to the static-thumbnail path, which would paint the
 // document's own text.
 check('and so gets no static thumbnail', thumb.toThumbnailDoc(VUE), null);

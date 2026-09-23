@@ -40,7 +40,11 @@ const judge = src.slice(judgeStart, judgeEnd);
 check('the judge was found', judgeStart > 0 && judgeEnd > judgeStart, true);
 
 check('after is built by the same collector as before',
-  /const after = collectDefects\(candidate, afterRuntime, afterVisual\)/.test(judge), true);
+  /let after = collectDefects\(candidate, afterRuntime, afterVisual\)/.test(judge), true);
+// Re-collected once the critic has been asked (see `critiqueCandidate`), and by
+// the same collector — never assembled any other way.
+check('every assignment to after is that collector',
+  [...judge.matchAll(/\bafter = ([^\n]+)/g)].map((m) => m[1].trim()).filter((rhs) => rhs !== 'collectDefects(candidate, afterRuntime, afterVisual)'), []);
 
 /*
  * And no auditor is called directly inside the judge. A direct call is the

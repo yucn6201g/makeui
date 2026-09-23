@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { toThumbnailDoc, needsCompileToRender } from '../utils/thumbnail';
 import { splitHtmlToFiles } from '../utils/virtualFs';
 import { buildReactPreview, enqueueBuild } from '../utils/reactPreview';
+import { fetchPreviewPolitely } from '../utils/previewFetch';
 
 /**
  * A project card's preview frame.
@@ -41,7 +42,8 @@ function loadDocument(
   const hit = documents.get(projectId);
   if (hit) return hit;
 
-  const pending = fetchHtml(projectId).then(
+  // Queued and retried — see utils/previewFetch.ts for why a burst of cards failed.
+  const pending = fetchPreviewPolitely(() => fetchHtml(projectId)).then(
     (html) => { if (!html) documents.delete(projectId); return html; },
     (e) => { documents.delete(projectId); throw e; },
   );

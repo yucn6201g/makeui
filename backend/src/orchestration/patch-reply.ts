@@ -48,6 +48,21 @@
 const BLOCK = /^<{7} SEARCH[ \t]*\n([\s\S]*?)\n?^={7}[ \t]*\n([\s\S]*?)\n?^>{7} REPLACE[ \t]*$/gm;
 
 /**
+ * A file small enough that the blocks cost more than the file.
+ *
+ * A patch reply has a fixed overhead — the markers, and enough surrounding
+ * lines for each SEARCH to occur exactly once — which a 400-line stylesheet
+ * absorbs and a 20-line button does not. Measured over 60 days on the files
+ * production actually patched: every one under 1,100 characters cost MORE than
+ * sending it whole, and the two worst were a 289-character Header that replied
+ * with 3,717 characters and a 400-character routes.ts that replied with 5,579.
+ *
+ * Here rather than beside either caller, because the repair path and the edit
+ * path ask for the same form and the floor is a property of the form.
+ */
+export const MIN_PATCH_CHARS = 2_000;
+
+/**
  * Whether a reply is written as blocks rather than as a file.
  *
  * Any marker at all counts. A reply with a SEARCH marker that does not parse is

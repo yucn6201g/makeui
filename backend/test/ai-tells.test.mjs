@@ -204,7 +204,7 @@ const scopedProject = (kind) => {
   );
 };
 
-for (const kind of ['vue', 'svelte']) {
+for (const kind of ['vue']) {
   const ids = auditStylingDiscipline(scopedProject(kind), kind).map((d) => d.id);
   check(`${kind}: styling that lives in the components is reported`,
     ids.includes('scoped-styling'), true);
@@ -234,7 +234,7 @@ const duplicated = (kind) => {
   );
 };
 
-for (const kind of ['vue', 'svelte']) {
+for (const kind of ['vue']) {
   const found = auditStylingDiscipline(duplicated(kind), kind).find((d) => d.id === 'scoped-styling');
   check(`${kind}: the duplicated classes are named`,
     /\.empty-state（4ファイル）/.test(found?.instruction ?? ''), true);
@@ -257,7 +257,7 @@ const sharedProject = (kind) => {
       fence(`src/screens/S${i}Screen.${ext}`, `<div class="card">x</div>`)),
   );
 };
-for (const kind of ['vue', 'svelte']) {
+for (const kind of ['vue']) {
   check(`${kind}: a shared stylesheet with a few scoped rules is not`,
     auditStylingDiscipline(sharedProject(kind), kind).map((d) => d.id).includes('scoped-styling'), false);
 }
@@ -288,7 +288,7 @@ check('a project with no stylesheet at all is reported',
 // once per component, and writing them again is not the repair. 92 of the 99
 // documents raising `thin-stylesheet` across the corpus also raised
 // `scoped-styling`.
-for (const kind of ['vue', 'svelte']) {
+for (const kind of ['vue']) {
   const ids = auditStylingDiscipline(duplicated(kind), kind).map((d) => d.id);
   check(`${kind}: scoped styling is reported`, ids.includes('scoped-styling'), true);
   check(`${kind}: and the thin sheet is not reported beside it`,

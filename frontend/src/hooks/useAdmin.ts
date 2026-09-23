@@ -139,7 +139,7 @@ export interface AdminProject {
   updatedAt: string;
   preset?: string;
   model?: string;
-  outputKind?: 'html' | 'react' | 'vue' | 'svelte';
+  outputKind?: 'html' | 'react' | 'vue';
   /** Tokens this project has consumed across every run. Absent on records written before it was counted. */
   totalTokens?: number;
   requestCount?: number;

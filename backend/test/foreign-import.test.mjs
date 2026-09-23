@@ -59,9 +59,6 @@ check('the framework itself is installed',
   ["import { useState } from 'react';", "import { createRoot } from 'react-dom/client';"]
     .map((b) => foreignImport(b, 'react')),
   [null, null]);
-check('so is every framework in its own project',
-  [foreignImport("import { ref } from 'vue';", 'vue'), foreignImport("import { writable } from 'svelte/store';", 'svelte')],
-  [null, null]);
 check('relative imports are the project itself',
   ["import App from './App';", "import { yen } from '../lib/format';"].map((b) => foreignImport(b, 'react')),
   [null, null]);
@@ -72,8 +69,6 @@ check('relative imports are the project itself',
  * learned this after a Svelte project that met 98% of the rubric lost eight
  * points for importing its own framework's type definitions.
  */
-check('a type-only import is not a dependency',
-  foreignImport("import type { HTMLButtonAttributes } from 'svelte/elements';", 'svelte'), null);
 
 // A subpath of something installed is installed.
 check('a subpath of an installed package is allowed',
@@ -81,8 +76,8 @@ check('a subpath of an installed package is allowed',
 
 // --- and it holds for the other two frameworks ---------------------------------------
 check('a package is foreign in every framework',
-  ['react', 'vue', 'svelte'].map((k) => foreignImport("import x from 'lodash';", k)),
-  ['lodash', 'lodash', 'lodash']);
+  ['react', 'vue'].map((k) => foreignImport("import x from 'lodash';", k)),
+  ['lodash', 'lodash']);
 
 /*
  * The allow-list is the bundle's, not a copy of it.
@@ -92,7 +87,7 @@ check('a package is foreign in every framework',
  * `providedModules` — what the preview actually supplies — so a package added
  * to the bundle is permitted here the same day.
  */
-for (const kind of ['react', 'vue', 'svelte']) {
+for (const kind of ['react', 'vue']) {
   for (const mod of FRAMEWORKS[kind].providedModules) {
     check(`  ${kind}: ${mod} is permitted because the bundle supplies it`,
       foreignImport(`import x from '${mod}';`, kind), null);

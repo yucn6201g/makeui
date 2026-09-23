@@ -182,7 +182,7 @@ curl -X PATCH "$API"/admin/users/<USERNAME> \
 - [ ] プリセット選択（None / DA / Carbon / Spindle / M3）
 - [ ] 各プリセットで生成すると、その系の色・角丸・書体になる（DA はフォーカスが黒＋黄、Carbon は角丸なし、Spindle と M3 はボタンが丸形）
 - [ ] 削除したプリセット（Product など）で保存したプロジェクトを開くと「プリセットなし」になり、生成もエラーにならない
-- [ ] 出力形式の切り替え（React / Vue / Svelte）
+- [ ] 出力形式の切り替え（React / Vue）
 - [ ] どの形式でも、プレビューにフェンス文字列（@@@makeui:file …）が出ず実UIが描画される
 - [ ] どの形式でも、コードタブに src/ 配下の実ファイルが並ぶ（index.html 1件だけにならない）
 - [ ] 推論と応答がチャット欄に逐次表示される（```html が混入しないこと）
@@ -636,7 +636,7 @@ aws ssm put-parameter \
 | 部品が真っ白（React #130）・関数が「is not a function」 | `export-missing`（export されていない名前の import）を確認。default しかないファイルを named import しているだけなら決定的修復が直します。逆向き（named export しかないファイルを default import）も、対象の export が1つか、import の名前と同じ export があれば直します（2026-09-14〜。`Screen.tsx` が複数の部品を export する形。「broke the app」の修復案5件中4件がこれでした） |
 | ブラウザ検証だけ画面が真っ白で、プレビューでは動く（`SecurityError: Failed to read the 'localStorage'`） | 2026-09-14（v450）に修正済み。検証の文書はオリジンを持たないため Web ストレージが使えず、プレビューにだけ代わりが入っていました。再発したら `react-bundle.ts` の `STORAGE_FALLBACK` が `<head>` に入っているか、`storage-fallback.test.mjs` が通るかを確認 |
 | 「どの操作からも到達できませんでした」がフォーム送信後やキー操作後の画面に出る | 巡回はクリックしかしません。コードがその画面へ `navigate` などで遷移していれば修復に回さないようにしました（2026-09-14〜。`navigatedToInCode`）。遷移の呼び出しがどこにも無い画面だけが報告されます |
-| 修復の差分（SEARCH/REPLACE）が当てはまらない | ログの `File repair patch did not apply` の `error` と `head`（返答の先頭300文字）を確認。ファイル全体で1回出し直すので修復は失われません。差分形式はスタイルシートと見た目の指摘だけに使います（`patchWorthy`） |
+| 修復・編集の差分（SEARCH/REPLACE）が当てはまらない | ログの `File repair patch did not apply` / `File edit patch did not apply` の `error` と `head`（返答の先頭300文字）を確認。ファイル全体で1回出し直すので修復も編集も失われません。差分形式は **2,000文字以上のファイル**で、修復は変更の中央値が10%以下の指摘だけ（`patchWorthy` / `CHANGE_SHARE`）、編集は既存ファイルなら常に使います |
 | 返答の要件の件数が出ない | ログの `Requirements extracted`（生成・編集とも）を確認。抽出が失敗すると空のリストで、返答に要件の行は出ません（生成は止めません） |
 | interaction-repair が毎回走る | ログの `Quality defects detected` で defect id を確認。同じ id が `Interaction repair rejected` で `remaining` に残り続けるなら誤検出です（修正のしようが無いので棄却され続けます）。生成物の該当箇所を実際に見て、指摘が事実かを確かめてから `interaction-audit.ts` / `design-audit.ts` の判定を直します |
 | 修正パスの後に文書が壊れる | `Interaction repair rejected` の `reason: document shrank` を確認。修正パスは文書全体を書き直すため、途中で止まった応答は**検査対象のファイルごと失われて指摘が減り**、そのまま採用されると欠損した成果物が残ります。現在は元の長さの85%未満を棄却します |

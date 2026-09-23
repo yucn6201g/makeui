@@ -15,6 +15,7 @@
 import { execSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
+import fs from 'node:fs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 process.env.CLOUDFRONT_DOMAIN = 'cdn.example.net';
@@ -47,6 +48,9 @@ const IMAGES = [
   img('tshirt', 'apparel', 1), img('tshirt', 'apparel', 2),
   img('jeans', 'apparel', 1),
   img('knitwear', 'apparel', 1),
+  img('coffee', 'drink', 1), img('coffee', 'drink', 2),
+  img('laptop', 'electronics', 1),
+  img('book', 'leisure', 1),
   img('office', 'scene', 1),
   img('warehouse', 'scene', 1),
 ];
@@ -131,9 +135,19 @@ export const P = [{ name: 'バター 200g', image: '${WRONG}' }];
 check('the library is cached, so this is still the full one', subjectOf(r.html.match(/image: '([^']+)'/)[1]), 'butter');
 
 // --- what must not be touched ---------------------------------------------
+/*
+ * This asserted the opposite until 2026-09-23 — "another host is left alone" —
+ * which is a deny-list: it replaced the hosts on a list and let every other one
+ * through. A licence guarantee cannot rest on a list of offenders, so a
+ * photograph on a host that is not our CC0 library is now given one from it.
+ * The case that must still be left alone is a URL the USER asked for, below.
+ */
 r = await assignItemImages(`<html><body><img src="https://example.com/photo.jpg" alt="バター"></body></html>`);
-check('another host is left alone', r.html.includes('https://example.com/photo.jpg'), true);
-check('and produces no assignment', r.assignments.length, 0);
+check('a photograph on another host is replaced from the CC0 library', r.html.includes('https://example.com/photo.jpg'), false);
+check('by one of what it shows', subjectOf((r.html.match(/src="([^"]+)"/) || [])[1] || ''), 'butter');
+r = await assignItemImages(`<html><body><img src="https://example.com/photo.jpg" alt="バター"></body></html>`,
+  { brief: 'ロゴは https://example.com/photo.jpg を使って' });
+check('but not one the user asked for by URL', r.html.includes('https://example.com/photo.jpg'), true);
 
 r = await assignItemImages('<html><body><h1>ただのページ</h1></body></html>');
 check('a document with no photographs is a no-op', r.assignments.length, 0);
@@ -327,6 +341,157 @@ check('a relative path is left alone',
 // A social link is a link, not an image source.
 check('an ordinary external link is left alone',
   slotForeignImages(`<a href="https://instagram.com/shop">Instagram</a>`).replaced, 0);
+
+// --- names no term list will ever contain ----------------------------------
+//
+// Measured in production over three weeks: 42 of 84 photograph slots were left
+// blank, and the blanked names were 「アメリカーノ」「カプチーノ」, five novels and
+// 「USB-C ハブ」. The library holds `coffee` and `book`. The matcher is a
+// substring test, so a cappuccino is not coffee and a novel is not a book — and
+// no list of terms fixes that, because every shop names its own products.
+//
+// So the leftovers are read once, together, by a model. Injected here: without a
+// resolver nothing in this module makes a call, which is what keeps this test
+// hermetic.
+const ITEMS = (names) => `<html><body>
+<script type="text/jsx" data-file="src/data/items.ts">
+export const ITEMS = [
+${names.map((n, i) => `  { id: '${i}', name: '${n}', image: '${WRONG}' },`).join('\n')}
+];
+</script></body></html>`;
+
+const asked = [];
+const resolver = async (labels) => {
+  asked.push(...labels);
+  return new Map([['カプチーノ', 'coffee'], ['騎士団長殺し', 'book'], ['第3四半期の売上速報', null]]);
+};
+
+r = await assignItemImages(ITEMS(['カプチーノ', '騎士団長殺し', '第3四半期の売上速報']), { resolveNames: resolver });
+urls = [...r.html.matchAll(/image: '([^']+)'/g)].map((m) => m[1]);
+check('a cappuccino gets coffee', subjectOf(urls[0]), 'coffee');
+check('a novel gets a book', subjectOf(urls[1]), 'book');
+check('a headline gets no photograph', urls[2].startsWith('data:image/svg+xml'), true);
+check('the resolver is asked once, for the names the list could not place',
+  asked, ['カプチーノ', '騎士団長殺し', '第3四半期の売上速報']);
+
+// A name the term list already places is never sent to the model.
+asked.length = 0;
+await assignItemImages(ITEMS(['食パン 6枚切り']), { resolveNames: resolver });
+check('names the term list places are not asked about', asked, []);
+
+// Without a resolver the behaviour is what it was: no call, and no match.
+r = await assignItemImages(ITEMS(['アメリカーノ']));
+urls = [...r.html.matchAll(/image: '([^']+)'/g)].map((m) => m[1]);
+check('with no resolver, an unplaceable name is drawn instead', urls[0].startsWith('data:image/svg+xml'), true);
+
+// A subject the model invents is not a subject the library is indexed by, and
+// must not reach the picker. (subject-resolve filters these; this is the pass's
+// own guard against a resolver that does not.)
+r = await assignItemImages(ITEMS(['ゼファー七号']), { resolveNames: async () => new Map([['ゼファー七号', 'espresso']]) });
+urls = [...r.html.matchAll(/image: '([^']+)'/g)].map((m) => m[1]);
+check('a subject the library does not hold is drawn, not guessed at', urls[0].startsWith('data:image/svg+xml'), true);
+
+// --- the page's own domain, when the name settles nothing -------------------
+//
+// 「アパレルのECサイト」 names a category and no subject, and an item called
+// 「商品A」 names nothing at all. A garment is still the right KIND of picture.
+r = await assignItemImages(ITEMS(['商品A', '商品B']), { brief: 'アパレルのECサイトを作ってください' });
+urls = [...r.html.matchAll(/image: '([^']+)'/g)].map((m) => m[1]);
+check("an unnamed item takes the brief's category",
+  ['tshirt', 'jeans', 'knitwear'].includes(subjectOf(urls[0])), true);
+check('and its neighbour is not the same photograph', urls[0] === urls[1], false);
+// A brief about nothing photographable must not invent a subject.
+r = await assignItemImages(ITEMS(['商品A']), { brief: '社内の承認ワークフローを管理する画面' });
+urls = [...r.html.matchAll(/image: '([^']+)'/g)].map((m) => m[1]);
+check('a brief naming nothing photographable draws instead', urls[0].startsWith('data:image/svg+xml'), true);
+
+// --- what the gap looks like now --------------------------------------------
+r = await assignItemImages(ITEMS(['AI企業の時価総額が過去最高を更新', 'GitHub ActionsでCI/CDを構築する']), {});
+urls = [...r.html.matchAll(/image: '([^']+)'/g)].map((m) => m[1]);
+check('every gap is drawn', urls.every((u) => u.startsWith('data:image/svg+xml')), true);
+check('two items do not get the same panel', urls[0] === urls[1], false);
+check('the panel never says 画像なし', urls.some((u) => decodeURIComponent(u).includes('画像なし')), false);
+check('the outcome says it was drawn', r.assignments.map((a) => a.outcome), ['artwork', 'artwork']);
+
+// --- a picture written as a name somebody made up ----------------------------
+//
+// Measured on a real apparel storefront (2026-09-18): every product carried
+// `image: 'women-clothes-1'` — twelve of them, none a URL, none the slot, none a
+// file in the project. The page shipped with no photographs and nothing reported
+// it, because to every check in the pipeline those are just strings.
+{
+  const invented = `<script type="text/jsx" data-file="src/data/products.ts">
+export const PRODUCTS = [
+  { id: 'p1', name: 'ウールニットセーター', price: 8900, image: 'wool-sweater' },
+  { id: 'p2', name: 'デニムジーンズ', price: 6980, thumbnail: 'denim-jeans-2' },
+  { id: 'p3', name: '食パン 6枚切り', price: 280, image: 'hero.png' },
+  { id: 'p4', name: 'カルピスバター', price: 1580, image: 'https://cdn.example.net/stock/butter/butter1.jpg' },
+];
+</script>`;
+  r = await assignItemImages(invented);
+  const byName = (name) => (r.html.match(new RegExp(`name: '${name}'[^}]*?(?:image|thumbnail): '([^']+)'`)) ?? [])[1];
+  check('an invented identifier becomes a photograph of the item', subjectOf(byName('ウールニットセーター')), 'knitwear');
+  check('whatever the field is called', subjectOf(byName('デニムジーンズ')), 'jeans');
+  check('a real file in the project is left alone', byName('食パン 6枚切り'), 'hero.png');
+  check('and a URL that already resolves is still reassigned by name',
+    subjectOf(byName('カルピスバター')), 'butter');
+}
+
+// --- a word that merely contains a subject term -------------------------------
+//
+// Japanese has no spaces, so 「サングラス」 contains 「グラス」 and a pair of
+// sunglasses was filed under tableware — the one wrong photograph among twelve
+// right ones on that storefront. The library has no sunglasses, so nothing is
+// the correct answer.
+{
+  const items = `<script type="text/jsx" data-file="src/data/items.ts">
+export const ITEMS = [
+  { id: '1', name: 'サングラス', image: 'sunglasses-1' },
+  { id: '2', name: 'ノートパソコン', image: 'laptop-1' },
+];
+</script>`;
+  r = await assignItemImages(items);
+  const urls2 = [...r.html.matchAll(/image: '([^']+)'/g)].map((m) => m[1]);
+  check('sunglasses are not tableware', urls2[0].startsWith('data:image/svg+xml'), true);
+  check('but a word that IS a term still matches', subjectOf(urls2[1]), 'laptop');
+}
+
+// --- an allow-list, not a list of offenders ----------------------------------------
+/*
+ * 「商用利用可能な画像を必ず挿入する」. The library is CC0 — all 3,641 entries in
+ * the index say so, checked 2026-09-23 — and the only way a non-CC0 picture can
+ * reach a page is a URL the model wrote itself. The list of hosts above caught
+ * the ones a model reaches for; any other host shipped untouched. Over 131
+ * stored documents none had one, so this is a rule for what has not happened.
+ */
+{
+  const page = [
+    "{ name: 'シャツ', image: 'https://m.media-amazon.com/images/I/81abc.jpg' }",
+    "{ name: 'パンツ', image: 'https://cdn.shopify.com/s/files/1/pants.png?v=2' }",
+    '<img src="https://upload.wikimedia.org/wikipedia/commons/a/ab/Cat.webp" alt="猫">',
+    "<img src=\"https://cdn.example.net/stock/tshirt/1.jpg\" alt=\"ours\">",
+    '<img src="https://icons.example.org/logo.svg" alt="logo">',
+    '<img src="data:image/png;base64,AAAA" alt="uploaded">',
+  ].join('\n');
+  const r = slotForeignImages(page);
+  check('a photograph on any other host becomes a slot', r.replaced, 3);
+  check('amazon, shopify and wikimedia are all gone',
+    /media-amazon|shopify|wikimedia/.test(r.html), false);
+  check('our own CC0 library is kept', r.html.includes('https://cdn.example.net/stock/tshirt/1.jpg'), true);
+  // An external svg is an icon or a logo far more often than a photograph.
+  check('an svg is not turned into a photograph', r.html.includes('logo.svg'), true);
+  // A user's own upload becomes a data: URI, and is theirs.
+  check('an uploaded picture is kept', r.html.includes('data:image/png;base64,AAAA'), true);
+  // A URL the user typed is a picture they chose and are answerable for.
+  const theirs = slotForeignImages(page, 'このURLの画像を使って https://cdn.shopify.com/s/files/1/pants.png?v=2');
+  check('a URL the user asked for is left where it is',
+    theirs.html.includes('https://cdn.shopify.com/s/files/1/pants.png?v=2'), true);
+  check('and only that one', theirs.replaced, 2);
+}
+{
+  const src = fs.readFileSync(path.join(root, 'src/tools/assign-images.ts'), 'utf8');
+  check('the pass is told the user\'s words', /slotForeignImages\(html, context\.brief \?\? ''\)/.test(src), true);
+}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

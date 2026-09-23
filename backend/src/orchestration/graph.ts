@@ -7,6 +7,7 @@ import { searchDesignSystem } from '../tools/knowledge-base-tool.js'
 import { createBedrockClient } from '../config/bedrock-client.js'
 import { withTokenLedger, recordTokens, recordUnreportedCall, logLedger, type TokenLedger } from '../services/token-ledger.js'
 import { systemField, type SystemPrompt } from './prompt-cache.js'
+import { revisePlan } from './plan-revision.js'
 import { RepairBudget, REPAIR_FLOOR } from './repair-budget.js'
 import { applyDeterministicFixes, clampDecorativeShadows } from './deterministic-fixes.js'
 import { weightedCount } from './defect-weight.js'
@@ -248,18 +249,20 @@ import {
 import { captionImages } from './image-captions.js'
 import { prepareSuppliedImages, singleImageCaption } from './supplied-images.js'
 import { parseAttachment, attachmentDirective, type RawAttachment } from '../utils/data-attachment.js'
-import { appendJobEvent, updateJobStream } from '../services/job-service.js'
+import { appendJobEvent, tokenHeartbeat, updateJobStream } from '../services/job-service.js'
 import { allowedModelsForRun } from '../services/token-usage.js'
 import {
   auditInteractivity,
   auditShellContract,
   declaredScreenIds,
   screenLabels,
+  specScreenTitle,
   type InteractionDefect,
 } from './interaction-audit.js'
-import { auditRuntime, summariseRuntime, runtimeRegressions } from './runtime-audit.js'
+import { diagnoseForChange } from './change-diagnosis.js'
+import { auditRuntime, navigatedToInCode, pageFrozenDefect, summariseRuntime, runtimeRegressions } from './runtime-audit.js'
 import { critiqueScreenshot } from './visual-critic.js'
-import { verifyInBrowser } from '../tools/browser-verify.js'
+import { verifyInBrowser, type VerifyFailure } from '../tools/browser-verify.js'
 import {
   toRunnableDocument,
   normalizeReactExtensions,
@@ -272,10 +275,8 @@ import {
   truncatedDocumentDefects,
   rootPropsNeverPassedDefects,
   requiredPropNeverPassedDefects,
-  legacyIdiomDefects,
   frameworkConfusionDefects,
   normalizeRouterLinks,
-  normalizeSvelteRunes,
   missingExports,
 } from '../tools/react-bundle.js'
 import { keepRejectedCandidate } from '../utils/rejected-candidate.js'
@@ -284,11 +285,12 @@ import { effortProfile, type Effort } from '../config/effort.js'
 import { FRAMEWORKS } from '../config/frameworks.js'
 import { pickStockImages, stockImageInstructions, hasStockLibrary, repairStockUrls } from '../tools/stock-images.js'
 import { assignItemImages } from '../tools/assign-images.js'
+import { resolveSubjects } from '../tools/subject-resolve.js'
 import { auditAiTells } from './design-audit.js'
 import { auditDesignSystem } from './design-system-audit.js'
 import { snapRadii, snapMotion } from './preset-conformance.js'
 import { shellRequirement } from './preset-composition.js'
-import { applyPresetFoundation, snapFontFamilies, measureComponentDrift, foundationPromptBlock, presetFoundation, presetScaleNote, withoutTokenDeclarations } from './preset-foundation.js'
+import { applyPresetFoundation, snapFontFamilies, snapComponentSizes, measureComponentDrift, foundationPromptBlock, presetFoundation, presetScaleNote, withoutTokenDeclarations } from './preset-foundation.js'
 // Loaded on demand: pulls in the Strands SDK, which the Lambda fallback path never needs.
 const getRunDesignSwarm = () => import('./strands-design.js').then((m) => m.runDesignSwarm)
 
@@ -810,7 +812,6 @@ import { FORM_CONTROL_SIZING } from './prompt-contracts.js'
 export { SCREEN_COMPLETENESS, stylesheetContract, projectContract } from './prompt-contracts.js'
 import { outputSpecFor, stylesheetContract, projectContract, SCREEN_COMPLETENESS } from './prompt-contracts.js'
 
-
 /*
  * The scorers live in `scoring.ts` — 597 lines that read nothing this file
  * declares. Re-exported so every existing `from './graph.js'` keeps working.
@@ -838,9 +839,13 @@ import { isModelUnavailable } from '../utils/failure-message.js'
  */
 export async function generateUI(options: GenerateUIOptions): Promise<FinalOutput> {
   return withTokenLedger(async (ledger) => {
+    // The running total for the progress transcript — see tokenHeartbeat.
+    const heartbeat = options.jobId ? tokenHeartbeat(options.jobId, () => ledger.inputTokens + ledger.outputTokens) : null
+    if (heartbeat) ledger.onRecord = heartbeat.notify
     try {
       return await runGeneration(options, ledger)
     } finally {
+      if (heartbeat) await heartbeat.flush()
       // Written in `finally` so a failed run still says what it spent. A run
       // that dies after the design phase is exactly the one worth costing.
       logLedger(ledger, { run: 'runGeneration' })
@@ -1299,6 +1304,8 @@ Output a comprehensive JSON design specification.`
         requirements: briefRequirements ? designRequirementsBlock(requirements) : '',
         specialists,
         onDelta: pushStream,
+        // A specialist running alongside the finished one is now the text on screen.
+        onFocus: (id) => setPhase(agentLabel(id)),
         onAgent: (id, phase) => {
           if (phase === 'started') setPhase(agentLabel(id))
           if (jobId) appendJobEvent(jobId, id, phase).catch(() => {})
@@ -1461,7 +1468,6 @@ CRITICAL RULES:
       urls: stockImages.map((i) => i.url.split('/').slice(-2).join('/')),
     })
   }
-
 
   // React output replaces the single-page file/structure rules above. Appended last
   // so its format contract wins wherever the two disagree.
@@ -1758,11 +1764,6 @@ ${body.slice(0, 4000)}`)
       finalHtml = links.html
       logger.info('Rewrote router links as anchors', { requestId, rewritten: links.rewritten })
     }
-    const runes = normalizeSvelteRunes(finalHtml, outputKind)
-    if (runes.rewritten > 0) {
-      finalHtml = runes.html
-      logger.info('Rewrote $derived IIFEs as $derived.by', { requestId, rewritten: runes.rewritten })
-    }
     /**
      * The idioms that stop a framework compiling, repaired deterministically.
      *
@@ -1877,6 +1878,21 @@ ${body.slice(0, 4000)}`)
         const summary = [...new Set(snapped.changes.map((c) => `${c.from}→${c.to}`))]
         logger.info('Snapped corner radii onto the design system scale', {
           requestId, presetName, allowed: sigRadii, changes: snapped.changes.length, values: summary,
+        })
+      }
+    }
+    /*
+     * Component heights and the smallest type, where the system's value is the
+     * only answer — see `snapComponentSizes` for which drift that is and which
+     * stays a finding.
+     */
+    {
+      const sized = snapComponentSizes(finalHtml, presetName)
+      if (sized.changes.length > 0) {
+        finalHtml = sized.html
+        logger.info('Snapped component sizes onto the design system', {
+          requestId, presetName, changes: sized.changes.length,
+          values: [...new Set(sized.changes.map((c) => `${c.what} ${c.from}→${c.to}`))],
         })
       }
     }
@@ -2225,6 +2241,16 @@ ${finalHtml.slice(0, 90000)}`
    * with the document. Read from the document being verified rather than once up
    * front, because a repair may have added a screen.
    */
+  /**
+   * Why the first render came back empty, when it did.
+   *
+   * `scoredFacts` being null used to be the whole story, and the reply read it
+   * as 「このモードでは省略されます」 — on a 仕上げ run whose mode had asked for the
+   * browser, on 2026-09-20, because the walk froze the page on its first item
+   * click and the transport gave up at 45s. Kept so the reply can say what
+   * actually happened and the repair loop can be handed the freeze.
+   */
+  let verifyFailure: VerifyFailure | null = null
   const verify = (doc: string) =>
     /**
      * The declared screen list, for every framework.
@@ -2237,7 +2263,11 @@ ${finalHtml.slice(0, 90000)}`
      *
      * `declaredScreenIds` reads `src/routes.ts`, which all three write.
      */
-    verifyInBrowser(doc, { declaredScreens: declaredScreenIds(doc) })
+    verifyInBrowser(doc, {
+      declaredScreens: declaredScreenIds(doc),
+      requestId,
+      onFailure: (f) => { verifyFailure = f },
+    })
 
   if (useBrowserVerify) {
     t = Date.now()
@@ -2245,6 +2275,24 @@ ${finalHtml.slice(0, 90000)}`
     setPhase('ブラウザで実際に表示して検証中')
     let facts = await verify(finalHtml)
     measuredHtml = finalHtml
+    /*
+     * A page that stops answering when a control is pressed is the worst thing
+     * a mock can do — the preview locks, and the reviewer has to reload — and it
+     * was the one thing verification could not report, because it took the
+     * verification down with it. Named from WALK_MARK, which crossed the socket
+     * before the page stopped.
+     */
+    // Read through a cast: it is assigned inside `verify`'s callback, which
+    // control-flow analysis cannot see, so it would otherwise narrow to null.
+    const failure = verifyFailure as VerifyFailure | null
+    if (!facts && failure?.reason === 'page-frozen') {
+      runtimeDefects.push(pageFrozenDefect(failure))
+      logger.warn('The page stopped responding during the walk', {
+        requestId,
+        frozeOn: failure.frozeOn,
+        durationMs: failure.durationMs,
+      })
+    }
 
     /**
      * Fill the holes before anything else judges the page.
@@ -2539,7 +2587,6 @@ ${finalHtml.slice(0, 90000)}`
      * written in Svelte 4 style. A repair pass given the position fixes a line;
      * given the idiom it can rewrite the declaration.
      */
-    ...legacyIdiomDefects(doc, outputKind),
     /*
      * And the one shape no deterministic repair should touch: a Svelte or Vue
      * component returning JSX from its script. Rewriting it means deciding
@@ -2769,16 +2816,8 @@ ${finalHtml.slice(0, 90000)}`
           ...auditRuntime(factsAfter, candidate, presetName),
           ...(scoredFacts ? runtimeRegressions(scoredFacts, factsAfter) : []),
         ].filter((d) => !(settled.fixed.includes('contrast-low') && (d.id === 'contrast-low' || d.id === 'contrast-introduced')))
-        // Same reason as the first pass: a repair that leaves the app unable to
-        // mount has nothing to look at, and the runtime audit already says so.
-        afterVisual =
-          !profile.visualCritic || factsAfter.screens.length === 0
-            ? []
-            : await critiqueScreenshot(
-                factsAfter.screenshot,
-                [`プロダクト: ${prompt.slice(0, 120)}`, presetScaleNote(presetName)].filter(Boolean).join('\n'),
-                (system, user, image) => invokeModel(modelId, system, user, 2000, image, 'critic:visual')
-              )
+        // The critic is asked later, and only when its answer is used — see
+        // `critiqueCandidate` below.
       } else {
         // The browser was available before and is not now. Carry the original
         // findings forward rather than counting them as fixed.
@@ -2807,7 +2846,35 @@ ${finalHtml.slice(0, 90000)}`
      * One list, two measurements, is the only arrangement where "fewer" means
      * the document changed rather than the ruler did.
      */
-    const after = collectDefects(candidate, afterRuntime, afterVisual)
+    /*
+     * The critic, asked only when what it says is used.
+     *
+     * Its findings get no vote whenever the document has a convergent one (see
+     * `convergentCount` below), and a rejected candidate is thrown away with
+     * everything measured on it. So critiquing every candidate paid a vision
+     * call per rejection — and per revert-retry of it — for a list nobody read.
+     * Asked here: before the verdict when the verdict is taken on the total,
+     * after it when the candidate is accepted and its findings become the next
+     * pass's input and the reply's. `collectDefects` appends the critic's list
+     * last and nothing convergent depends on it, so the verdict is unchanged.
+     */
+    let critiqued = false
+    const critiqueCandidate = async (): Promise<void> => {
+      if (critiqued || !repairedFacts) return
+      critiqued = true
+      // Same reason as the first pass: a repair that leaves the app unable to
+      // mount has nothing to look at, and the runtime audit already says so.
+      afterVisual =
+        !profile.visualCritic || repairedFacts.screens.length === 0
+          ? []
+          : await critiqueScreenshot(
+              repairedFacts.screenshot,
+              [`プロダクト: ${prompt.slice(0, 120)}`, presetScaleNote(presetName)].filter(Boolean).join('\n'),
+              (system, user, image) => invokeModel(modelId, system, user, 2000, image, 'critic:visual')
+            )
+    }
+    if (!before.some(convergent)) await critiqueCandidate()
+    let after = collectDefects(candidate, afterRuntime, afterVisual)
     // Length is checked as well as defect count, because fewer defects is not by
     // itself evidence of a better document: a model that stops early returns a
     // partial project that scores BETTER simply by having lost the files the
@@ -2953,6 +3020,10 @@ ${finalHtml.slice(0, 90000)}`
         ? weighed(after) < weighed(before)
         : after.length < before.length
     if (improved && longEnough && broke.length === 0) {
+      if (!critiqued) {
+        await critiqueCandidate()
+        after = collectDefects(candidate, afterRuntime, afterVisual)
+      }
       finalHtml = candidate
       if (repairedFacts) {
         scoredFacts = repairedFacts
@@ -3001,6 +3072,8 @@ ${finalHtml.slice(0, 90000)}`
       weightedBefore: weighed(before),
       weightedAfter: weighed(after),
       remaining: after.map((d) => d.id),
+      // Without the critic's findings when it was not asked — see `critiqueCandidate`.
+      critic: critiqued ? 'asked' : 'not asked',
       // The error itself, not just that there was one. A rejection reading
       // `console-error` names a category; the next person needs the message.
       runtimeErrors: repairedFacts?.consoleErrors.slice(0, 2) ?? [],
@@ -3394,7 +3467,12 @@ ${FRAMEWORKS[outputKind].editGuard}
    * catalogue it has a list of URLs and no idea what any of them are of.
    */
   {
-    const assigned = await assignItemImages(finalHtml)
+    const assigned = await assignItemImages(finalHtml, {
+      // The page's own domain, for an item whose name settles nothing, and the
+      // reader for names no term list contains (「カプチーノ」 is coffee).
+      brief: prompt,
+      resolveNames: resolveSubjects,
+    })
     if (assigned.assignments.length > 0) {
       finalHtml = assigned.html
       logger.info('Photographs matched to their subjects', {
@@ -3416,11 +3494,6 @@ ${FRAMEWORKS[outputKind].editGuard}
     if (links.rewritten > 0) {
       finalHtml = links.html
       logger.info('Rewrote router links as anchors after repair', { requestId, rewritten: links.rewritten })
-    }
-    const runes = normalizeSvelteRunes(finalHtml, outputKind)
-    if (runes.rewritten > 0) {
-      finalHtml = runes.html
-      logger.info('Rewrote $derived IIFEs as $derived.by after repair', { requestId, rewritten: runes.rewritten })
     }
     /**
      * The idioms that stop a framework compiling, repaired deterministically.
@@ -3461,6 +3534,15 @@ ${FRAMEWORKS[outputKind].editGuard}
     if (founded.applied) {
       finalHtml = founded.html
       logger.info('Restored the design system token block after repair', { requestId, presetName, overridden: founded.overridden.length })
+    }
+    // A repair writes whole files, and the form contract's 44px rides back in with them.
+    const sized = snapComponentSizes(finalHtml, presetName)
+    if (sized.changes.length > 0) {
+      finalHtml = sized.html
+      logger.info('Snapped component sizes onto the design system after repair', {
+        requestId, presetName, changes: sized.changes.length,
+        values: [...new Set(sized.changes.map((c) => `${c.what} ${c.from}→${c.to}`))],
+      })
     }
     const drift = measureComponentDrift(finalHtml, presetName)
     if (drift.details.length > 0) {
@@ -3883,6 +3965,9 @@ ${FRAMEWORKS[outputKind].editGuard}
       openFindings: openDefects.length,
     })
   }
+  // Read through a cast for the same reason as at the first render: it is set
+  // inside `verify`'s callback, which control-flow analysis cannot see.
+  const lastVerifyFailure = scoredFacts ? null : (verifyFailure as VerifyFailure | null)
   const finalOutput: FinalOutput = {
     html: finalHtml,
     /*
@@ -3909,6 +3994,16 @@ ${FRAMEWORKS[outputKind].editGuard}
       // `RunOutcome.requirements`. Checked on the document that ships.
       requirements: requirementSummary,
       verified: Boolean(scoredFacts),
+      // Asked is not the same as answered — see RunOutcome.verifyAttempted.
+      verifyAttempted: useBrowserVerify,
+      ...(lastVerifyFailure
+        ? {
+            verifyFailure: {
+              reason: lastVerifyFailure.reason,
+              ...(lastVerifyFailure.frozeOn ? { frozeOn: lastVerifyFailure.frozeOn } : {}),
+            },
+          }
+        : {}),
       /*
        * The declared screens the walk did not report unreachable. `screens` is
        * every screen the walk landed on, under whatever the hash said — a route
@@ -3922,6 +4017,17 @@ ${FRAMEWORKS[outputKind].editGuard}
           : scoredFacts.screens.length
         : undefined,
       declared: declaredScreenIds(finalHtml).length,
+      /*
+       * The unreached screens the project itself navigates to — see
+       * `RunOutcome.afterAction`. A storefront that correctly will not open
+       * checkout over an empty cart replied 「5画面中 3画面に到達しました」,
+       * which reads as two broken screens.
+       */
+      afterAction: scoredFacts
+        ? scoredFacts.unreachable
+            .filter((id) => declaredScreenIds(finalHtml).includes(id) && navigatedToInCode(finalHtml, id))
+            .map((id) => specScreenTitle(finalHtml, id) ?? '')
+        : undefined,
       consoleErrors: scoredFacts?.consoleErrors.length,
       files: projectFileCounts(finalHtml).files,
       screens: projectFileCounts(finalHtml).screens,
@@ -4097,6 +4203,20 @@ export interface PlanUIOptions {
    * ignored even though the build received it.
    */
   attachment?: RawAttachment
+  /**
+   * The proposal this request amends, when the user answers a plan with a change
+   * to it rather than approving it. `prompt` is then the change.
+   */
+  revision?: PlanRevision
+}
+
+export interface PlanRevision {
+  /** The design specification behind the proposal being amended. */
+  spec: string
+  /** The proposal as the user read it. */
+  plan: string
+  /** The request that proposal answered. */
+  prompt: string
 }
 
 export interface PlanUIResult {
@@ -4140,9 +4260,13 @@ export interface PlanUIResult {
  */
 export async function planUI(options: PlanUIOptions): Promise<PlanUIResult> {
   return withTokenLedger(async (ledger) => {
+    // The running total for the progress transcript — see tokenHeartbeat.
+    const heartbeat = options.jobId ? tokenHeartbeat(options.jobId, () => ledger.inputTokens + ledger.outputTokens) : null
+    if (heartbeat) ledger.onRecord = heartbeat.notify
     try {
       return await runPlan(options, ledger)
     } finally {
+      if (heartbeat) await heartbeat.flush()
       // Written in `finally` so a failed run still says what it spent. A run
       // that dies after the design phase is exactly the one worth costing.
       logLedger(ledger, { run: 'runPlan' })
@@ -4203,6 +4327,12 @@ async function runPlan(options: PlanUIOptions, ledger: TokenLedger): Promise<Pla
     setPhase('変更内容を検討中')
     if (jobId) appendJobEvent(jobId, 'routing', 'completed').catch(() => {})
     const { specifyChange } = await import('./strands-design.js')
+    /*
+     * What the project says about itself — see change-diagnosis.ts. Asked
+     * 「画像が出てないんだけどどうすべき？」 without it, this path returned four
+     * questions for the user and no plan.
+     */
+    const diagnosis = diagnoseForChange(html, prompt)
     const spec = await specifyChange({
       instruction: prompt,
       html,
@@ -4212,11 +4342,44 @@ async function runPlan(options: PlanUIOptions, ledger: TokenLedger): Promise<Pla
       image: imageInput,
       // The data file and the pictures to place, which this path used to leave behind.
       dataContext: `${dataContext}${supplied.contentContext}${imageInput ? imageCaptionNote(supplied.referenceCaption) : ''}`,
+      facts: diagnosis.text,
       onDelta: push,
     })
-    const readable = await invokeModel(modelId, PLAN_WRITER_SYSTEM,
-      `変更指示: "${prompt}"\n\n設計内容:\n${spec.slice(0, 20000)}`)
+    logger.info('Change plan specified', {
+      requestId,
+      specChars: spec.length,
+      factChars: diagnosis.text.length,
+      problemReport: diagnosis.problemReport,
+      aboutImages: diagnosis.aboutImages,
+    })
+    const readable = await invokeModel(modelId, PLAN_CHANGE_WRITER_SYSTEM,
+      `変更指示: "${prompt}"${diagnosis.text}\n\n設計内容:\n${spec.slice(0, 20000)}`, 4000, null, 'plan:write-change')
     return { plan: stripFences(readable), spec: '', modelTier: selectedModel.tier, preset: presetName || 'none', tokenUsage: { inputTokens: ledger.inputTokens, outputTokens: ledger.outputTokens, cacheReadTokens: ledger.cacheReadTokens, cacheWriteTokens: ledger.cacheWriteTokens } }
+  }
+
+  /*
+   * An answer to a proposal, not a new brief — see `revisePlan`.
+   */
+  if (options.revision && options.revision.spec.trim()) {
+    setPhase('プランを修正中')
+    if (jobId) appendJobEvent(jobId, 'routing', 'completed').catch(() => {})
+    const revised = await revisePlan(options.revision, prompt, (system, user) =>
+      invokeModel(modelId, system, user, 6000, null, 'plan:revise'), PLAN_WRITER_SYSTEM)
+    logger.info('Plan revised', {
+      requestId,
+      specChars: options.revision.spec.length,
+      revisionChars: revised.revisions.length,
+      planChars: revised.plan.length,
+      rewrote: revised.rewrote,
+    })
+    // The reply carries the rewritten proposal; only a reply that lost its
+    // markers costs the second call.
+    const plan = revised.rewrote
+      ? revised.plan
+      : stripFences(await invokeModel(modelId, PLAN_WRITER_SYSTEM,
+          `ユーザーの依頼: "${options.revision.prompt}"\n追加の指示: "${prompt}"\n出力形式: ${FRAMEWORKS[outputKind].label} アプリ（複数画面・状態管理あり）\nデザインプリセット: ${presetName}\n\n設計仕様:\n${revised.spec.slice(0, 24000)}`,
+          4000, null, 'plan:write'))
+    return { plan, spec: revised.spec, modelTier: selectedModel.tier, preset: presetName || 'none', tokenUsage: { inputTokens: ledger.inputTokens, outputTokens: ledger.outputTokens, cacheReadTokens: ledger.cacheReadTokens, cacheWriteTokens: ledger.cacheWriteTokens } }
   }
 
   const { GENERATE_SPECIALISTS } = await import('./workflow-router.js')
@@ -4252,6 +4415,7 @@ async function runPlan(options: PlanUIOptions, ledger: TokenLedger): Promise<Pla
     requirements: designRequirementsBlock(planRequirements),
     specialists,
     onDelta: push,
+    onFocus: (id) => setPhase(agentLabel(id)),
     onAgent: (id, p) => {
       if (p === 'started') setPhase(agentLabel(id))
       if (jobId) appendJobEvent(jobId, id, p).catch(() => {})
@@ -4260,7 +4424,8 @@ async function runPlan(options: PlanUIOptions, ledger: TokenLedger): Promise<Pla
 
   setPhase('プランをまとめ中')
   const readable = await invokeModel(modelId, PLAN_WRITER_SYSTEM,
-    `ユーザーの依頼: "${prompt}"\n出力形式: ${FRAMEWORKS[outputKind].label} アプリ（複数画面・状態管理あり）\nデザインプリセット: ${presetName}\n\n設計仕様:\n${spec.slice(0, 24000)}`)
+    `ユーザーの依頼: "${prompt}"\n出力形式: ${FRAMEWORKS[outputKind].label} アプリ（複数画面・状態管理あり）\nデザインプリセット: ${presetName}\n\n設計仕様:\n${spec.slice(0, 24000)}`,
+    4000, null, 'plan:write')
 
   logger.info('Plan produced', { requestId, specChars: spec.length, planChars: readable.length })
   return { plan: stripFences(readable), spec, modelTier: selectedModel.tier, preset: presetName || 'none', tokenUsage: { inputTokens: ledger.inputTokens, outputTokens: ledger.outputTokens, cacheReadTokens: ledger.cacheReadTokens, cacheWriteTokens: ledger.cacheWriteTokens } }
@@ -4294,11 +4459,68 @@ const PLAN_WRITER_SYSTEM = `あなたはUI設計の提案を書きます。読�
 ## 含めないもの
 今回スコープ外にした判断があれば書く。無ければこの見出しごと省略。
 
+## 前提にしたこと
+依頼に書かれていなかった点で、こちらで決めたこと（件数、対象ユーザー、画面の数など）。
+無ければこの見出しごと省略。
+
 制約:
-- 400〜700字。長い提案は読まれません。
+- 500〜900字。長い提案は読まれません。
+- 画面構成は、各画面に「何が表示されるか（主な項目・一覧の列・ボタン）」まで書く。
+  「商品一覧 — 商品を見られる」ではなく「商品一覧 — 写真・商品名・価格のカードを3列で表示、
+  カテゴリと価格で絞り込み、カードを押すと詳細へ」の粒度で。
 - 実装の話（ファイル構成、フレームワーク、CSSの書き方）は書かない。
 - 絵文字は使わない。コードブロックも使わない。
-- 「〜します」「〜にします」と、これから作る人の言葉で書く。`
+- 「〜します」「〜にします」と、これから作る人の言葉で書く。
+- 利用者に質問を返さない。決めきれない点は最も妥当な解釈を選び、「前提にしたこと」に書く。
+  質問だけで終わる提案は、承認できる提案になっていません。`
+
+/**
+ * The plan for a change to something that already exists.
+ *
+ * The writer above is for a product that does not exist yet — 作るもの,
+ * 画面構成, デザインの方向性 — and it was the writer for changes too. Handed
+ * 「画像が出てないんだけどどうすべき？」 and a specification that was itself a
+ * list of questions, it returned the questions, formatted.
+ *
+ * A change plan answers different questions: what is wrong now and why, what
+ * will be changed where, and what the user will see afterwards. It is handed
+ * the same PROJECT FACTS the designer was, so the cause it states is measured
+ * rather than guessed.
+ */
+const PLAN_CHANGE_WRITER_SYSTEM = `あなたは既存UIへの変更の提案を書きます。読み手は非エンジニアを含むレビュアーで、
+この提案を読んで「この変更をしてよい」と判断できることがゴールです。
+
+入力には、現在のソースから測った PROJECT FACTS（画面・データ・既存の指摘・画像の状況など）と、
+変更の設計内容が含まれます。FACTS は推測ではなく事実です。そのまま根拠に使ってください。
+
+日本語のMarkdownで、次の見出し構成で書いてください:
+
+## 現状
+今どうなっているか、なぜそうなっているか。FACTS から原因を具体的に書く
+（例:「商品データに写真の項目が無く、12件のどれにも画像が設定されていません。一覧のカードは
+写真の代わりに装飾の図形を描いています」）。依頼が「〜できない」「どうすべき？」のような
+相談でも、ここで原因を特定して書く。
+
+## 変更内容
+画面・部品ごとに、何をどう変えるかを箇条書きで。「商品一覧のカード」「商品詳細の画像」のように
+利用者に見える名前で書く。データの項目を追加する場合は、その項目と値の入れ方も書く。
+
+## 変更後
+利用者から見て何が変わるかを1〜3行で。
+
+## 変更しないもの
+触らない画面や機能があれば書く。無ければ省略。
+
+## 前提にしたこと
+依頼に書かれていなかった点で、こちらで決めたことがあれば書く。無ければ省略。
+
+制約:
+- 400〜900字。
+- 利用者に質問を返さない。FACTS で答えられることは答え、決めきれない点は最も妥当な解釈を選んで
+  「前提にしたこと」に書く。質問だけで終わる提案は、承認できる提案になっていません。
+- コードやファイルの中身は書かない（ファイル名を補足として添えるのは可）。
+- 絵文字、コードブロックは使わない。
+- 「〜します」と、これから変更する人の言葉で書く。`
 
 /**
  * Extracts the design decisions worth remembering from a finished document.
@@ -4378,7 +4600,7 @@ export function summariseDesignDecisions(input: {
    * its screens, and stored documents in that format are still read back.
    */
   const screens = new Set(
-    [...html.matchAll(/data-screen="([\w-]+)"|(?:screens|components)\/(\w+)(?:Screen|Page)\.(?:tsx|jsx|vue|svelte)/g)]
+    [...html.matchAll(/data-screen="([\w-]+)"|(?:screens|components)\/(\w+)(?:Screen|Page)\.(?:tsx|jsx|vue)/g)]
       .map((m) => m[1] || m[2])
   ).size
 

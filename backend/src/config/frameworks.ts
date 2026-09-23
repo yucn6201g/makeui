@@ -20,9 +20,9 @@
  * JIT compiler and zone.js — megabytes inlined into every preview document.
  */
 
-export type OutputKind = 'react' | 'vue' | 'svelte';
+export type OutputKind = 'react' | 'vue';
 
-const KINDS: OutputKind[] = ['react', 'vue', 'svelte'];
+const KINDS: OutputKind[] = ['react', 'vue'];
 
 export function isOutputKind(value: unknown): value is OutputKind {
   return typeof value === 'string' && KINDS.includes(value as OutputKind);
@@ -167,7 +167,7 @@ export const FRAMEWORKS: Record<OutputKind, FrameworkSpec> = {
     editGuard: `- TypeScript を維持する（.tsx / .ts のみ。.jsx / .js を新規作成しない。any を使わない）
 - マークアップを返すファイルは .tsx。.ts に JSX を書くと '<' が型引数として読まれ、必ず壊れます
 - 共有状態は既存の reducer に追加する（アクションは判別可能なユニオンで）
-- 画面を追加したら ScreenId・NAV_ITEMS・App.tsx の分岐すべてに必ず接続する`,
+- 画面を追加したら ScreenId と App.tsx の分岐に必ず接続する。NAV_ITEMS に入れるのは何も選んでいない状態で意味のある最上位画面だけ（詳細・確認・完了・チェックアウトは元の操作から遷移し、前提が無いときは案内と戻るリンクを出す）`,
     storePattern: /\b(?:useReducer|createContext)\s*(?:<[^()]*>)?\s*\(/,
     iteration: /\.map\s*\(/,
     storeFile: 'src/store/AppProvider.tsx',
@@ -229,157 +229,12 @@ export const FRAMEWORKS: Record<OutputKind, FrameworkSpec> = {
 - テンプレートで使うコンポーネントは、そのファイルの <script setup> で必ず import する
   （グローバル登録はありません。import 忘れは無言で何も描画されません）
 - 共有状態は src/store の reactive オブジェクトに追加する
-- 画面を追加したら ScreenId・NAV_ITEMS・App.vue の分岐すべてに必ず接続する`,
+- 画面を追加したら ScreenId と App.vue の分岐に必ず接続する。NAV_ITEMS に入れるのは何も選んでいない状態で意味のある最上位画面だけ（詳細・確認・完了・チェックアウトは元の操作から遷移し、前提が無いときは案内と戻るリンクを出す）`,
     storePattern: /\b(?:reactive|ref)\s*(?:<[^()]*>)?\s*\(|defineStore/,
     iteration: /\bv-for\s*=|\.map\s*\(/,
     storeFile: 'src/store/index.ts',
     storeHint: 'reactive() のシングルトン、各画面は useStore() 経由',
     handlerPatterns: [/@click[=\s]/g, /@submit[=.\s]/g, /@change[=\s]/g, /v-on:/g],
-  },
-
-  svelte: {
-    id: 'svelte',
-    label: 'Svelte',
-    entry: 'src/main.ts',
-    sourceExt: ['.svelte', '.ts'],
-    routesFile: 'src/routes.ts',
-    layout: `  src/main.ts                   entry: mount(App, { target: document.getElementById('app') })
-  src/App.svelte                shell: chrome + the active screen
-  src/routes.ts                 navigation contract — types only
-  src/lib/navigation.svelte.ts  the hash router — routing only, no markup
-  src/lib/store.svelte.ts       shared state with $state runes, exported once
-  src/lib/types.ts              State and the action payload types
-  src/screens/*.svelte          ONE FILE PER SCREEN, named <Name>Screen.svelte
-  src/components/ui/*.svelte    reusable primitives only
-  src/components/icons/*.svelte every icon, as an inline SVG component`,
-    rules: `- Import paths are RELATIVE, always. There is no @/ alias and no $lib/ — the
-  preview resolves what is written, and an alias resolves to nothing: the module
-  is reported missing and the file that imported it is reverted. Measured over 30
-  days, 37 repairs were thrown away for @/store, @/routes, @/composables/... and
-  $lib/types. Write ../lib/store and ../../routes.
-- Svelte 5 with runes. State is \`$state(...)\`, derived values are \`$derived(...)\`,
-  effects are \`$effect(...)\`. Do NOT use the Svelte 3/4 store contract, \`export let\`
-  for props, or \`on:click\` — props come from \`$props()\` and handlers are \`onclick\`.
-- Props, exactly. \`export let\` is not merely old style: in a file that also uses a
-  rune it is a compile error, and mixing the two is the most common way a
-  generated component fails to build. Write it like this — one destructuring of
-  \`$props()\`, defaults inline, and \`class\` renamed because it is a keyword:
-
-      <script>
-        let { variant = 'primary', disabled = false, class: className = '', children } = $props();
-        let busy = $state(false);
-      </script>
-      <button class="btn {variant} {className}" {disabled} onclick={() => busy = true}>
-        {@render children?.()}
-      </button>
-
-  Slot content is \`children\` from \`$props()\` rendered with \`{@render children?.()}\`,
-  not \`<slot />\`.
-- \`$derived\` has exactly two forms and no third. Use \`$derived(expr)\` for a single
-  expression, and \`$derived.by(() => { … return x })\` when the computation needs
-  statements. \`$derived(() => { … })()\` — calling the function to get its value —
-  is a COMPILE ERROR: the rune must BE the initializer, and there the initializer
-  is a call. Measured: a filtered list written that way stopped the whole build.
-- Runes are SYNTAX, not imports. Never write \`import { $state } from 'svelte'\` —
-  there is nothing by that name to import. Doing so makes the compiler treat it
-  as an ordinary binding, so it is not compiled away and the page throws
-  \`$state is not a function\` on load, with nothing failing at build time.
-- A \`.svelte.ts\` module MUST NOT export a rune directly. \`export const route =
-  $derived(x)\` is a compile error ("Cannot export derived state from a module").
-  Export a plain function instead, and let callers invoke it:
-
-      let currentRoute = $state({ screen: 'home' });
-      export function route() { return currentRoute; }      // read
-      export function navigate(next) { currentRoute = next; } // write
-
-  \`export const store = $state({...})\` is fine, and the reason is that it is
-  never REASSIGNED — only its properties are. \`export let route = $state({...})\`
-  followed anywhere by \`route = next\` is refused with 「Cannot export state from a
-  module if it is reassigned」, which is a different error from the one above and
-  the more common one: measured on the stored corpus, a navigation module written
-  exactly that way took its whole project's score to the floor. Assign to a
-  property (\`routeState.current = next\`) or export a setter, never to the exported
-  binding itself.
-- Runes take NO type argument. \`$state<string | null>(null)\` and \`$props<{ a: A }>()\`
-  are both 「Unexpected token」 — a parse error, so the file does not build and
-  nothing on the screen renders. The type goes on the binding:
-
-      let selected: string | null = $state(null);
-      interface Props { rows: Row[]; onPick: (id: string) => void }
-      let { rows, onPick }: Props = $props();
-
-  This is the single most common build failure in the stored Svelte corpus, and
-  it looks correct to anyone who writes TypeScript generics by habit.
-- Event modifiers are gone. There is no \`on:submit|preventDefault\` and no
-  \`onsubmit|preventDefault\` — the second is not a valid attribute NAME and fails the
-  build outright. Call it in the handler:
-
-      <form onsubmit={(e) => { e.preventDefault(); save(); }}>
-
-- ONE top-level \`<script>\` per component, plus at most one \`<script module>\`. A second
-  \`<script>\` — imports in one and state in another, say — is 「A component can have a
-  single top-level <script> element」 and the component does not compile.
-- Shared state lives in a \`.svelte.ts\` module (runes only work in those), exported
-  once and imported where needed.
-- NEVER name an export \`state\`, \`props\`, \`derived\` or \`effect\`. With a binding
-  called \`state\` in scope, Svelte reads \`$state(...)\` as a store subscription on
-  it rather than as the rune — so every rune in that file compiles to
-  \`store_get(state, '$state')\`, the module is not a store, and the page throws
-  \`state.subscribe is not a function\` on first render. Nothing fails at build
-  time. Measured: eight components poisoned by one import, and a blank page.
-  Call it \`appState\`, \`cartState\` or \`shopStore\`.
-- NO packages at all. Routing and state are yours; svelte itself is the only import.
-  There is therefore no <Link> and no router component: links are <a href="#/screen">
-  or an onclick that calls navigate(). An unimported component compiles fine and
-  renders nothing, so the screen looks finished while nothing on it works.
-- Every component used in markup must be imported in that file's <script>.
-- A Svelte component NEVER returns markup and NEVER contains JSX. There is no
-  \`return (<div>…</div>)\` and no early return — the <script> block holds only
-  declarations, and ALL markup lives in the template area below it. To show a
-  different view when data is missing, use {#if} / {:else} in that template:
-
-      <script>
-        let { item } = $props();
-      </script>
-      {#if !item}
-        <div class="empty">見つかりません</div>
-      {:else}
-        <article>{item.name}</article>
-      {/if}
-
-  Measured: an early \`return (<div class="screen">…)\` inside <script> — React
-  written in a Svelte file — stopped the whole project building.
-- Interactive elements MUST NOT nest. A <button> inside a <button>, or an <a>
-  inside an <a>, is a COMPILE ERROR in Svelte — not a warning — and it stops the
-  whole project building. Measured: a card written as a giant <button> with a
-  「借りる」 button inside it failed with \`<button> cannot be a descendant of
-  <button>\`. For a clickable card carrying its own actions, make the card a
-  <div> with onclick and role="button" tabindex="0", and keep the real <button>
-  elements as its children.`,
-
-    providedModules: ['svelte', 'svelte/store', 'svelte/internal/client', 'svelte/internal/disclose-version', 'svelte/internal/flags/legacy'],
-    componentExt: '.svelte',
-    editExt: ['.svelte', '.ts', '.css', '.md'],
-    allowedPath: /^(src|docs)\/[\w./-]+\.(svelte|ts|css|md)$/,
-    screenFile: /^src\/(screens|pages)\/[\w-]+\.svelte$/,
-    routingFiles: /^src\/(routes\.ts|App\.svelte)$/,
-    packages: `なし（svelte 本体以外は一切追加できません）`,
-    editGuard: `- 画面とコンポーネントは .svelte。Svelte 5 のルーン構文（$state / $derived / $props）を維持する。
-  \`export let\` は使わない — ルーンを使うファイルに書くとコンパイルエラーになります
-- .tsx / .jsx を新規作成しない。JSX はこのプロジェクトでは一切使えません。
-  <script> ブロックに \`return (<div>…</div>)\` を書かない。マークアップは必ずテンプレート領域に置き、
-  出し分けは {#if} / {:else} で書く
-- \`$derived(() => {…})()\` と書かない。文が必要なときは \`$derived.by(() => {…})\`
-- ルーンは構文であって import ではありません。\`import { $state } from 'svelte'\` は書かない
-- .svelte.ts から \`$derived\` を直接 export しない（コンパイルエラー）。関数にして export する
-- <button> の中に <button>、<a> の中に <a> を入れない — Svelte ではコンパイルエラーです
-- テンプレートで使うコンポーネントは、そのファイルの <script> で必ず import する
-- 画面を追加したら ScreenId・NAV_ITEMS・App.svelte の分岐すべてに必ず接続する`,
-    storePattern: /(?:\$state|\bwritable|\breadable)\s*(?:<[^()]*>)?\s*\(/,
-    iteration: /\{#each\b|\.map\s*\(/,
-    storeFile: 'src/store/index.svelte.ts',
-    storeHint: '$state を持つオブジェクトを export、各画面はそれを import',
-    handlerPatterns: [/\bonclick=/g, /\bonsubmit=/g, /\bonchange=/g, /\bon:(click|submit|change)/g],
   },
 };
 

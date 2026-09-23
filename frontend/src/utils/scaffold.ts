@@ -10,7 +10,7 @@ import { detectKind, type OutputKind } from './frameworkKind';
  * generation to reproduce. They are cheaper and more reliable here.
  *
  * This used to be React-only — one `hasReact` test at the top and an early
- * return for everything else. So a Vue or Svelte project downloaded as bare
+ * return for everything else. So a Vue project downloaded as bare
  * `src/` with no package.json, no vite config, no entry document and no readme:
  * not a project a developer could continue, just a folder of files. The `npm
  * install && npm run dev` the readme promised had nothing to install and nothing
@@ -18,7 +18,7 @@ import { detectKind, type OutputKind } from './frameworkKind';
  *
  * The other half of that failure was quieter and would have survived adding a
  * manifest. The entry document hard-coded `<div id="root">`, which is React's
- * convention; Vue mounts on `#app` and Svelte targets `#app`. A downloaded Vue
+ * convention; Vue mounts on `#app`. A downloaded Vue
  * project therefore built, served, and rendered a blank page — the preview hid
  * it, because the preview injects its own mount element. The root id is now read
  * from the project's own entry file, so the document matches the code rather
@@ -101,46 +101,7 @@ export default defineConfig({
   vue-router に置き換える場合、\`Route\` 型はそのまま流用できます。`,
 };
 
-const SVELTE: Scaffold = {
-  defaultRoot: 'app',
-  dependencies: {},
-  devDependencies: {
-    // vite 6, not 5. @sveltejs/vite-plugin-svelte@5 declares `peer vite@^6.0.0`,
-    // so pairing it with vite 5 makes `npm install` fail outright with ERESOLVE
-    // before a developer sees anything at all. Measured on the generated
-    // project, which is the only place it shows up.
-    '@sveltejs/vite-plugin-svelte': '^5.0.3',
-    svelte: '^5.19.0',
-    vite: '^6.0.7',
-  },
-  typecheck: 'svelte-check --tsconfig ./tsconfig.json',
-  viteConfig: `import { defineConfig } from 'vite';
-import { svelte } from '@sveltejs/vite-plugin-svelte';
-
-export default defineConfig({
-  plugins: [svelte()],
-});
-`,
-  compilerOptions: {},
-  extraFiles: [
-    {
-      path: 'svelte.config.js',
-      lang: 'js',
-      content: `import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
-
-export default {
-  preprocess: vitePreprocess(),
-};
-`,
-    },
-  ],
-  guide: () => `- **画面を追加する**: \`src/screens/\` に \`<名前>Screen.svelte\` を作り、
-  \`src/routes.ts\` の \`ScreenId\` と \`NAV_ITEMS\`、\`src/App.svelte\` の分岐に追加します。
-- **ルーティングを本格化する**: \`src/lib/navigation.svelte.ts\` は hash ルーターです。
-  \`Route\` 型はそのまま流用できます。`,
-};
-
-const SCAFFOLDS: Record<OutputKind, Scaffold> = { react: REACT, vue: VUE, svelte: SVELTE };
+const SCAFFOLDS: Record<OutputKind, Scaffold> = { react: REACT, vue: VUE };
 
 /** Derive an npm-safe package name from the document title. */
 function packageName(title: string): string {
@@ -205,7 +166,7 @@ function describeTree(sources: VFile[], entry: string): string {
     if (i > 0) dirs.add(f.path.slice(0, i));
   }
   const lines = [`- \`${entry}\` — エントリーポイント`];
-  const shell = sources.find((f) => /^src\/App\.(tsx|jsx|vue|svelte)$/.test(f.path));
+  const shell = sources.find((f) => /^src\/App\.(tsx|jsx|vue)$/.test(f.path));
   if (shell) lines.push(`- \`${shell.path}\` — シェルと画面の切り替え`);
   if (sources.some((f) => f.path === 'src/routes.ts')) {
     lines.push('- `src/routes.ts` — 画面 ID・ルート・ナビゲーション定義');
@@ -287,9 +248,6 @@ export function toProjectFiles(files: VFile[], title = 'MakeUI App'): VFile[] {
               ? { '@types/react': '^18.3.0', '@types/react-dom': '^18.3.0' }
               : {}),
             ...(kind === 'vue' ? { 'vue-tsc': '^2.2.0' } : {}),
-            ...(kind === 'svelte'
-              ? { 'svelte-check': '^4.1.4', '@tsconfig/svelte': '^5.0.4' }
-              : {}),
           },
         },
         null,
@@ -400,11 +358,18 @@ ${spec.guide(ext)}
 `,
   });
 
-  return [...scaffold, ...sources];
+  /*
+   * One file per path. A Vue build wrote its own vite.config.ts, package.json and
+   * tsconfig.json despite the contract (1 of 4 in September; the backend now
+   * drops them), and a project stored before that exports them beside these —
+   * two files at one path in the ZIP. The scaffold's copy is the one that matches
+   * the preview, so it is the one kept.
+   */
+  const supplied = new Set(scaffold.map((f) => f.path));
+  return [...scaffold, ...sources.filter((f) => !supplied.has(f.path))];
 }
 
 const SCAFFOLD_LABEL: Record<OutputKind, string> = {
   react: 'TypeScript React',
   vue: 'Vue 3 + TypeScript',
-  svelte: 'Svelte 5 + TypeScript',
 };

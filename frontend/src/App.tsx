@@ -28,6 +28,7 @@ import { ActivityCard } from './components/ActivityCard';
 import { Dropdown, type DropdownOption } from './components/Dropdown';
 import { versionOptions } from './utils/versionOptions';
 import { usePlan } from './hooks/usePlan';
+import { proposalBeingAnswered } from './utils/planRevision';
 import { useChatHistory } from './hooks/useChatHistory';
 import { ProjectList } from './components/ProjectList';
 import { ANY_ATTACHMENT_ACCEPT, attachmentProblem, describeAttachment, extractPdfText, isImageAttachment, isPdf, MAX_ATTACHMENT_CHARS, type AttachedData } from './utils/dataAttachment';
@@ -36,8 +37,10 @@ import { ProjectThumbnail } from './components/ProjectThumbnail';
 import { formatReply, inlineSpans } from './utils/formatReply';
 import { ReasoningTranscript } from './components/ReasoningTranscript';
 import { trimPhasesForStorage, readStoredPhases, type PhaseEntry } from './utils/phaseTranscript';
+import { createStickToBottom, type StickToBottom } from './utils/stickToBottom';
 import { readAnchor } from './utils/sourceAnchors';
 import { runtimeRepairInstruction, runtimeRepairMessage } from './utils/runtimeRepair';
+import { findingFixInstruction, findingFixMessage } from './utils/findingFix';
 import { deleteElement, moveElement, elementText, setElementText } from './utils/structuralEdit';
 import { splitHtmlToFiles, toProjectFiles } from './utils/virtualFs';
 import { createZip, zipFileName } from './utils/zip';
@@ -314,7 +317,7 @@ interface ChatMessage {
    * and inventing one from the current composer state would be a guess dressed
    * as a record.
    */
-  runInfo?: { modelTier: string; preset: string; effort?: string; scoreVerified?: boolean; scoreParts?: ScoreParts; unrepairedDefects?: number };
+  runInfo?: { modelTier: string; preset: string; effort?: string; scoreVerified?: boolean; scoreParts?: ScoreParts };
   /**
    * The run that produced this reply, step by step.
    *
@@ -375,7 +378,6 @@ const MODEL_NOTES: Record<string, string> = {
 const OUTPUT_KINDS: DropdownOption[] = [
   { id: 'react', label: 'React', description: 'TypeScript + JSX。複数ファイル・状態管理つき' },
   { id: 'vue', label: 'Vue', description: 'Vue 3 の単一ファイルコンポーネント（script setup）' },
-  { id: 'svelte', label: 'Svelte', description: 'Svelte 5。ルーン（$state）で状態を持つ' },
 ];
 
 /**
@@ -685,7 +687,17 @@ function MainApp({ project, onBackToProjects, onUpdateProject, fetchProjectPrevi
    */
   const persistedHtmlRef = useRef<string | null>(project.lastHtml ?? null);
   const chatEndRef = useRef<HTMLDivElement>(null);
-  const chatThreadRef = useRef<HTMLDivElement>(null);
+  const chatThreadRef = useRef<HTMLDivElement | null>(null);
+  /**
+   * Held in state as well as in the ref, so the effect that attaches the
+   * follower re-runs when the element changes. A ref alone never notifies, which
+   * leaves the listeners on whatever node was there at mount.
+   */
+  const [threadEl, setThreadEl] = useState<HTMLDivElement | null>(null);
+  const setChatThread = useCallback((el: HTMLDivElement | null) => {
+    chatThreadRef.current = el;
+    setThreadEl(el);
+  }, []);
 
   /**
    * Bring the end of the thread into view, and nothing else.
@@ -697,12 +709,32 @@ function MainApp({ project, onBackToProjects, onUpdateProject, fetchProjectPrevi
    * which appended a message: the run started correctly and the screen jumped.
    *
    * Setting `scrollTop` on the thread cannot move anything but the thread.
+   *
+   * Goes through the follower (utils/stickToBottom) so that reaching the end
+   * also means staying there while the run's card keeps growing.
    */
-  const scrollChatToEnd = useCallback(() => {
+  const stickRef = useRef<StickToBottom | null>(null);
+  const stuckToRef = useRef<HTMLDivElement | null>(null);
+  /**
+   * The follower for whatever element the thread currently IS.
+   *
+   * Rebuilt when the element changes rather than captured once: a follower
+   * holding a node React has replaced scrolls a node nobody can see, and the
+   * symptom is exactly the one reported — the chat simply stops following, with
+   * no error anywhere.
+   */
+  const threadFollower = useCallback(() => {
     const el = chatThreadRef.current;
-    if (!el) return;
-    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+    if (!el) return null;
+    if (!stickRef.current || stuckToRef.current !== el) {
+      stickRef.current = createStickToBottom(el);
+      stuckToRef.current = el;
+    }
+    return stickRef.current;
   }, []);
+  const scrollChatToEnd = useCallback(() => {
+    threadFollower()?.scrollToEnd(true);
+  }, [threadFollower]);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
   // Wide enough for the composer's dropdown menus, whose option descriptions run
@@ -793,10 +825,25 @@ function MainApp({ project, onBackToProjects, onUpdateProject, fetchProjectPrevi
    * is a thing someone can do.
    */
   const touchedFormatRef = useRef(false);
-  const derivedFormatRef = useRef(Boolean(project.lastHtml));
+  /**
+   * Which document the format was read from, rather than whether it was read.
+   *
+   * A once-only flag was wrong for the same reason the preview fetch was: it
+   * was set the first time any document arrived, including the stale copy
+   * carried in from the project list — so a project reopened while the list
+   * held a React snapshot of what is now a Vue project kept saying React, and
+   * the next edit would have gone out in the wrong framework.
+   *
+   * Keyed on the document, the format follows whatever is actually on the
+   * canvas: the replacement above, and a stored version selected from the
+   * dropdown. `touchedFormatRef` still wins — a person's choice is not a guess
+   * to be corrected a second later.
+   */
+  const derivedFormatFromRef = useRef<string | null>(null);
   useEffect(() => {
-    if (derivedFormatRef.current || touchedFormatRef.current || !loadedHtml) return;
-    derivedFormatRef.current = true;
+    if (touchedFormatRef.current || !loadedHtml) return;
+    if (derivedFormatFromRef.current === loadedHtml) return;
+    derivedFormatFromRef.current = loadedHtml;
     const kind = detectKind(splitHtmlToFiles(loadedHtml));
     if (kind) {
       setOutputKind(kind);
@@ -887,7 +934,6 @@ function MainApp({ project, onBackToProjects, onUpdateProject, fetchProjectPrevi
     }
     setStructuralNote(null);
   };
-
 
   /**
    * The document to draw under a reply.
@@ -1152,10 +1198,12 @@ function MainApp({ project, onBackToProjects, onUpdateProject, fetchProjectPrevi
    * hard to read — the unbounded panel was.
    *
    * The phase is included so each new stage brings the card back into view.
+   * Growth between those moments — a step's text arriving a poll after its
+   * label — is followed by the thread follower, not by this list.
    */
   useEffect(() => {
     scrollChatToEnd();
-  }, [messages, isGenerating, isModifying, streamPhase, modifyStreamPhase]);
+  }, [messages, isGenerating, isModifying, isPlanning, streamPhase, modifyStreamPhase, scrollChatToEnd]);
 
   /**
    * Grow the composer with its content.
@@ -1172,17 +1220,69 @@ function MainApp({ project, onBackToProjects, onUpdateProject, fetchProjectPrevi
     el.style.height = `${Math.min(el.scrollHeight, 220)}px`;
   }, [inputText]);
 
-  // Show/hide scroll-to-bottom button
+  /**
+   * Follow the thread's content while the reader is at the end, and show the
+   * scroll-to-bottom button when they are not.
+   *
+   * Sizes are watched on the thread's direct children — the messages and the
+   * activity card — because the thread itself is the scroll container and its own
+   * box never changes size. The set of children changes as messages arrive, so
+   * it is re-observed on every child list change. ResizeObserver already
+   * delivers at most once per frame, so a burst of growth is one callback.
+   */
   useEffect(() => {
-    const el = chatThreadRef.current;
-    if (!el) return;
+    const el = threadEl;
+    const follower = threadFollower();
+    if (!el || !follower) return;
     const handleScroll = () => {
+      follower.onScroll();
       const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
       setShowScrollBtn(distFromBottom > 100);
     };
-    el.addEventListener('scroll', handleScroll);
-    return () => el.removeEventListener('scroll', handleScroll);
-  }, []);
+    const handleScrollEnd = () => follower.onScrollEnd();
+    const handleIntent = () => follower.onUserIntent();
+    const sizes = new ResizeObserver(() => follower.contentChanged());
+    const observeChildren = () => {
+      sizes.disconnect();
+      for (const child of Array.from(el.children)) sizes.observe(child);
+    };
+    observeChildren();
+    const children = new MutationObserver(observeChildren);
+    children.observe(el, { childList: true });
+    el.addEventListener('scroll', handleScroll, { passive: true });
+    el.addEventListener('scrollend', handleScrollEnd);
+    el.addEventListener('wheel', handleIntent, { passive: true });
+    el.addEventListener('touchstart', handleIntent, { passive: true });
+    el.addEventListener('keydown', handleIntent);
+    /**
+     * A heartbeat, because the observers above are not guaranteed to fire.
+     *
+     * ResizeObserver and requestAnimationFrame are suspended while the tab is in
+     * the background (measured — neither fires at all, not even the observer's
+     * first callback), and the run keeps writing the whole time. A change that
+     * lands while they are asleep is a thread that never catches up, because
+     * nothing afterwards is a growth event.
+     *
+     * Half a second is far below noticing and costs one comparison when the
+     * reader is already at the end, which is the common case. The reported
+     * symptom was the chat not following a run at all, and a check that cannot
+     * be starved is worth more here than the last word in elegance.
+     */
+    const heartbeat = window.setInterval(() => follower.contentChanged(), 500);
+    const onVisible = () => follower.contentChanged();
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.clearInterval(heartbeat);
+      document.removeEventListener('visibilitychange', onVisible);
+      sizes.disconnect();
+      children.disconnect();
+      el.removeEventListener('scroll', handleScroll);
+      el.removeEventListener('scrollend', handleScrollEnd);
+      el.removeEventListener('wheel', handleIntent);
+      el.removeEventListener('touchstart', handleIntent);
+      el.removeEventListener('keydown', handleIntent);
+    };
+  }, [threadEl, threadFollower]);
 
   // Resize handle logic — chat pane
   useEffect(() => {
@@ -1324,7 +1424,10 @@ function MainApp({ project, onBackToProjects, onUpdateProject, fetchProjectPrevi
       // pictures the build would have had.
       {
         const picked = uiImagesForSend(image, extraImages);
-        proposePlan(rawText, preset, effectiveModel, outputKind, rebuilding ? undefined : (displayHtml ?? undefined), picked.image, dataFile ?? undefined, picked.images, captionsForSend(picked, imageNotes));
+        const forBuild = rebuilding || !displayHtml;
+        // Answering a proposal amends it — see utils/planRevision.ts.
+        const revision = forBuild ? proposalBeingAnswered(messages) : undefined;
+        proposePlan(rawText, preset, effectiveModel, outputKind, forBuild ? undefined : (displayHtml ?? undefined), picked.image, dataFile ?? undefined, picked.images, captionsForSend(picked, imageNotes), revision);
       }
     } else if (displayHtml && !rebuilding) {
       modifyAttemptHtmlRef.current = displayHtml;
@@ -1367,6 +1470,41 @@ function MainApp({ project, onBackToProjects, onUpdateProject, fetchProjectPrevi
     }
     setInputText('');
     setSelectedSelector(null); setSelectedAnchor(null);
+  };
+
+  /**
+   * Ask for one open finding to be fixed, from the finding itself.
+   *
+   * The findings list was a list of things to read. Acting on one meant copying
+   * it into the composer, and a person who has just been told 「スタイルが各
+   * コンポーネントに散っていて、共通化されていません」 has to retype it to ask for
+   * the obvious next thing.
+   *
+   * One finding per request, deliberately, and this is the pipeline's own
+   * measurement rather than a UI preference: a repair call handed eight
+   * unrelated instructions 「returned exactly as many defects as it was given」,
+   * which is why the repair pass and the edit path are both one file at a time.
+   * A 「まとめて修正」 button would be the shape that was measured failing.
+   *
+   * It sends rather than filling the composer, because the ask was one click.
+   * The button is disabled while anything is running, so the click cannot queue.
+   */
+  const handleFixFinding = (finding: string) => {
+    if (!displayHtml || rebuilding || isProcessing) return;
+    const instruction = findingFixInstruction(finding);
+    if (!instruction) return;
+    setMessages((prev) => [...prev, {
+      id: crypto.randomUUID(),
+      role: 'user',
+      content: findingFixMessage(finding),
+      timestamp: Date.now(),
+    }]);
+    modifyAttemptHtmlRef.current = displayHtml;
+    // no-attachment: the button acts on a finding about the document as it
+    // stands. A picture staged in the composer belongs to the message the
+    // person is still writing, and spending it on a fix they did not attach it
+    // to would also leave the composer looking as though it still held one.
+    modify(displayHtml, instruction, preset, effectiveModel, undefined, project.projectId, undefined, effort, undefined);
   };
 
   /**
@@ -1532,8 +1670,6 @@ function MainApp({ project, onBackToProjects, onUpdateProject, fetchProjectPrevi
     }
   };
 
-
-
   // Persist the in-flight job so leaving the project and coming back can
   // re-attach to it — the work continues server-side regardless.
   useEffect(() => {
@@ -1558,46 +1694,58 @@ function MainApp({ project, onBackToProjects, onUpdateProject, fetchProjectPrevi
   }, [planJobId, isPlanning, project.projectId, preset, model, outputKind]);
 
   /**
-   * Recover the preview whenever there is nothing to show.
+   * Opening a project shows the document the SERVER has, not a copy of it.
    *
-   * The condition used to be `project.lastHtml` — the copy carried in from the
-   * project list. That is a snapshot taken when the list was last fetched, so
-   * after generating and navigating back it can still hold the document from
-   * *before* the run, or hold one while the canvas has none. Either way it
-   * answers a question nobody asked: what matters is whether this component has
-   * something to render right now.
+   * This used to fetch only when there was nothing to render — `if (loadedHtml
+   * || isGenerating) return` — which made `project.lastHtml`, the copy carried
+   * in from the project list, authoritative whenever it happened to be set.
+   * It is not authoritative and cannot be: it is written into the list's state
+   * by `onUpdateProject` while the browser is watching a run, and by nothing
+   * else. So:
    *
-   * Keyed on `loadedHtml` being empty instead. `displayHtml` is deliberately not
-   * the trigger — an in-flight generation legitimately has no document yet, and
-   * re-fetching mid-run would fight it.
+   *   generate → the list's copy is doc1 · start an edit · go back to the list
+   *   → this component unmounts and the polling stops · the edit finishes
+   *   server-side → the project row and version history hold doc2 · reopen
+   *   → the canvas shows doc1 and the version dropdown shows v2
+   *
+   * Reported as exactly that: 「プレビューのバージョンとバージョンタブのバージョン
+   * がずれている」. Nothing on screen could disagree with itself more directly —
+   * the dropdown falls back to `versions[0]`, which IS the newest, so the two
+   * halves were reading different sources for the same question.
+   *
+   * The server is the one source. `GET /projects/:id/preview` answers with the
+   * project's own document, falling back to the newest version when the row has
+   * none, so it is the same document the dropdown's first row names.
+   *
+   * The carried-in copy is still used, as the first paint — it is usually right
+   * and it is instant — and it is REPLACED when the fetch disagrees with it.
    */
   const previewFetchedRef = useRef<string | null>(null);
   useEffect(() => {
-    if (loadedHtml || isGenerating) return;
+    // Not while a run is in flight: it legitimately has no document yet, and
+    // fetching would fight it. The effect runs again when the run ends.
+    if (isGenerating) return;
     // Once per project: a project that genuinely has no document must not turn
     // into a request on every render.
     if (previewFetchedRef.current === project.projectId) return;
     previewFetchedRef.current = project.projectId;
     let cancelled = false;
+    /** The copy this component opened with, and the only thing it may replace. */
+    const carriedIn = project.lastHtml ?? null;
     fetchProjectPreview(project.projectId).then((html) => {
-      // Never clobber output produced since mount — a run may have completed
-      // while this request was in flight.
-      /**
-       * `||` rather than `??`, because the thing being recovered from is an
-       * empty document.
-       *
-       * The project record used to store `lastHtml` inline when it fit and an
-       * empty string when it did not, and this fetch is what recovered the real
-       * document. `??` treats that empty string as a value worth keeping, so the
-       * recovery it exists to perform was discarded for exactly the projects
-       * that needed it — the large ones. The record carries no document at all
-       * now, so this path is taken every time and the distinction matters more,
-       * not less.
-       */
-      if (!cancelled && html) setLoadedHtml((prev) => prev || html);
+      if (cancelled || !html) return;
+      setLoadedHtml((prev) => {
+        /*
+         * Anything but the carried-in copy is newer than this answer: output
+         * produced since mount, or a stored version the person chose while the
+         * request was in flight. Neither may be clobbered.
+         */
+        if (prev !== null && prev !== carriedIn) return prev;
+        return html;
+      });
     });
     return () => { cancelled = true; };
-  }, [project.projectId, loadedHtml, isGenerating, fetchProjectPreview]);
+  }, [project.projectId, project.lastHtml, isGenerating, fetchProjectPreview]);
 
   /*
    * The transcript of the run in flight, kept beside its job record.
@@ -1977,7 +2125,7 @@ function MainApp({ project, onBackToProjects, onUpdateProject, fetchProjectPrevi
         <div className="app__chat-pane">
           <div
             className="app__chat-thread"
-            ref={chatThreadRef}
+            ref={setChatThread}
             role="log"
             aria-label="会話履歴"
           >
@@ -2055,7 +2203,48 @@ function MainApp({ project, onBackToProjects, onUpdateProject, fetchProjectPrevi
                               </summary>
                               <ul className="app__chat-list app__findings-list">
                                 {block.items.map((item, j) => (
-                                  <li key={j}>{renderInline(item)}</li>
+                                  <li key={j}>
+                                    <span className="app__findings-text">{renderInline(item)}</span>
+                                    {/*
+                                      One finding, one request. The button acts
+                                      on the CURRENT document, which is what
+                                      typing the same sentence would do — so a
+                                      finding read out of an older reply still
+                                      asks about what is on screen now.
+                                    */}
+                                    <button
+                                      type="button"
+                                      className="app__findings-fix"
+                                      onClick={() => handleFixFinding(item)}
+                                      disabled={!displayHtml || rebuilding || isProcessing}
+                                      title="この指摘の修正を依頼します"
+                                    >
+                                      修正を依頼
+                                    </button>
+                                  </li>
+                                ))}
+                              </ul>
+                            </details>
+                          ) : block.kind === 'opinions' ? (
+                            /*
+                              The critic's opinions the run does not repair — see
+                              ReplyBlock 'opinions'. Folded like the findings and
+                              with no fix button: measured, an edit does not move
+                              these, and a button would offer one that does not.
+                              They can still be asked for in words.
+                            */
+                            <details className="app__findings app__findings--opinions" key={i}>
+                              <summary className="app__findings-summary">
+                                デザインについての参考意見 {block.count}件
+                              </summary>
+                              <p className="app__findings-note">
+                                画面の見た目についての批評です。自動修正では改善しにくいことが分かっているため、未解決の指摘には含めていません。気になるものは、具体的に指示すると反映できます。
+                              </p>
+                              <ul className="app__chat-list app__findings-list">
+                                {block.items.map((item, j) => (
+                                  <li key={j}>
+                                    <span className="app__findings-text">{renderInline(item)}</span>
+                                  </li>
                                 ))}
                               </ul>
                             </details>
@@ -2167,24 +2356,23 @@ function MainApp({ project, onBackToProjects, onUpdateProject, fetchProjectPrevi
                       </span>
                     )}
                     {/*
-                      Defects the pipeline found, planned a fix for, and did not
-                      spend a call on — the repair budget ran out, or the file
-                      had already resisted two rewrites.
+                      No 「未修正」 count beside the score, and the reason is that
+                      it answered a different question from the one next to it.
 
-                      Shown because a result that does not say so looks like the
-                      pipeline's best answer without being it. The backend has
-                      carried the number since the budget shipped and nothing
-                      rendered it, which is the same silence the score's two
-                      halves were in.
+                      `unrepairedDefects` counts what the repair budget declined
+                      to spend a call on. 「未解決の指摘」 in the reply counts what
+                      was still open when the run ended. A defect can be in both,
+                      in either, or in neither — a finding the budget skipped may
+                      be fixed by another file's repair, and one it did spend a
+                      call on may still be open. So two numbers sat a centimetre
+                      apart, both labelled as things that were not fixed, and
+                      disagreed. Reported by the user as exactly that.
+
+                      The reply's count is the one that answers what a person is
+                      asking, because it is the list they can act on — and every
+                      item in it now has a button. The budget figure stays in the
+                      job metadata and in the log, where the measurement lives.
                     */}
-                    {msg.runInfo?.unrepairedDefects ? (
-                      <span
-                        className="app__chat-unrepaired"
-                        title="見つけたが修正までは行えなかった指摘の件数です。修正の予算を使い切ったか、そのファイルが2回書き直しても直らなかったことを意味します"
-                      >
-                        未修正 {msg.runInfo.unrepairedDefects}件
-                      </span>
-                    ) : null}
                     {msg.toolsUsed && msg.toolsUsed.length > 0 && (
                       <span className="app__chat-tools">{msg.toolsUsed.join(', ')}</span>
                     )}

@@ -279,10 +279,52 @@ const ORDERED: { subject: string; term: string }[] = Object.entries(SUBJECT_TERM
   .flatMap(([subject, terms]) => terms.map((term) => ({ subject, term: term.toLowerCase() })))
   .sort((a, b) => b.term.length - a.term.length)
 
+/**
+ * Words that CONTAIN a subject term while being something else entirely.
+ *
+ * Japanese has no spaces, so a substring match reads 「サングラス」 as 「グラス」 and
+ * files a pair of sunglasses under tableware — measured on a real apparel
+ * storefront, where it was the one wrong photograph among twelve right ones.
+ * The same trap holds for a handful of other compounds.
+ *
+ * A term is ignored when the only place it occurs is inside one of these. The
+ * name then goes on to the model-backed resolver, which answers with a subject
+ * the library really holds or with nothing — and nothing is the correct answer
+ * for sunglasses, because the library has no photograph of any.
+ */
+const COMPOUNDS_THAT_SWALLOW_A_TERM = [
+  'サングラス', 'ワイングラス', 'グラスウール',
+  'ブックカバー', 'ノートパソコン', 'デスクトップ',
+  'ペンダント', 'ペンキ', 'カメラマン', 'バッグパック',
+]
+
+/** True when `term` occurs in `text` only as part of a longer word that is not it. */
+function onlyInsideCompound(text: string, term: string): boolean {
+  let from = 0
+  for (;;) {
+    const at = text.indexOf(term, from)
+    if (at === -1) return true
+    const swallowed = COMPOUNDS_THAT_SWALLOW_A_TERM.some((word) => {
+      const lower = word.toLowerCase()
+      // A term that IS the compound is the word itself, not a word swallowing it:
+      // 「ノートパソコン」 is a term for `laptop` and also contains 「ノート」.
+      if (lower === term || !lower.includes(term)) return false
+      const start = at - lower.indexOf(term)
+      return text.slice(start, start + lower.length) === lower
+    })
+    if (!swallowed) return false
+    from = at + 1
+  }
+}
+
 export function matchSubject(text: string): string | null {
   if (!text) return null
   const t = text.toLowerCase()
-  for (const { subject, term } of ORDERED) if (t.includes(term)) return subject
+  for (const { subject, term } of ORDERED) {
+    if (!t.includes(term)) continue
+    if (onlyInsideCompound(t, term)) continue
+    return subject
+  }
   return null
 }
 

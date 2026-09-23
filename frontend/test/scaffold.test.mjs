@@ -2,21 +2,17 @@
 //
 // The claim this module makes is "npm install && npm run dev", and it was true
 // of exactly one of the three formats. `toProjectFiles` opened with a `hasReact`
-// test and returned the input untouched for anything else, so a Vue or Svelte
+// test and returned the input untouched for anything else, so a Vue
 // project downloaded as a bare `src/` — no manifest, no vite config, no entry
 // document, no readme. Nothing to install and nothing to run.
 //
 // The second failure would have survived adding a manifest, and is the reason
 // the mount assertions are here. The entry document hard-coded `<div id="root">`
-// while Vue mounts on `#app` and Svelte targets `#app`, so a downloaded Vue
+// while Vue mounts on `#app`, so a downloaded Vue
 // project installed, built, served — and rendered a blank page. The preview
 // could not show it, because the preview injects its own mount element.
 //
 // The dependency assertions come from running the thing: pairing vite 5 with
-// @sveltejs/vite-plugin-svelte@5 fails `npm install` outright with ERESOLVE,
-// which a file-list test cannot see.
-//
-//   node test/scaffold.test.mjs      (from frontend/)
 import { execSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
@@ -66,13 +62,6 @@ const VUE = doc(
   fence('src/screens/ListScreen.vue', `<template><section /></template>`),
   fence('src/styles/globals.css', ':root{--a:#000}')
 );
-const SVELTE = doc(
-  fence('src/main.ts', `import { mount } from 'svelte';\nimport App from './App.svelte';\nmount(App, { target: document.getElementById('app') });`),
-  fence('src/App.svelte', `<div />`),
-  fence('src/routes.ts', `export type ScreenId = 'list';`),
-  fence('src/screens/ListScreen.svelte', `<section />`),
-  fence('src/styles/globals.css', ':root{--a:#000}')
-);
 
 const build = (source) => {
   const files = toProjectFiles(splitHtmlToFiles(source), 'Stock App');
@@ -86,7 +75,7 @@ const build = (source) => {
 
 // --- every framework gets a project, not just React ------------------------
 const REQUIRED = ['index.html', 'package.json', 'vite.config.ts', 'tsconfig.json', 'README.md', '.gitignore'];
-for (const [name, source] of [['react', REACT], ['vue', VUE], ['svelte', SVELTE]]) {
+for (const [name, source] of [['react', REACT], ['vue', VUE]]) {
   const p = build(source);
   check(`${name}: the files that make it a project are all there`,
     REQUIRED.filter((f) => !p.paths.includes(f)), []);
@@ -100,7 +89,6 @@ for (const [name, source] of [['react', REACT], ['vue', VUE], ['svelte', SVELTE]
 // --- the entry document has to match the code ------------------------------
 check('react mounts on #root', /<div id="root">/.test(build(REACT).read('index.html')), true);
 check('vue mounts on #app', /<div id="app">/.test(build(VUE).read('index.html')), true);
-check('svelte mounts on #app', /<div id="app">/.test(build(SVELTE).read('index.html')), true);
 check('and the script tag points at the real entry file',
   /src="\/src\/main\.ts"/.test(build(VUE).read('index.html')), true);
 
@@ -116,21 +104,13 @@ check('an unconventional mount id is honoured',
 // --- the toolchain each framework actually needs ---------------------------
 check('react gets the react plugin', Object.keys(build(REACT).pkg.devDependencies).includes('@vitejs/plugin-react'), true);
 check('vue gets the vue plugin', Object.keys(build(VUE).pkg.devDependencies).includes('@vitejs/plugin-vue'), true);
-check('svelte gets the svelte plugin', Object.keys(build(SVELTE).pkg.devDependencies).includes('@sveltejs/vite-plugin-svelte'), true);
 
 // `tsc` cannot read a .vue or a .svelte file, so a typecheck script that says
 // `tsc --noEmit` for them checks none of the components and reports success.
 check('vue typechecks with vue-tsc', build(VUE).pkg.scripts.typecheck, 'vue-tsc --noEmit');
-check('svelte typechecks with svelte-check',
-  build(SVELTE).pkg.scripts.typecheck.startsWith('svelte-check'), true);
 check('react typechecks with tsc', build(REACT).pkg.scripts.typecheck, 'tsc --noEmit');
-
-// @sveltejs/vite-plugin-svelte@5 declares `peer vite@^6.0.0`. With vite ^5 the
-// install fails with ERESOLVE and the developer never reaches the app.
-check('the svelte plugin and vite agree on a major',
-  build(SVELTE).pkg.devDependencies.vite.startsWith('^6'), true);
 // vite.config.ts is inside `include`, and Vite's types reference Node's.
-for (const [name, source] of [['react', REACT], ['vue', VUE], ['svelte', SVELTE]]) {
+for (const [name, source] of [['react', REACT], ['vue', VUE]]) {
   check(`${name}: the types vite.config.ts needs are declared`,
     Object.keys(build(source).pkg.devDependencies).includes('@types/node'), true);
 }
@@ -149,6 +129,21 @@ const readme = build(VUE).read('README.md');
 check('the readme names the framework', /Vue 3/.test(readme), true);
 check('and the directories the project actually has', /src\/screens\//.test(readme), true);
 check('and the mount element, so a blank page is diagnosable', /id="app"/.test(readme), true);
+
+// --- a project that wrote its own tooling exports one copy of each ------------
+/*
+ * A Vue build of 2026-09-23 wrote vite.config.ts, package.json and tsconfig.json
+ * itself. Stored projects keep them, and the ZIP held two files at each path.
+ */
+{
+  const withTooling = VUE.replace('</body>',
+    fence('vite.config.ts', "import { defineConfig } from 'vite'\nexport default defineConfig({})") +
+    fence('package.json', '{"name":"model-wrote-this"}') + '</body>');
+  const p = build(withTooling);
+  check('one file per path', p.paths.length, new Set(p.paths).size);
+  check('and the scaffold copy is the one kept', p.pkg.name !== 'model-wrote-this', true);
+  check('the sources are otherwise all there', p.paths.includes('src/screens/ListScreen.vue'), true);
+}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

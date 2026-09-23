@@ -91,7 +91,7 @@ const hasKeptMarksOnly = (glyphs: string): boolean =>
   [...glyphs.replace(/[\u{FE0F}\u{200D}\s]/gu, '')].every((c) => TYPOGRAPHIC_MARKS.has(c))
 
 /** Files a glyph can be shown from. Stylesheets and prose are not the UI. */
-const UI_FILE = /\.(tsx|jsx|vue|svelte|ts|js)$/
+const UI_FILE = /\.(tsx|jsx|vue|ts|js)$/
 
 export function replaceEmoji(path: string, body: string, kind: OutputKind): { body: string; replaced: number; removed: number } {
   if (!UI_FILE.test(path)) return { body, replaced: 0, removed: 0 }
@@ -99,7 +99,7 @@ export function replaceEmoji(path: string, body: string, kind: OutputKind): { bo
   let removed = 0
   let out = body
   // Markup can only be in a component file; a `.ts` module's `>…<` is a comparison.
-  if (/\.(tsx|jsx|vue|svelte)$/.test(path)) {
+  if (/\.(tsx|jsx|vue)$/.test(path)) {
     out = out.replace(GLYPH_ONLY_CONTENT, (whole, _lead: string, glyphs: string) => {
       if (hasKeptMarksOnly(glyphs)) return whole
       replaced += 1

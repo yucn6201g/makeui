@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { requestErrorMessage } from '../utils/request';
 import { useAuth } from '../auth/AuthProvider';
+import { TransientPreviewError } from '../utils/previewFetch';
 
 export interface Project {
   projectId: string;
@@ -22,7 +23,7 @@ export interface Project {
   model?: string;
   /** Set by the job that produced the project's latest document. */
   /** 'html' only on projects predating the project formats; nothing emits it now. */
-  outputKind?: 'html' | 'react' | 'vue' | 'svelte';
+  outputKind?: 'html' | 'react' | 'vue';
   /** Cumulative across every generation and edit run against this project. */
   totalTokens?: number;
   requestCount?: number;
@@ -114,19 +115,31 @@ export function useProjects() {
    * That field is only written while the browser is watching a run, so a job
    * that finished after the user navigated away leaves the project looking
    * empty. The document the job wrote to version history is authoritative.
+   *
+   * It answers with the document, `null` when there is none,
+   * or a thrown `TransientPreviewError` when asking again may work.
+   *
+   * These used to be one answer. Every failure came back as `null`, which the
+   * card reads as "nothing to draw" and settles on 「プレビューを生成できません
+   * でした」 for good. Measured over a week: every 5xx the API returned was a
+   * Lambda throttle (2, 3, 2, 0, 3, 19 a day, matching Throttles exactly) — the
+   * account runs ten concurrent executions, and a list of cards asks at once.
+   * A reload worked because the second burst was smaller.
    */
   const fetchProjectPreview = useCallback(async (projectId: string): Promise<string | null> => {
     if (!token) return null;
+    let res: Response;
     try {
-      const res = await fetch(`${apiUrl}/projects/${projectId}/preview`, {
+      res = await fetch(`${apiUrl}/projects/${projectId}/preview`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (!res.ok) return null;
-      const data = await res.json();
-      return typeof data.html === 'string' && data.html ? data.html : null;
     } catch {
-      return null;
+      throw new TransientPreviewError('network');
     }
+    if (res.status === 429 || res.status >= 500) throw new TransientPreviewError(String(res.status));
+    if (!res.ok) return null;
+    const data = await res.json().catch(() => null);
+    return data && typeof data.html === 'string' && data.html ? data.html : null;
   }, [apiUrl, token]);
 
   /**

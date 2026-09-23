@@ -44,7 +44,7 @@ const MAX_TITLE = 32;
  */
 const PLACEHOLDER = new Set([
   'document', 'untitled', 'untitled document', 'app', 'my app', 'react app',
-  'vite app', 'vite + react', 'vite + react + ts', 'vue app', 'svelte app',
+  'vite app', 'vite + react', 'vite + react + ts', 'vue app',
   'makeui app', 'makeui', 'index', 'home', 'page', 'title',
   'ホーム', 'トップ', 'トップページ', 'ページ', 'アプリ', 'タイトル', '無題',
   /*

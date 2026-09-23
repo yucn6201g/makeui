@@ -76,7 +76,7 @@ const ANSWERS = {
   svelte: ['src/screens/HomeScreen.svelte', 'src/components/ui/Card.svelte', 'src/styles/globals.css'],
 };
 
-for (const kind of ['react', 'vue', 'svelte']) {
+for (const kind of ['react', 'vue']) {
   const stub = async () => JSON.stringify({ assignments: [{ defect: 1, paths: ANSWERS[kind] }] });
   const plans = await planFileRepairs(PROJECTS[kind], DEFECT, stub);
   check(`${kind}: every named path survives the filter`,
@@ -89,7 +89,7 @@ for (const kind of ['react', 'vue', 'svelte']) {
 
 // The filter still has to refuse what it was written to refuse.
 const bad = ['../../etc/passwd', '/etc/passwd', 'node_modules/x/index.js', 'package.json', 'src/App.py'];
-for (const kind of ['react', 'vue', 'svelte']) {
+for (const kind of ['react', 'vue']) {
   const stub = async () => JSON.stringify({ assignments: [{ defect: 1, paths: bad }] });
   const plans = await planFileRepairs(PROJECTS[kind], DEFECT, stub);
   check(`${kind}: paths outside the project are still refused`, plans.map((p) => p.path), []);
@@ -98,7 +98,7 @@ for (const kind of ['react', 'vue', 'svelte']) {
 // A component of the WRONG framework is a hallucination too — a .vue file has no
 // business in a React plan, and admitting one is how a project changes shape.
 const crossed = { react: 'src/components/ui/Card.vue', vue: 'src/components/ui/Card.tsx', svelte: 'src/components/ui/Card.vue' };
-for (const kind of ['react', 'vue', 'svelte']) {
+for (const kind of ['react', 'vue']) {
   const stub = async () => JSON.stringify({ assignments: [{ defect: 1, paths: [crossed[kind]] }] });
   const plans = await planFileRepairs(PROJECTS[kind], DEFECT, stub);
   check(`${kind}: a component from another framework is refused`, plans.map((p) => p.path), []);

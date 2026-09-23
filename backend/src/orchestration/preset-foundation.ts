@@ -478,7 +478,7 @@ export function snapFontFamilies(source: string, presetName: string | undefined)
   let html = source
   let changes = 0
   for (const [path, body] of readProjectFiles(source)) {
-    if (!/\.(css|vue|svelte)$/.test(path)) continue
+    if (!/\.(css|vue)$/.test(path)) continue
     const block = body.match(new RegExp(`${escapeRegExp(FOUNDATION_START)}[\\s\\S]*?${escapeRegExp(FOUNDATION_END)}`))?.[0] ?? ''
     const outside = block ? body.replace(block, '/*makeui:foundation:placeholder*/') : body
     let n = 0
@@ -527,7 +527,7 @@ export function measureComponentDrift(source: string, presetName: string | undef
   if (!f) return empty
   const sheets = isFencedTransport(source)
     ? [...readProjectFiles(source)].flatMap(([path, body]) =>
-        path.endsWith('.css') ? [body] : /\.(vue|svelte)$/.test(path) ? [...body.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)].map((m) => m[1]) : [])
+        path.endsWith('.css') ? [body] : /\.(vue)$/.test(path) ? [...body.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)].map((m) => m[1]) : [])
     : [...source.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)].map((m) => m[1])
   const css = withoutFoundation(normaliseCss(sheets.join('\n')))
 
@@ -556,4 +556,115 @@ export function measureComponentDrift(source: string, presetName: string | undef
   if (buttons.size) details.push(`ボタンの高さがシステムの値ではありません: ${list(buttons).map((v) => `${v}px`).join(', ')}（使える値: ${px(f.buttonHeights)}）`)
   if (fields.size) details.push(`入力欄の高さがシステムの値ではありません: ${list(fields).map((v) => `${v}px`).join(', ')}（使える値: ${px(f.fieldHeights)}）`)
   return { fontSizes: list(sizes), buttonHeights: list(buttons), fieldHeights: list(fields), details }
+}
+
+/** How far a height may move to reach the system's value. Past it, it is a different component. */
+const HEIGHT_REACH_PX = 8
+/** How far below the scale's smallest step a type size is still a caption rather than a glyph. */
+const TYPE_REACH_PX = 6
+
+/**
+ * The two kinds of drift that have one right answer, put on the system's values.
+ *
+ * `measureComponentDrift` reports and does not rewrite, on the ground that which
+ * way a 15px caption goes is a design call. For most of what it finds that holds.
+ * For two shapes it does not, and they are most of what ships:
+ *
+ *   A height a few pixels off an allowed one. Measured over 30 days after the
+ *   foundation block (14 runs shipped with size drift): button and field heights
+ *   of 44px were six of them — the generic touch-target minimum this pipeline's
+ *   own form contract and `input-sizing` repair ask for, landing on a system that
+ *   says 40 / 48. The nearest allowed height AT OR ABOVE it is taken first, so a
+ *   control never gets smaller than the model made it; below only when nothing
+ *   above is within reach. 80px buttons, 18px "fields", stay reported.
+ *
+ *   A type size below the scale's smallest step. Digital Agency's scale starts at
+ *   14 and five of its runs shipped 12px text. Raising it to the first step is the
+ *   only direction that stays on the scale without making text smaller. A size
+ *   inside the scale's range but between steps (Carbon 24 between 20 and 28) is
+ *   the design call, and stays a finding.
+ *
+ * Literal values and the project's own token declarations are rewritten; the
+ * foundation block is never touched and `var()` values are left alone.
+ */
+export function snapComponentSizes(
+  source: string,
+  presetName: string | undefined
+): { html: string; changes: { from: number; to: number; what: 'font' | 'button' | 'field' }[] } {
+  const f = presetName ? FOUNDATIONS[presetName] : undefined
+  const changes: { from: number; to: number; what: 'font' | 'button' | 'field' }[] = []
+  if (!f || !isFencedTransport(source)) return { html: source, changes }
+  const minType = Math.min(...f.typeScale)
+
+  const toPx = (n: string, unit: string) => Math.round(unit === 'rem' ? parseFloat(n) * 16 : parseFloat(n))
+  const typeFor = (px: number): number | null =>
+    px < minType && px >= minType - TYPE_REACH_PX ? minType : null
+  const heightFor = (px: number, allowed: number[]): number | null => {
+    if (allowed.includes(px)) return null
+    const up = allowed.filter((a) => a > px && a - px <= HEIGHT_REACH_PX).sort((a, b) => a - b)[0]
+    if (up != null) return up
+    const down = allowed.filter((a) => a < px && px - a <= HEIGHT_REACH_PX).sort((a, b) => b - a)[0]
+    return down ?? null
+  }
+  const lastPart = (s: string) => s.split(/[\s>+~]+/).pop() ?? s
+
+  const snapSheet = (css: string): string => {
+    // Token declarations the project wrote itself, by what their name says they size.
+    let out = css.replace(/(--[\w-]+)(\s*:\s*)([\d.]+)(px|rem)(\s*[;}\n])/g, (whole, name: string, colon: string, n: string, unit: string, tail: string) => {
+      const px = toPx(n, unit)
+      const lower = name.toLowerCase()
+      let to: number | null = null
+      let what: 'font' | 'button' | 'field' = 'font'
+      if (/font-?size|(?:^|-)fs(?:-|$)|(?:^|-)text-(?:xs|sm|2xs|caption|small|tiny|micro)/.test(lower.slice(2))) to = typeFor(px)
+      else if (/(?:btn|button)[\w-]*height|height[\w-]*(?:btn|button)/.test(lower)) { what = 'button'; to = heightFor(px, f.buttonHeights) }
+      else if (/(?:input|field|control|select)[\w-]*height|height[\w-]*(?:input|field|control)/.test(lower)) { what = 'field'; to = heightFor(px, f.fieldHeights) }
+      if (to == null) return whole
+      changes.push({ from: px, to, what })
+      return `${name}${colon}${to}px${tail}`
+    })
+    // Literals at the point of use.
+    out = out.replace(/(font-size\s*:\s*)([\d.]+)(px|rem)(\s*(?:!important)?\s*[;}\n])/gi, (whole, head: string, n: string, unit: string, tail: string) => {
+      const px = toPx(n, unit)
+      const to = typeFor(px)
+      if (to == null) return whole
+      changes.push({ from: px, to, what: 'font' })
+      return `${head}${to}px${tail}`
+    })
+    // Heights, classified exactly as `measureComponentDrift` classifies them.
+    out = out.replace(/([^{}]+)\{([^{}]*)\}/g, (whole, sel: string, body: string) => {
+      const selectors = sel.split(',').map((s) => s.trim()).filter(Boolean)
+      const isButton = selectors.some((s) => BUTTONISH.test(lastPart(s)) && !NOT_SIZED.test(lastPart(s)))
+      const isField = !isButton && selectors.some((s) => FIELDISH.test(lastPart(s)) && !NOT_SIZED.test(lastPart(s)))
+      if (!isButton && !isField) return whole
+      const allowed = isButton ? f.buttonHeights : f.fieldHeights
+      const next = body.replace(/((?:^|[;\s])(?:min-)?height\s*:\s*)([\d.]+)px/gi, (decl, head: string, n: string) => {
+        const px = Math.round(parseFloat(n))
+        const to = heightFor(px, allowed)
+        if (to == null) return decl
+        changes.push({ from: px, to, what: isButton ? 'button' : 'field' })
+        return `${head}${to}px`
+      })
+      return next === body ? whole : `${sel}{${next}}`
+    })
+    return out
+  }
+
+  const PLACEHOLDER = '/*makeui:foundation:placeholder*/'
+  const outsideFoundation = (css: string): string => {
+    const block = css.match(new RegExp(`${escapeRegExp(FOUNDATION_START)}[\\s\\S]*?${escapeRegExp(FOUNDATION_END)}`))?.[0] ?? ''
+    const snapped = snapSheet(block ? css.replace(block, PLACEHOLDER) : css)
+    return block ? snapped.replace(PLACEHOLDER, () => block) : snapped
+  }
+
+  let html = source
+  for (const [path, body] of readProjectFiles(source)) {
+    let next = body
+    if (path.endsWith('.css')) next = outsideFoundation(body)
+    else if (path.endsWith('.vue')) next = body.replace(/(<style[^>]*>)([\s\S]*?)(<\/style>)/g, (_w, open: string, css: string, close: string) => open + outsideFoundation(css) + close)
+    else continue
+    if (next === body) continue
+    const written = writeProjectFile(html, path, next)
+    if (written) html = written
+  }
+  return { html, changes }
 }

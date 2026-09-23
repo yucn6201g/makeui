@@ -6,6 +6,7 @@ import { FORM_CONTROL_SIZING } from './graph.js'
 import { logger } from '../utils/logger.js'
 import { firstJsonObject } from '../utils/model-json.js'
 import { changeSize } from '../utils/change-size.js'
+import { applyPatchReply, isPatchReply, MIN_PATCH_CHARS, PATCH_REPLY_RULES } from './patch-reply.js'
 import { isModelUnavailable } from '../utils/failure-message.js'
 
 /**
@@ -100,15 +101,20 @@ Project conventions:
 Rules:
 - Use paths exactly as listed. To create a file, name the path it should have,
   following the layout of the existing paths — and the extension the existing
-  files of that kind already use. This project has no ${kind === 'react' ? '.vue or .svelte' : '.tsx or .jsx'} files
+  files of that kind already use. This project has no ${kind === 'react' ? '.vue' : '.tsx or .jsx'} files
   and must not gain any.
 - Name the fewest files that actually carry out the change. Every file you name
   will be rewritten in full, so do not list a file "for context".
 - A pure styling change belongs in the CSS file, not in every component that
   uses the token.
-- If the instruction cannot be carried out by editing files — it asks a
-  question, or asks for something the project has no place for — return an
-  empty list.
+- A question or a problem report about this UI — 「画像が出てない」「ボタンが
+  動かない」「どうすべき？」 — IS a change request: it asks you to find the
+  cause and fix it. Use the PROJECT FACTS, when they are given, to find the
+  files that cause it, and name them. Declining it sends the whole document to
+  a full rewrite, which is the most expensive and the most damaging thing this
+  pipeline can do.
+- Return an empty list only when the request is not about this UI at all, or
+  asks for something the project has no place for.
 
 Return only JSON. Include "parts" only when the request was listed as having
 several; it is the numbers from that list which this file serves:
@@ -123,14 +129,41 @@ several; it is the numbers from that list which this file serves:
  * the 24px input the build had been careful to avoid. Imported because a rule
  * written out twice is one rule until somebody edits one copy.
  */
-const fileSystem = (kind: OutputKind): string => {
+/**
+ * Blocks rather than a whole file, where the arithmetic says they pay.
+ *
+ * The edit path has always asked for the complete file back, and it changes
+ * almost none of it: measured over 60 days, an edited file keeps 96% of its
+ * lines (median 4% changed, p90 13%). The repair path asks for the same change
+ * as SEARCH/REPLACE blocks, and its measured replies at that change share come
+ * to 14% of the file — so this is the same form, applied to the path whose
+ * changes are the smallest in the pipeline.
+ *
+ * The saving is the smaller half of the reason. A block cannot drop an export,
+ * truncate a component or quietly rewrite a handler it was not asked about,
+ * because it never re-emits them — and those are exactly the failures this path
+ * logged over the same window: 5 files reverted for importing a module nothing
+ * wrote, 3 broken after splicing, 6 that would not parse. A patch that misses
+ * fails loudly and costs one whole-file call, which is what an edit cost
+ * anyway.
+ *
+ * Only for a file that already exists, and only above `MIN_PATCH_CHARS`. A new
+ * file has nothing to search for, and a short one costs more as blocks than as
+ * itself.
+ */
+const editPatchWorthy = (create: boolean | undefined, chars: number): boolean =>
+  !create && chars >= MIN_PATCH_CHARS
+
+const fileSystem = (kind: OutputKind, reply: 'patch' | 'whole' = 'whole'): string => {
   const fw = frameworkFor(kind)
   return `You write one file of a ${fw.label} project, applying a change.
 ${FORM_CONTROL_SIZING}
 
 Rules:
-- Return the COMPLETE file and nothing else. No markdown, no fences, no
-  commentary, no explanation before or after.
+${reply === 'patch'
+    ? PATCH_REPLY_RULES
+    : `- Return the COMPLETE file and nothing else. No markdown, no fences, no
+  commentary, no explanation before or after.`}
 - Carry out the instruction as it affects THIS file. Leave everything else in the
   file — the design, the copy, the structure, the exports — exactly as it is.
 - Keep the file's imports working. You may import a file that exists in the
@@ -670,9 +703,6 @@ function newScreenScaffold(kind: OutputKind, filePath: string): string {
   if (kind === 'vue') {
     return `<template>\n  <section>\n    <h1>${heading}</h1>\n    <p>${note}</p>\n  </section>\n</template>\n`;
   }
-  if (kind === 'svelte') {
-    return `<section>\n  <h1>${heading}</h1>\n  <p>${note}</p>\n</section>\n`;
-  }
   return (
     `export default function ${base}() {\n` +
     `  return (\n` +
@@ -782,9 +812,20 @@ export async function applyFileEdits(
        */
       let attempt = ''
       let complaint = ''
+      /*
+       * Blocks on the first attempt only. A retry exists because the last reply
+       * did not parse, and the form to ask for then is the one that cannot fail
+       * halfway.
+       */
+      const wantsPatch = editPatchWorthy(plan.create, leaned.text.length)
+      let format: 'patch' | 'whole' = 'whole'
+      let replyChars = 0
       for (let tries = 0; tries < 2; tries++) {
         try {
-          const raw = cleanFile(await invoke(leaned.images.size > 0 ? fileSystem(kind) + EMBEDDED_IMAGE_NOTE : fileSystem(kind), tries === 0 ? user : `${user}
+          const sys = (reply: 'patch' | 'whole'): string =>
+            leaned.images.size > 0 ? fileSystem(kind, reply) + EMBEDDED_IMAGE_NOTE : fileSystem(kind, reply)
+          const ask: 'patch' | 'whole' = tries === 0 && wantsPatch ? 'patch' : 'whole'
+          const prompt = tries === 0 ? user : `${user}
 
 --- 前回の出力はパースできませんでした ---
 ${complaint}
@@ -795,7 +836,39 @@ ${complaint}
 - 100行以内に収めること。依頼の中心にある要素だけを書くこと
 - 開いたタグをその場で閉じ、深さは3段までにすること
 - このプロジェクトの形式（${fw.label} / ${fw.componentExt}）から外れないこと
-ファイル全体を返すこと。説明や記号を本文の前後に付けないこと。`), plan.path)
+ファイル全体を返すこと。説明や記号を本文の前後に付けないこと。`
+          const answer = await invoke(sys(ask), prompt)
+          replyChars = answer.length
+          format = 'whole'
+          let raw: string
+          if (ask === 'patch' && isPatchReply(answer)) {
+            const applied = applyPatchReply(leaned.text, answer)
+            if (applied.ok) {
+              raw = applied.body
+              format = 'patch'
+            } else {
+              /*
+               * One call for the file, told why the blocks did not land — the
+               * same recovery the repair path makes, for the same reason: a
+               * block that fails to match is a model copying inexactly, which
+               * is a different failure from a model that could not make the
+               * change, and dropping the file would count it as the second.
+               */
+              logger.info('File edit patch did not apply', {
+                path: plan.path, error: applied.error, blocks: applied.blocks,
+                replyChars: answer.length, head: answer.slice(0, 300),
+              })
+              const whole = await invoke(
+                sys('whole'),
+                `${prompt}\n\n--- 直前の回答の SEARCH/REPLACE ブロックは適用できませんでした（${applied.error}）---\n` +
+                  '今回はブロックではなく、変更後のファイル全体を出力してください。'
+              )
+              replyChars += whole.length
+              raw = cleanFile(whole, plan.path)
+            }
+          } else {
+            raw = cleanFile(answer, plan.path)
+          }
           /*
            * The pictures go back before anything measures this reply — the
            * length floor and the parse check both read the body, and a body
@@ -829,6 +902,11 @@ ${complaint}
                 path: plan.path,
                 ...changeSize(leaned.text, lean(body).text),
                 outChars: body.length,
+                // What the reply itself cost, next to what a whole file would
+                // have. `scripts/repair-change-size.mjs` reads both back, and
+                // the verdict on this path needs 30 files it does not yet have.
+                format,
+                replyChars,
               })
             }
             return { path: plan.path, body }

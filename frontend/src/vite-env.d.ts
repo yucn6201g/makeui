@@ -17,8 +17,3 @@ declare module 'virtual:vue-global' {
   export default content;
 }
 
-/** Svelte's runtime is many ESM modules, so this one is bundled at build time. */
-declare module 'virtual:svelte-runtime' {
-  const content: string;
-  export default content;
-}

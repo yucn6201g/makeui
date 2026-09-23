@@ -152,11 +152,10 @@ check('and leaves the generated stylesheet intact',
 check('and the project still has its three files',
   (cleared.match(/@@@makeui:file /g) || []).length, 3);
 
-// Vue and Svelte go the same way — the stylesheet is found by what the project
+// Vue goes the same way — the stylesheet is found by what the project
 // has, not by the framework it is written in.
 for (const [kind, entry, app, ext] of [
   ['vue', ['src/main.ts', "import { createApp } from 'vue'\nimport App from './App.vue'\ncreateApp(App).mount('#app')"], ['src/App.vue', '<template><button class="btn">買う</button></template>'], 'vue'],
-  ['svelte', ['src/main.ts', "import { mount } from 'svelte'\nimport App from './App.svelte'\nmount(App, { target: document.body })"], ['src/App.svelte', '<button class="btn">買う</button>'], 'svelte'],
 ]) {
   const doc = `<!DOCTYPE html><html><body>\n<div id="app"></div>\n`
     + fence(...entry) + fence(...app) + fence('src/styles/globals.css', SHEET) + `</body></html>`;
@@ -167,7 +166,6 @@ for (const [kind, entry, app, ext] of [
   check(`${kind}: with no stray <style> block`, out.includes('<style data-file'), false);
 }
 
-
 // A fenced project must be refused by the text-editing guard too. It was not:
 // the guard read data-file, so text editing was offered on every current
 // project. applyTextEdit parses the whole document and re-serialises it, and a
@@ -175,7 +173,7 @@ for (const [kind, entry, app, ext] of [
 // every `<button …>` in every source file into `&lt;button …&gt;`. Corruption
 // rather than a no-op, which is why this is pinned separately.
 check("a fenced React project is a project", isReactDocument(PROJECT), true);
-for (const [kind, file] of [["vue","src/App.vue"],["svelte","src/App.svelte"]]) {
+for (const [kind, file] of [["vue","src/App.vue"]]) {
   const doc = `<!DOCTYPE html><html><body>
 ` + fence(file, "<button class=\"btn\">x</button>") + `</body></html>`;
   check(kind + ": is a project too", isReactDocument(doc), true);

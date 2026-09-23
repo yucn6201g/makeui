@@ -7,7 +7,6 @@
 
 - **React** — TypeScript + JSX。context + reducer で状態を持つ
 - **Vue** — Vue 3 の単一ファイルコンポーネント（`<script setup lang="ts">`）
-- **Svelte** — Svelte 5。ルーン（`$state` / `$derived`）で状態を持つ
 
 単一 HTML 出力は廃止しました（理由は DESIGN.md 3.1.3）。Angular は見送っています。
 
@@ -194,7 +193,7 @@ Step 1: デザイン設計（Strands Graph / strands-design.ts）
 
 Step 2: code-assembler
   入力: 設計仕様 + プリセット仕様 (PRESET_SPECS) + prompt
-  出力: outputKind (react / vue / svelte) に応じたプロジェクト。
+  出力: outputKind (react / vue) に応じたプロジェクト。
         ファイル構成と言語固有ルールは config/frameworks.ts の登録簿から組み立てる。
         文書形式は行フェンス（@@@makeui:file <path> … @@@makeui:endfile）。
         以前の <script data-file="..."> 形式は、SFC が自身の </script> を
@@ -457,7 +456,7 @@ src/styles/globals.css
 | 項目 | 内容 |
 |------|------|
 | `lastHtml` | 一覧のサムネイルと再入場時のプレビュー（350KB超は保存しない） |
-| `outputKind` | `react` / `vue` / `svelte`。記録が無い場合はファイル拡張子から判定（`.svelte` → svelte、`.vue` → vue、`.tsx`/`.jsx` → react） |
+| `outputKind` | `react` / `vue`。記録が無い場合はファイル拡張子から判定（`.svelte` → svelte、`.vue` → vue、`.tsx`/`.jsx` → react） |
 | `totalTokens` | 累計トークン（`if_not_exists` + 加算で原子的に更新） |
 | `requestCount` | 生成・変更の実行回数 |
 
@@ -640,7 +639,7 @@ text-to-image は Nova Canvas のみで、東京・バージニアいずれも `
 ### UI 品質スコアリング（scoreHtml / scoreProject）
 
 > **この表は単一 HTML 用のルーブリックです。** MakeUI が現在作るのはすべて
-> React / Vue / Svelte のプロジェクトで、そちらは `scoreProject()` の別ルーブリックで
+> React / Vue のプロジェクトで、そちらは `scoreProject()` の別ルーブリックで
 > 採点されます。詳細と、2026-09-03 に行ったスケールの見直しは
 > [04_backend.md](04_backend.md) を参照してください。要点だけ:
 >
@@ -762,7 +761,7 @@ Step 4: 返答
 | 機能 | エンドポイント | 説明 |
 |------|--------------|------|
 | 画像入力 | POST /generate | 参照画像からのUI生成（Vision） |
-| 出力形式 | POST /generate (`outputKind`) | React / Vue / Svelte のプロジェクト生成。HTML 単一ファイル出力は廃止 |
+| 出力形式 | POST /generate (`outputKind`) | React / Vue のプロジェクト生成。HTML 単一ファイル出力は廃止 |
 | プロンプトの添削 | POST /refine-prompt | 入力中の依頼文を Haiku で、画面の一覧（5つ以上）・各画面の中身・画面をまたぐ状態と操作・空／読み込み中／エラー・データの性格・製品固有の決まりごとの6点で具体化する（見た目・技術スタックは足さない） |
 | 要件の照合 | POST /generate・/modify | 依頼文から抜き出した要件を完成物で照合し、返答と修復に使う（上記） |
 | プロジェクト名の自動付与 | クライアント側 | 「Untitled」のプロジェクトで生成すると、生成物の `SPECIFICATION.md` の見出し（無ければ `<title>`）から名前を付ける |

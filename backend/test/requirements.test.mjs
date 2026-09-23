@@ -313,5 +313,54 @@ check('an edit repair that stops the project building is never kept',
 check('the repair is told the files a defect located', meta.includes('対象ファイル: ${d.paths.join'), true);
 check('the reply is built from the checks on the shipped document', meta.includes('describeEditReply(plan, routePlan.parts, instruction, editChecks)'), true);
 
+// --- Tab is not a key an application handles ------------------------------------
+/*
+ * Reported 2026-09-20: 「依頼された要件が反映されていません: 商品カードはTabキーで
+ * 辿れる」 on a storefront whose cards were `<div … onClick={…}>`. The miss was
+ * real; the advice was not. Tab traversal is a property of the DOM, given by a
+ * focusable element or a tabindex on one that is not — and this check looked for
+ * the string 'Tab' in an onKeyDown, while the instruction it produced told the
+ * build and the repair pass to write one. Code that branches on
+ * `e.key === 'Tab'` has taken the browser's focus order away from the user,
+ * which is the opposite of what the requirement asks for.
+ */
+const TAB = [{ text: '商品カードはTabキーで辿れる', check: { kind: 'key', keys: ['Tab'] } }];
+const screen = (body) => `<html><body><div id="root"></div>\n${block('src/screens/List.tsx', body)}</body></html>`;
+
+check('a card the keyboard cannot reach does not meet it',
+  checkRequirements(screen('export default () => <div className="card" onClick={() => go(p.id)}>x</div>'), TAB)[0].status,
+  'unmet');
+check('the same card with a tab stop does',
+  checkRequirements(screen('export default () => <div className="card" tabIndex={0} onClick={() => go(p.id)}>x</div>'), TAB)[0].status,
+  'met');
+check('a button needs nothing added',
+  checkRequirements(screen('export default () => <button onClick={() => go(p.id)}>x</button>'), TAB)[0].status, 'met');
+// The two shapes keyboard-reach refuses to touch, so the requirement must not
+// fail on them either: a backdrop's keyboard equivalent is Escape, and a panel
+// that only stops the backdrop's handler is not a control at all.
+check('a modal backdrop does not fail it',
+  checkRequirements(screen('export default () => <div className="modal-overlay" onClick={close}>x</div>'), TAB)[0].status,
+  'met');
+// And the instruction must not ask anyone to handle Tab.
+const tabDefect = requirementDefects(checkRequirements(
+  screen('export default () => <div className="card" onClick={go}>x</div>'), TAB))[0];
+check('the repair is told to make it focusable', /tabindex="0"/.test(tabDefect.instruction), true);
+check('and told explicitly not to handle the key',
+  /Tab キー自体を処理しないでください/.test(tabDefect.instruction), true);
+check('the build contract says the same', /Do NOT handle the Tab key itself/.test(requirementsBlock(TAB)), true);
+check('and does not tell it to put Tab in onKeyDown',
+  /Handle the key\(s\) Tab/.test(requirementsBlock(TAB)), false);
+// Other keys are unchanged: they really are handled in onKeyDown.
+check('Escape is still asked for as a handler',
+  /Handle the key\(s\) Escape in onKeyDown/.test(requirementsBlock([{ text: 'Escで閉じる', check: { kind: 'key', keys: ['Escape'] } }])), true);
+// A requirement naming Tab AND another key keeps the "at least one" rule, and
+// states both halves to the build.
+const BOTH = [{ text: 'Tabで移動しEnterで開く', check: { kind: 'key', keys: ['Tab', 'Enter'] } }];
+check('a mixed requirement states both',
+  requirementsBlock(BOTH).split('\n').filter((l) => l.startsWith('- ')).length, 2);
+check('and a handled Enter alone satisfies it',
+  checkRequirements(screen("export default () => <div onKeyDown={(e) => e.key === 'Enter' && go()}><div className='c' onClick={go}>x</div></div>"), BOTH)[0].status,
+  'met');
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

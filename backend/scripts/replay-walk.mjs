@@ -11,8 +11,14 @@
 // expression for its declared screens, then replay.html: a page that loads each
 // one in a 1440x900 iframe, runs the walk inside it, and prints what the
 // pipeline would have recorded — fill and what hid a screen, unstyled navs,
-// oversized icons, the shell layout, controls that threw, and whether the walk
-// ran out of time. The results are also left on `window.__replay`.
+// oversized icons, the shell layout, controls that threw, THE CONTROLS THAT
+// TOOK A CLICK AND MOVED NOTHING, and whether the walk ran out of time. The
+// results are also left on `window.__replay`.
+//
+// `dead` was missing until 2026-09-20, which is the one finding the paragraph
+// below names as the reason this exists. The summary kept `screens`,
+// `unstyledNav` and `threw` and dropped `nav`, so the question the script was
+// written to answer was the one question it could not.
 //
 // Why this exists: fixing a runtime finding without first re-walking stored
 // outputs has repeatedly meant fixing the walk's own false positives
@@ -68,9 +74,18 @@ function resolveInputs() {
   };
   for (const a of args) {
     if (a.startsWith('s3://')) {
-      const [, bucket, ...rest] = a.slice(5).split('/');
-      // Only the account's own outputs bucket is read, so the key is everything after the bucket name.
-      s3(rest.join('/'), path.basename(a, '.html'));
+      /*
+       * `s3://<bucket>/<key>`, and only the account's own outputs bucket is
+       * read — so the bucket name is dropped and the key is everything after
+       * it. The destructuring here was `[, bucket, ...rest]`, written as if
+       * the string still carried its `s3:` prefix: it skipped the first
+       * segment, read the BUCKET as the key's first part, and every path lost
+       * a directory. `s3://…/outputs/<user>/<date>/<id>.html` was fetched as
+       * `<user>/<date>/<id>.html` and the copy failed, which is why this
+       * script had only ever been used on `job:` inputs.
+       */
+      const key = a.slice(5).split('/').slice(1).join('/');
+      s3(key, path.basename(a, '.html'));
     } else if (a.startsWith('job:')) {
       const id = a.slice(4);
       s3(`jobs/${id}/pages/result.html`, id);
@@ -132,6 +147,18 @@ fs.writeFileSync(path.join(outDir, 'replay.html'), `<!DOCTYPE html><meta charset
           screens: r.screens.map((s) => s.id + ':' + s.fill.toFixed(2) + (s.hiddenBy ? ' [' + s.hiddenBy + ']' : '')),
           unstyledNav: [...new Set(r.screens.flatMap((s) => s.unstyledNav || []))],
           oversizedIcons: [...new Set(r.screens.flatMap((s) => s.oversizedIcons || []))],
+          /*
+           * What layout-broken reports, with the pixels — which exist nowhere
+           * else. The run logs defect IDS only, so how far a box actually
+           * overflows has never been visible outside the document it happened
+           * in, and 「3px はみ出して切れている」 could not be told from 「70px」
+           * without rendering the page again.
+           *
+           * No backticks in this comment: the whole replay page is written from
+           * a template literal, and one here ends it. That has now cost two
+           * sessions the same hour.
+           */
+          broken: r.screens.flatMap((s) => (s.broken || []).map((b) => ({ screen: s.id, ...b }))),
           layout: layouts.length ? {
             header: (layouts.find((l) => l.header) || {}).header || null,
             sideNavWidth: Math.max(...layouts.map((l) => l.sideNavWidth || 0)),
@@ -140,6 +167,44 @@ fs.writeFileSync(path.join(outDir, 'replay.html'), `<!DOCTYPE html><meta charset
             navItems: Math.max(...layouts.map((l) => l.navItems || 0)),
           } : null,
           threw: r.nav.filter((n) => n.threw && n.threw.length).map((n) => n.label + ': ' + n.threw[0]).slice(0, 3),
+          /*
+           * The controls that took a click and moved nothing — the finding
+           * this script's own header says it exists for, and the one it did
+           * not report. Judged here exactly as browser-verify judges it — the
+           * rule is written twice, once in TypeScript for the run and once
+           * here for the page, and the two have to be changed together or a
+           * replay stops predicting a run: nothing is dead when nothing
+           * anywhere responded (that is the walk failing, not the app), a nav
+           * item is excused if it is the first one or points at the screen
+           * already showing, and an action has no such excuse.
+           */
+          dead: (() => {
+            const clicks = r.nav || [];
+            if (!clicks.some((n) => n.responded)) return { live: false, controls: [], actions: [] };
+            // Doubled, because this whole page is written from a template
+            // literal: a single backslash here reaches the browser as nothing
+            // and the expression stops being a regular expression.
+            const route = (h) => String(h || '').replace(/^#\\/?/, '').split('/')[0];
+            const navs = clicks.filter((n) => n.kind === 'nav');
+            const controls = [];
+            navs.forEach((n, j) => {
+              if (j === 0 || !n.label || n.responded) return;
+              if (n.href && n.href.startsWith('#') && route(n.href) === route(n.hashBefore)) return;
+              // ...and the same item when it is a button, which carries no
+              // href: aria-current says it is the screen already showing.
+              if (n.current === 'page' || n.current === 'true') return;
+              if (!controls.includes(n.label)) controls.push(n.label);
+            });
+            const actions = [];
+            for (const n of clicks) {
+              if (n.kind !== 'action' || !n.label || n.responded) continue;
+              // A control that acts on fields the walk never varied — see
+              // actsOnFields in browser-verify.ts.
+              if (n.actsOnFields) continue;
+              if (!actions.includes(n.label)) actions.push(n.label);
+            }
+            return { live: true, clicked: clicks.length, controls, actions };
+          })(),
         });
       }
     } catch (e) { row.error = String(e); }

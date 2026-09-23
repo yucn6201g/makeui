@@ -16,10 +16,12 @@ import { readProjectFiles } from '../tools/project-transport.js';
  * A stored `outputKind` value, kept only if it is one this build understands.
  *
  * Written as a list rather than a chain of ternaries because the chain is what
- * silently dropped `vue` and `svelte` when they were added: it named the two
- * values it knew and returned `undefined` for everything else.
+ * silently dropped `vue` when it was added: it named the values it knew and
+ * returned `undefined` for everything else. `svelte` was removed from the list
+ * when the framework was (2026-09-18); a project stored under it is filtered out
+ * of the listing rather than shown with no framework at all.
  */
-const OUTPUT_KINDS = ['html', 'react', 'vue', 'svelte'] as const;
+const OUTPUT_KINDS = ['html', 'react', 'vue'] as const;
 function readOutputKind(value: string | undefined): ProjectRecord['outputKind'] {
   return (OUTPUT_KINDS as readonly string[]).includes(value ?? '')
     ? (value as ProjectRecord['outputKind'])
@@ -55,7 +57,7 @@ export interface ProjectRecord {
    * single HTML document since the format was removed, but stored records still
    * carry it and the list has to be able to label them.
    */
-  outputKind?: 'html' | 'react' | 'vue' | 'svelte';
+  outputKind?: 'html' | 'react' | 'vue';
   /** Tokens this project has consumed across every run. */
   totalTokens?: number;
   /** Generations and edits run against this project. */
@@ -139,7 +141,23 @@ export async function listProjects(userId: string): Promise<ProjectRecord[]> {
     lastKey = response.LastEvaluatedKey;
   } while (lastKey);
 
-  return items.map(item => ({
+  /**
+   * A project built in a framework this build cannot open is not listed.
+   *
+   * Svelte was removed on 2026-09-18 — its compiler, its repairs and its
+   * option are gone — and six stored projects were built with it. Listing one
+   * would offer a door that opens on a blank page: nothing can compile it, and
+   * an edit would be applied by a pipeline that no longer knows the language.
+   *
+   * The rows are left alone. Hiding costs nothing and is reversible; deleting
+   * somebody's work to tidy a list is not, and two of the six belong to another
+   * account.
+   */
+  const RETIRED = new Set(['svelte']);
+
+  return items
+    .filter((item) => !RETIRED.has(item.outputKind?.S ?? ''))
+    .map(item => ({
     projectId: item.projectId?.S ?? '',
     userId,
     name: item.projectName?.S ?? 'Untitled',

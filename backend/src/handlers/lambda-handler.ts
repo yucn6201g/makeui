@@ -14,7 +14,7 @@ import { displayNameFor, isValidDisplayName, DISPLAY_NAME_MAX, resolveDisplayNam
 import { recordUsage, checkUsageLimit, getUsageHistory, getAllUsersUsage, getMonthlySeries, isMonthKey, monthsBetween, getCurrentMonthKey, setUserTokenLimit, setUserAllowedModels, getUserAllowedModels, normalizeModelSet, setGroupLimit, getGroupLimit, getGroupMonth } from '../services/token-usage.js';
 import { getVersionHistory, getVersion, saveVersion } from '../services/version-history.js';
 import { getJobPageHtml } from '../services/output-storage.js';
-import { runJob, uploadHtmlIfNeeded, uploadImageIfNeeded, uploadContentImages } from './job-runner.js';
+import { runJob, uploadHtmlIfNeeded, uploadImageIfNeeded, uploadContentImages, uploadSpecIfNeeded, uploadPlanIfNeeded } from './job-runner.js';
 import { createJob, updateJobStatus, getJob } from '../services/job-service.js';
 import { getModelConfig } from '../config/agentcore-config.js';
 import { createProject, listProjects, updateProject, deleteProject, getLatestProjectHtml } from '../services/project-service.js';
@@ -577,16 +577,18 @@ export const handler = async (
       // 256KB, so it travels the same way the document does rather than inline.
       // `experiment` is dropped here: it switches pipeline stages for a measured
       // comparison, and only a direct Runtime invocation may set it.
-      const { image: _rawImage, images: _rawImages, experiment: _experiment, ...inputWithoutImage } =
+      const { image: _rawImage, images: _rawImages, approvedPlan: _rawPlan, experiment: _experiment, ...inputWithoutImage } =
         input as typeof input & { images?: string[]; experiment?: unknown };
       let imageForPayload: { image?: string; imageS3Key?: string };
       let imagesForPayload: { images?: string[]; imagesS3Key?: string };
+      let planForPayload: { approvedPlan?: string; approvedPlanS3Key?: string } = {};
       try {
         imageForPayload = await uploadImageIfNeeded(jobId, input.image);
         imagesForPayload = await uploadContentImages(
           jobId, (input as { images?: string[] }).images);
+        if (input.approvedPlan) planForPayload = await uploadPlanIfNeeded(jobId, input.approvedPlan);
       } catch (e) {
-        await updateJobStatus(jobId, 'failed', undefined, 'Image upload failed');
+        await updateJobStatus(jobId, 'failed', undefined, 'S3 upload failed');
         throw e;
       }
       const jobPayload = {
@@ -594,7 +596,7 @@ export const handler = async (
         jobId,
         userId: auth.userId,
         group: auth.membership.group,
-        input: { ...inputWithoutImage, ...imageForPayload, ...imagesForPayload },
+        input: { ...inputWithoutImage, ...imageForPayload, ...imagesForPayload, ...planForPayload },
       };
       const invokeErr = await dispatchJob(jobId, jobPayload);
       if (invokeErr) return invokeErr;
@@ -609,7 +611,7 @@ export const handler = async (
     if (method === 'POST' && path === '/plan') {
       const auth = await authenticateRequest(authorization);
       const body = getBodyString(event);
-      let input: { prompt?: string; preset?: string; model?: string; outputKind?: string; html?: string; projectId?: string; image?: string; images?: string[]; imageCaptions?: string[]; attachment?: { name: string; content: string } };
+      let input: { prompt?: string; preset?: string; model?: string; outputKind?: string; html?: string; projectId?: string; image?: string; images?: string[]; imageCaptions?: string[]; attachment?: { name: string; content: string }; revision?: { spec?: unknown; plan?: unknown; prompt?: unknown } };
       try { input = JSON.parse(body); } catch { return jsonResponse(400, { error: 'Invalid JSON body' }); }
       if (!input.prompt || typeof input.prompt !== 'string') return jsonResponse(400, { error: 'prompt is required and must be a string' });
       if (input.prompt.length > MAX_PROMPT_LENGTH) return jsonResponse(400, { error: `prompt must be ${MAX_PROMPT_LENGTH} characters or fewer` });
@@ -633,6 +635,15 @@ export const handler = async (
         const a = validateAttachment(input.attachment);
         if (!a.valid) return jsonResponse(400, { error: a.error });
       }
+      // The proposal being amended: the same cap /generate puts on the specification.
+      if (input.revision !== undefined) {
+        const r = input.revision;
+        if (!r || typeof r.spec !== 'string' || typeof r.plan !== 'string' || typeof r.prompt !== 'string'
+          || r.spec.length > 120_000 || r.plan.length > 20_000 || r.prompt.length > MAX_PROMPT_LENGTH) {
+          return jsonResponse(400, { error: 'revision must carry spec (≤120,000), plan (≤20,000) and prompt strings' });
+        }
+        if (input.html) return jsonResponse(400, { error: 'revision is for a proposal without a document' });
+      }
       const rateResult = await checkRateLimit(auth.userId, input.model || 'sonnet');
       if (rateResult.known === false) return ledgerUnavailable();
       if (!rateResult.allowed) return jsonResponse(429, { error: 'Rate limit exceeded', retryAfter: rateResult.retryAfter }, { 'Retry-After': String(rateResult.retryAfter) });
@@ -643,11 +654,16 @@ export const handler = async (
 
       const jobId = crypto.randomUUID();
       await createJob(jobId, auth.userId);
+      let revisionPayload: Record<string, string> = {};
       let htmlForPayload: { html?: string; htmlS3Key?: string } = {};
       let planImagePayload: { image?: string; imageS3Key?: string } = {};
       let planImagesPayload: { images?: string[]; imagesS3Key?: string } = {};
       try {
         if (input.html) htmlForPayload = await uploadHtmlIfNeeded(jobId, input.html);
+        if (input.revision) {
+          const r = input.revision as { spec: string; plan: string; prompt: string };
+          revisionPayload = { ...(await uploadSpecIfNeeded(jobId, r.spec)), revisionPlan: r.plan, revisionPrompt: r.prompt };
+        }
         planImagePayload = await uploadImageIfNeeded(jobId, input.image);
         planImagesPayload = await uploadContentImages(
           jobId, (input as { images?: string[] }).images);
@@ -669,7 +685,7 @@ export const handler = async (
          * of what a plan job may carry.
          */
         input: {
-          ...htmlForPayload, ...planImagePayload, ...planImagesPayload,
+          ...htmlForPayload, ...planImagePayload, ...planImagesPayload, ...revisionPayload,
           prompt: input.prompt, preset: input.preset, model: input.model, outputKind: input.outputKind,
           ...(input.attachment ? { attachment: input.attachment } : {}),
           ...(input.imageCaptions ? { imageCaptions: input.imageCaptions } : {}),

@@ -1,7 +1,38 @@
 import { FRAMEWORKS, type OutputKind } from '../config/frameworks.js'
 import { readProjectFiles, writeProjectFile } from './project-transport.js'
+import { dropSuppliedFiles } from './supplied-files.js'
+import { fixCountBadges, fixFlowScreensInNav, fixIconBaseline } from './shell-fixes.js'
+import { fixResponsiveDisplay } from './responsive-display.js'
+export { dropSuppliedFiles }
 import { fixNamedImportOfDefault } from './react-bundle.js'
 import { replaceEmoji } from './emoji-icons.js'
+import { PHOTO_SLOT } from './stock-images.js'
+import { UTILITY_CLASS, definedClasses, paletteOf, roleOf, utilityCss } from './utility-css.js'
+import { listIsStyled, navCss, VERTICAL_NAV, type NavRoot } from './nav-css.js'
+import { reachByKeyboard } from './keyboard-reach.js'
+import { fixRenderNavigation } from './render-navigation.js'
+import { PICTURE_FRAME, iconsOnPhotographs, pictureFrames } from './picture-frames.js'
+import {
+  ICON_BUTTON_CSS,
+  ICON_BUTTON_MARKER,
+  ICON_DIR,
+  glyphSource,
+  iconPlacements,
+  type IconPlacement,
+} from './action-icons.js'
+import { raiseControlFonts } from './form-controls.js'
+import {
+  ART_DIR,
+  CREATED_ART,
+  artName,
+  emptyStateArt,
+  findArtHosts,
+  type ArtHost,
+  importPath,
+  isDefaultExport,
+  pickArtwork,
+  renderedFrom,
+} from './artwork.js'
 
 /**
  * Deterministic repairs for idioms that stop a framework compiling outright.
@@ -119,46 +150,6 @@ export function fixVueMacros(source: string): { source: string; fixed: string[] 
 }
 
 /**
- * Svelte 5 reads `$name` as a store subscription, and rune modules are not stores.
- *
- * Reported by a user as a blank page with:
- *
- *     TypeError: e.subscribe is not a function
- *
- * The `$` prefix is Svelte's store contract from 3/4 — it compiles to
- * `store_get(name)`, which calls `name.subscribe(…)`. A `.svelte.ts` module
- * exporting rune state exports a plain object, so the call throws and nothing
- * renders. It is not a compile error: both halves are legal, and the two idioms
- * simply cannot be mixed.
- *
- * Only rewritten for names the file actually imports from a `.svelte` module,
- * because `$state`, `$derived`, `$props` and `$effect` are runes and a genuine
- * store elsewhere in the project must keep working.
- */
-function fixSvelteStorePrefix(source: string): { source: string; fixed: string[] } {
-  const RUNES = new Set(['$state', '$derived', '$props', '$effect', '$inspect', '$bindable', '$host'])
-  const runeModuleNames = new Set<string>()
-
-  for (const m of source.matchAll(/import\s+\{([^}]+)\}\s+from\s+['"]([^'"]+)['"]/g)) {
-    if (!/\.svelte(?:\.[jt]s)?$/.test(m[2]) && !/\/(store|state)(\.svelte)?$/.test(m[2])) continue
-    for (const part of m[1].split(',')) {
-      const name = part.split(/\s+as\s+/).pop()?.trim()
-      if (name) runeModuleNames.add(name)
-    }
-  }
-  if (runeModuleNames.size === 0) return { source, fixed: [] }
-
-  const fixed: string[] = []
-  const out = source.replace(/\$([A-Za-z_$][\w$]*)/g, (whole, name: string) => {
-    if (RUNES.has(whole)) return whole
-    if (!runeModuleNames.has(name)) return whole
-    fixed.push(`${whole} → ${name}`)
-    return name
-  })
-  return { source: out, fixed: fixed.length ? [`ストア構文をルーンの読み取りに置換: ${[...new Set(fixed)].join(', ')}`] : [] }
-}
-
-/**
  * Runes imported as if they were values.
  *
  *     import { $state } from 'svelte';
@@ -179,212 +170,6 @@ function fixSvelteStorePrefix(source: string): { source: string; fixed: string[]
  * legitimately export something beginning with `$`, and `mount`, `tick` and
  * `onMount` are real imports from 'svelte' that must survive.
  */
-/**
- * How many unclosed braces stand before `index`.
- *
- * Zero means module top level, which is the only place a binding can collide
- * with a top-level function declaration. Strings, template literals and
- * comments are skipped, because a brace inside any of them is not structure —
- * `` `${a}` `` and `// } ` would otherwise both throw the count off, and a
- * count that is wrong in the low direction is worse than no count at all: it
- * puts a nested declaration back in scope for renaming.
- *
- * Regular-expression literals are not tracked. Distinguishing `/` as division
- * from `/` as a literal needs the parser this file deliberately does without,
- * and a brace inside a character class is rare enough that the honest note is
- * better than a guess that fails silently. The failure direction is safe: an
- * unbalanced count reads as nested and the repair declines.
- */
-function braceDepthAt(source: string, index: number): number {
-  let depth = 0
-  for (let i = 0; i < index && i < source.length; i++) {
-    const c = source[i]
-    if (c === '/' && source[i + 1] === '/') {
-      i = source.indexOf('\n', i)
-      if (i < 0) return depth
-    } else if (c === '/' && source[i + 1] === '*') {
-      const end = source.indexOf('*/', i + 2)
-      if (end < 0) return depth
-      i = end + 1
-    } else if (c === '"' || c === "'" || c === '`') {
-      for (i++; i < index && source[i] !== c; i++) if (source[i] === '\\') i++
-    } else if (c === '{') depth++
-    else if (c === '}') depth--
-  }
-  return depth
-}
-
-/**
- * A private binding and its accessor sharing one name.
- *
- *     let appState = $state<AppState>({ cart: [], … });
- *
- *     export function appState() {
- *       return appState;
- *     }
- *
- *     SyntaxError: Identifier 'appState' has already been declared
- *
- * Measured at v168, and the shape is not an accident. Svelte's own message for
- * exported rune state says to "export a function returning its value", and this
- * is that advice carried out with the name reused — the accessor and the thing
- * it accesses cannot both be `appState`, and the module does not compile.
- *
- * It is also exactly the shape `fixSvelteDerivedExport` above produces when it
- * rescues an exported rune, which gets it right by giving the binding a private
- * name. So the repair is to arrive at the same place: rename the binding, leave
- * the exported name alone. Every reader keeps calling `appState()` and no import
- * has to change.
- *
- * The function's own declaration is the one occurrence left as it was; the
- * `return` inside it follows the binding, since that is what it returns.
- *
- * Two things this must not do, both measured on a v191 Svelte result that
- * scored 50 with a clean console.
- *
- * It must not fire on a declaration inside a function. `navigation.svelte.ts`
- * exported `route()` and, inside `parseHash`, declared a local `const route:
- * Route`. Those do not collide — the local shadows the export, legally, and the
- * module compiled — but the scan matched at any indentation and "repaired" a
- * conflict that did not exist.
- *
- * And it must not rename a call. Having decided to rename, it rewrote `route()`
- * in the module's own hashchange handler to `__makeui_route()`, which is not a
- * function and not a binding in that scope. That throws on every hash change —
- * which is to say on every navigation — while loading cleanly, so the page
- * reported zero console errors and two dead nav items. The genuine clash is a
- * value that is read and never called, so excluding calls costs the repair
- * nothing and would alone have prevented this.
- */
-export function fixSvelteDuplicateAccessor(source: string): { source: string; fixed: string[] } {
-  const fixed: string[] = []
-  let out = source
-
-  for (let guard = 0; guard < 8; guard++) {
-    let name = ''
-    for (const m of out.matchAll(/(?:^|\n)\s*(?:let|const|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=\n]+)?=/g)) {
-      const candidate = m[1]
-      if (!new RegExp(`export\\s+function\\s+${candidate}\\s*\\(`).test(out)) continue
-      // Only a top-level binding can clash with a top-level function. One
-      // declared inside a function shadows the export, which is legal and none
-      // of this repair's business.
-      if (braceDepthAt(out, m.index ?? 0) !== 0) continue
-      name = candidate
-      break
-    }
-    if (!name) break
-
-    const inner = `__makeui_${name}`
-    // Everything but the function's own name, which is the export the readers
-    // hold, and but a call, which can only mean that function. A declaration is
-    // matched first so it is not renamed twice.
-    out = out.replace(
-      new RegExp(`(export\\s+function\\s+)${name}(\\s*\\()|(^|[^\\w$.])${name}\\b(?!\\s*\\()`, 'gm'),
-      (_whole, kw: string, open: string, before: string) =>
-        kw ? `${kw}${name}${open}` : `${before}${inner}`
-    )
-    fixed.push(`${name} → ${inner}`)
-  }
-
-  return {
-    source: out,
-    fixed: fixed.length
-      ? [`同名の内部変数と export 関数が衝突していたため内部側を改名（Identifier has already been declared）: ${[...new Set(fixed)].join(', ')}`]
-      : [],
-  }
-}
-
-export function fixSvelteRuneImports(source: string): { source: string; fixed: string[] } {
-  const fixed: string[] = []
-  const out = source.replace(
-    /import\s*\{([^}]*)\}\s*from\s*(['"])svelte\2\s*;?/g,
-    (whole, names: string, quote: string) => {
-      const parts = names.split(',').map((p) => p.trim()).filter(Boolean)
-      const kept = parts.filter((p) => !p.startsWith('$'))
-      const dropped = parts.filter((p) => p.startsWith('$'))
-      if (dropped.length === 0) return whole
-      fixed.push(...dropped)
-      // Dropping every name leaves `import {} from 'svelte'`, which compiles but
-      // reads as a mistake; remove the statement instead.
-      return kept.length === 0 ? '' : `import { ${kept.join(', ')} } from ${quote}svelte${quote};`
-    }
-  )
-  return {
-    source: out,
-    fixed: fixed.length
-      ? [`ルーンの import を削除（構文であって値ではない）: ${[...new Set(fixed)].join(', ')}`]
-      : [],
-  }
-}
-
-/**
- * `$state(…)` created lazily inside a function.
- *
- *     let store: AppState | null = null;
- *     export function getStore(): AppState {
- *       if (!store) { store = $state({ cart: [], … }); }
- *       return store;
- *     }
- *
- * Svelte rejects this outright:
- *
- *     `$state(...)` can only be used as a variable declaration initializer, a
- *     class field declaration, or the first assignment to a class field at the
- *     top level of the constructor.        (svelte.dev/e/state_invalid_placement)
- *
- * Measured on a real run at v138, in `src/lib/store.svelte.ts`. One file that
- * will not compile takes the whole project with it: blank page, score 30.
- *
- * The shape is not a careless mistake — it is the ordinary way to write a
- * singleton in every other language, and "create the store once" invites it.
- * Which is why telling the model not to do it has a failure rate, and why this
- * hoists it instead: a module-level `const` initialised by the rune is exactly
- * what the code was trying to express, and it is what Svelte allows.
- */
-export function fixSvelteLazyRuneState(source: string): { source: string; fixed: string[] } {
-  const fixed: string[] = []
-  let out = source
-
-  for (let guard = 0; guard < 8; guard++) {
-    // An assignment (not a declaration) whose right-hand side is the rune.
-    const m = /(^|[^\w.$])([A-Za-z_$][\w$]*)\s*=\s*\$state\s*\(/.exec(out)
-    if (!m) break
-    const nameAt = m.index + m[1].length
-    const name = m[2]
-    // A declaration is legal already; only a bare assignment is the bug.
-    if (/\b(let|const|var)\s*$/.test(out.slice(Math.max(0, nameAt - 8), nameAt))) break
-
-    const assign = statementRange(out, nameAt)
-    if (!assign) break
-    const initialiser = out.slice(out.indexOf('$state', nameAt), assign.end).replace(/;\s*$/, '')
-
-    // The module-level `let name … = null` this was deferring.
-    const declRe = new RegExp(`(^|\\n)([ \\t]*)(?:let|var)\\s+${name}\\b[^\\n=]*=\\s*null\\s*;?`)
-    const decl = declRe.exec(out)
-    if (!decl) break
-
-    // Drop the assignment, and the `if (!name) { … }` wrapper around it if that
-    // is all the wrapper held.
-    let before = out.slice(0, assign.start)
-    let after = out.slice(assign.end)
-    const wrapper = new RegExp(`if\\s*\\(\\s*!\\s*${name}\\s*\\)\\s*\\{\\s*$`)
-    const openedWrapper = wrapper.test(before)
-    if (openedWrapper) {
-      before = before.replace(wrapper, '')
-      after = after.replace(/^\s*\}/, '')
-    }
-    out = before + after
-    out = out.replace(declRe, `$1$2const ${name} = ${initialiser};`)
-    fixed.push(name)
-  }
-
-  return {
-    source: out,
-    fixed: fixed.length
-      ? [`$state をモジュール直下の宣言に巻き上げ（関数内での代入は不可）: ${[...new Set(fixed)].join(', ')}`]
-      : [],
-  }
-}
 
 /**
  * An at-rule wrapped in `:global()`.
@@ -402,83 +187,6 @@ export function fixSvelteLazyRuneState(source: string): { source: string; fixed:
  * so unwrapping it is what was meant — the `:global()` belongs on the selectors
  * inside, where any that are already there keep working.
  */
-/**
- * A rune returned from a getter or a method.
- *
- *     get route() { return $derived(() => this.currentRouteState); }
- *
- * Svelte rejects it — a rune initialises a variable declaration or a class
- * field, and is not an expression you can return — so the file does not compile
- * and the project is a blank page. Measured on a real run at v145, in a
- * class-based router in src/lib/navigation.svelte.ts.
- *
- * The wrapper is not merely misplaced, it is unnecessary: the getter reads a
- * field that is already `$state`, and reading `$state` inside a getter is
- * reactive on its own. So the fix is to return what was being wrapped. A thunk
- * is unwrapped with it — `$derived(() => x)` is a second mistake in the same
- * expression, since the callback form is `$derived.by`.
- *
- * Deliberately narrow: only a `return` whose entire expression is the rune.
- * A rune used correctly elsewhere in the same class is untouched.
- */
-export function fixSvelteRuneInGetter(source: string): { source: string; fixed: string[] } {
-  const fixed: string[] = []
-  const out = source.replace(
-    /return\s+\$(derived|state)\s*\(\s*(?:\(\s*\)\s*=>\s*)?([\s\S]*?)\s*\)\s*;?/g,
-    (whole, rune: string, inner: string) => {
-      // Balanced only: an inner expression carrying its own parentheses would
-      // need real parsing, and a half-applied rewrite is worse than none.
-      let depth = 0
-      for (const ch of inner) {
-        if (ch === '(') depth++
-        else if (ch === ')') depth--
-        if (depth < 0) return whole
-      }
-      if (depth !== 0 || !inner.trim()) return whole
-      fixed.push(`$${rune}`)
-      return `return ${inner.trim()};`
-    }
-  )
-  return {
-    source: out,
-    fixed: fixed.length
-      ? [`getter/メソッドから返されていたルーンを解除（ルーンは宣言の初期化子であって式ではない）: ${[...new Set(fixed)].join(', ')}`]
-      : [],
-  }
-}
-
-export function fixSvelteGlobalAtRule(source: string): { source: string; fixed: string[] } {
-  const fixed: string[] = []
-  let out = source
-
-  for (let guard = 0; guard < 32; guard++) {
-    const at = out.search(/:global\(\s*@/)
-    if (at < 0) break
-    // Balanced match, because the prelude carries its own parens:
-    // `(prefers-reduced-motion: reduce)`.
-    const open = out.indexOf('(', at)
-    let depth = 0
-    let close = -1
-    for (let i = open; i < out.length; i++) {
-      if (out[i] === '(') depth++
-      else if (out[i] === ')') {
-        depth--
-        if (depth === 0) { close = i; break }
-      }
-    }
-    if (close < 0) break
-    const inner = out.slice(open + 1, close).trim()
-    fixed.push(inner.split(/\s|\(/)[0])
-    out = out.slice(0, at) + inner + out.slice(close + 1)
-  }
-
-  return {
-    source: out,
-    fixed: fixed.length
-      ? [`:global() の中の at-rule を展開（セレクタではないため CSS パースに失敗する）: ${[...new Set(fixed)].join(', ')}`]
-      : [],
-  }
-}
 
 /** Every fixup that applies to one file of this framework. */
 export function fixupFile(kind: OutputKind, path: string, body: string): { body: string; fixed: string[] } {
@@ -507,178 +215,6 @@ export function fixupFile(kind: OutputKind, path: string, body: string): { body:
       fixed: [...hybridFixed, ...handler.fixed, ...captured.fixed, ...bound.fixed, ...r.fixed],
     }
   }
-  if (kind === 'svelte') {
-    const fixed: string[] = [...hybridFixed]
-    let next = body
-    /**
-     * The entry file is a `.ts`, not a `.svelte`, so the legacy-mount rewrite
-     * cannot sit behind the component test below it — which is where it was
-     * first put, and why it did nothing.
-     */
-    const mounted = fixSvelteLegacyMount(next)
-    next = mounted.source
-    fixed.push(...mounted.fixed)
-
-    // Applies to every Svelte file, not just components: the run this was
-    // written for put the import in a `.svelte.ts` store module.
-    const runes = fixSvelteRuneImports(next)
-    next = runes.source
-    fixed.push(...runes.fixed)
-
-    // Before the rune repairs below: a module that will not parse at all cannot
-    // be reasoned about by any of them.
-    const dupAccessor = fixSvelteDuplicateAccessor(next)
-    next = dupAccessor.source
-    fixed.push(...dupAccessor.fixed)
-
-    const runeCall = fixSvelteRuneCalledAsFunction(next)
-    next = runeCall.source
-    fixed.push(...runeCall.fixed)
-
-    // Straight after the call fix, which rewrites the initializer of the very
-    // line this deletes. Both spellings are matched there, so the order is a
-    // preference rather than a requirement.
-    const redeclared = fixSvelteRedeclaredImport(next)
-    next = redeclared.source
-    fixed.push(...redeclared.fixed)
-
-    // Modules only: a component owns its own effects.
-    const orphan = /\.svelte\.[jt]s$/.test(path)
-      ? fixSvelteOrphanEffect(next)
-      : { source: next, fixed: [] as string[] }
-    next = orphan.source
-    fixed.push(...orphan.fixed)
-
-    /*
-     * Components only, and before anything that needs the file to parse.
-     *
-     * This repair's whole premise is that markup is not type-stripped. A
-     * `.svelte.ts` module has no markup — it is TypeScript from the first
-     * character — so running it there strips assertions that are correct and
-     * required. Measured: `PRODUCTS[categoryId as keyof typeof PRODUCTS]` in a
-     * store module became `PRODUCTS[categoryId typeof PRODUCTS]`, and a project
-     * that compiled stopped compiling. The repair broke what it was repairing,
-     * one file away from where it was looking.
-     */
-    const markupTs = path.endsWith('.svelte')
-      ? fixSvelteMarkupTypeAssertion(next)
-      : { source: next, fixed: [] as string[] }
-    next = markupTs.source
-    fixed.push(...markupTs.fixed)
-
-    const shadowLocal = fixSvelteRuneShadowLocal(next)
-    next = shadowLocal.source
-    fixed.push(...shadowLocal.fixed)
-
-    const runeInObject = fixSvelteRuneInObjectLiteral(next)
-    next = runeInObject.source
-    fixed.push(...runeInObject.fixed)
-
-    const reactiveStmt = fixSvelteReactiveStatement(next)
-    next = reactiveStmt.source
-    fixed.push(...reactiveStmt.fixed)
-
-    const classDir = fixSvelteClassDirectiveExpression(next)
-    next = classDir.source
-    fixed.push(...classDir.fixed)
-
-    const inPlaceSort = fixSvelteInPlaceSort(next)
-    next = inPlaceSort.source
-    fixed.push(...inPlaceSort.fixed)
-
-    const lazy = fixSvelteLazyRuneState(next)
-    next = lazy.source
-    fixed.push(...lazy.fixed)
-
-    const inGetter = fixSvelteRuneInGetter(next)
-    next = inGetter.source
-    fixed.push(...inGetter.fixed)
-
-    /*
-     * After the getter rewrite, not before.
-     *
-     * `return $derived(() => x)` is both mistakes in one expression. Running
-     * this first turns it into `return $derived.by(() => x)`, which the getter
-     * rewrite above no longer recognises — it matches `$derived(`, not
-     * `$derived.by(` — so the file goes back to not compiling. Measured: it
-     * regressed a document that had been passing.
-     */
-    const thunk = fixSvelteDerivedThunk(next)
-    next = thunk.source
-    fixed.push(...thunk.fixed)
-
-    if (path.endsWith('.svelte')) {
-      const reserved = fixSvelteReservedProp(next)
-      next = reserved.source
-      fixed.push(...reserved.fixed)
-
-      /*
-       * After the reserved-word rewrite, which normalises `export let class:
-       * additionalClass` into the `export { local as class }` form. This then
-       * carries that across as a destructuring alias, so the two arrive at the
-       * same answer instead of fighting over the same line.
-       */
-      const legacyProps = fixSvelteLegacyProps(next)
-      next = legacyProps.source
-      fixed.push(...legacyProps.fixed)
-
-      // Before everything else that reads the script block: with two of them,
-      // every later repair is looking at whichever one its regex found first.
-      const dupScript = fixSvelteDuplicateScript(next)
-      next = dupScript.source
-      fixed.push(...dupScript.fixed)
-
-      const constBlock = fixSvelteConstBlock(next)
-      next = constBlock.source
-      fixed.push(...constBlock.fixed)
-
-      // After the spelling fix, so a `{#const}` corrected into a `{@const}` is
-      // then checked for being in a place Svelte accepts.
-      const constPlace = fixSvelteConstPlacement(next)
-      next = constPlace.source
-      fixed.push(...constPlace.fixed)
-
-      const dupProps = fixSvelteDuplicateProps(next)
-      next = dupProps.source
-      fixed.push(...dupProps.fixed)
-
-      // Before the shorthand repair, which would otherwise see
-      // `onsubmit|preventDefault={handleSubmit}` as an attribute it should
-      // rewrite rather than a Svelte 4 idiom to translate.
-      const modifiers = fixSvelteEventModifiers(next)
-      next = modifiers.source
-      fixed.push(...modifiers.fixed)
-
-      const propsArg = fixSveltePropsArgument(next)
-      next = propsArg.source
-      fixed.push(...propsArg.fixed)
-
-      const shorthand = fixSvelteAttributeShorthand(next)
-      next = shorthand.source
-      fixed.push(...shorthand.fixed)
-
-      // After the shorthand repair, which turns `{width={size}}` into
-      // `width={size}` — a form this must not then treat as a bare shorthand.
-      const undefShorthand = fixSvelteUndefinedShorthand(next)
-      next = undefShorthand.source
-      fixed.push(...undefShorthand.fixed)
-
-      const nested = fixSvelteNestedButton(next)
-      next = nested.source
-      fixed.push(...nested.fixed)
-    }
-
-    const atRule = fixSvelteGlobalAtRule(next)
-    next = atRule.source
-    fixed.push(...atRule.fixed)
-
-    if (path.endsWith('.svelte') || /\.svelte\.[jt]s$/.test(path)) {
-      const store = fixSvelteStorePrefix(next)
-      next = store.source
-      fixed.push(...store.fixed)
-    }
-    return { body: next, fixed }
-  }
   // React and anything else: the hybrid import is the only framework-agnostic
   // repair, and it has already been applied.
   return { body, fixed: hybridFixed }
@@ -690,11 +226,34 @@ export function fixupFile(kind: OutputKind, path: string, body: string): { body:
  * Used by the single-call build path, which has no per-file step to hook into.
  */
 export function fixupProject(html: string, kind: OutputKind): { html: string; fixed: string[] } {
+  const supplied = dropSuppliedFiles(html)
+  html = supplied.html
   let files = readProjectFiles(html)
   if (files.size === 0) return { html, fixed: [] }
 
   let out = html
-  const fixed: string[] = []
+  const fixed: string[] = supplied.dropped.length > 0
+    ? [`MakeUI が用意するビルド設定を削除しました（${supplied.dropped.join(', ')}）`]
+    : []
+
+  /**
+   * One repair, written back.
+   *
+   * Every pass below returns the files it changed and a line saying what it
+   * did; putting them back was nine identical lines each, eighteen times, and
+   * the file's own line ceiling started to be about the wiring rather than the
+   * repairs. The order of the calls is the order of the passes and still
+   * matters — each one reads what the one before it wrote.
+   */
+  const apply = (r: { files: Map<string, string>; fixed: string[] }): void => {
+    if (r.fixed.length === 0) return
+    for (const [path, body] of r.files) {
+      const next = writeProjectFile(out, path, body)
+      if (next) out = next
+    }
+    files = readProjectFiles(out)
+    fixed.push(...r.fixed)
+  }
 
   /**
    * Project-wide first, because renaming an export means rewriting its importers
@@ -702,15 +261,7 @@ export function fixupProject(html: string, kind: OutputKind): { html: string; fi
    */
   // Every framework: a `require` of a default export by name is the same
   // mistake whatever the component language is.
-  const namedDefault = fixDefaultImportOfNamedExport(files)
-  if (namedDefault.fixed.length > 0) {
-    for (const [path, body] of namedDefault.files) {
-      const next = writeProjectFile(out, path, body)
-      if (next) out = next
-    }
-    files = readProjectFiles(out)
-    fixed.push(...namedDefault.fixed)
-  }
+  apply(fixDefaultImportOfNamedExport(files))
 
   // And the reverse direction — see `fixNamedImportOfDefault`.
   const defaultNamed = fixNamedImportOfDefault(out)
@@ -720,82 +271,109 @@ export function fixupProject(html: string, kind: OutputKind): { html: string; fi
     fixed.push(...defaultNamed.fixed)
   }
 
-  const reqDefault = fixRequireNamedDefault(files)
-  if (reqDefault.fixed.length > 0) {
-    for (const [path, body] of reqDefault.files) {
+  apply(fixRequireNamedDefault(files))
+
+  if (kind === 'react') {
+    apply(fixReactMissingProvider(files))
+    // A page that navigates while it renders never returns to the event loop.
+    // See tools/render-navigation.ts.
+    apply(fixRenderNavigation(files))
+  }
+
+  if (kind === 'vue') {
+    apply(fixVueNonReactiveHash(files))
+  }
+
+  /*
+   * Two more from the storefront of 2026-09-18, both introduced by an EDIT
+   * rather than by the build: a picture bound to a field the data does not
+   * declare, and a route passed as a path. Project-wide because both need the
+   * data types or the router to decide, which live in other files.
+   */
+  apply(fixImageFieldMisspelt(files))
+
+  apply(fixPathAsScreenId(files))
+
+  apply(fixFlowScreensInNav(files))
+
+  apply(fixCountBadges(files))
+
+  apply(fixIconBaseline(files))
+
+  apply(fixResponsiveDisplay(files))
+
+  /**
+   * Two defects a user reported on one generated storefront, both invisible to
+   * the compiler: every product card said 「商品画像」 instead of showing one, and
+   * every product opened a detail screen that could not find it.
+   */
+  /*
+   * After the repairs that write markup, because it reads the markup: a class
+   * added by one of them is a class this has to define.
+   */
+  /*
+   * Before the utility pass, which appends to the same stylesheet: the
+   * navigation's rules belong with the project's own, above the block of
+   * utilities.
+   */
+  /*
+   * The input font, before the passes that append to the same stylesheet: this
+   * edits rules the project already wrote, at the offsets it read them from.
+   */
+  const fonts = raiseControlFonts(files, out)
+  if (fonts.raised.length > 0) {
+    for (const [path, body] of fonts.files) {
       const next = writeProjectFile(out, path, body)
       if (next) out = next
     }
     files = readProjectFiles(out)
-    fixed.push(...reqDefault.fixed)
+    const values = [...new Set(fonts.raised.map((r) => r.value))].join(' / ')
+    fixed.push(
+      `入力欄の font-size を 16px 以上にしました（${values} → 16px、規則${fonts.raised.length}件）` +
+        '。16px 未満は iOS でフォーカス時にページが拡大されます'
+    )
   }
 
-  if (kind === 'react') {
-    const provider = fixReactMissingProvider(files)
-    if (provider.fixed.length > 0) {
-      for (const [path, body] of provider.files) {
-        const next = writeProjectFile(out, path, body)
-        if (next) out = next
-      }
-      files = readProjectFiles(out)
-      fixed.push(...provider.fixed)
-    }
-  }
+  /*
+   * Before the styling passes, because it only adds attributes: a class the
+   * utility pass has to define is not one this writes.
+   */
+  apply(fixKeyboardUnreachable(files, kind))
 
-  if (kind === 'svelte') {
-    // Before the rest, because it changes the shape of an export that the
-    // other svelte passes read.
-    const runeStore = fixSvelteRuneStoreSubscribe(files)
-    if (runeStore.fixed.length > 0) {
-      for (const [path, body] of runeStore.files) {
-        const next = writeProjectFile(out, path, body)
-        if (next) out = next
-      }
-      files = readProjectFiles(out)
-      fixed.push(...runeStore.fixed)
-    }
-    const kit = fixSvelteKitImports(files)
-    if (kit.fixed.length > 0) {
-      for (const [path, body] of kit.files) {
-        const next = writeProjectFile(out, path, body)
-        if (next) out = next
-      }
-      files = readProjectFiles(out)
-      fixed.push(...kit.fixed)
-    }
-    const shadow = fixSvelteRuneShadowing(files)
-    if (shadow.fixed.length > 0) {
-      for (const [path, body] of shadow.files) {
-        const next = writeProjectFile(out, path, body)
-        if (next) out = next
-      }
-      files = readProjectFiles(out)
-      fixed.push(...shadow.fixed)
-    }
-    // After the rename, so a store named `state` is already `appState` by the
-    // time its readers are rewritten into calls.
-    const derived = fixSvelteDerivedExport(files)
-    if (derived.fixed.length > 0) {
-      for (const [path, body] of derived.files) {
-        const next = writeProjectFile(out, path, body)
-        if (next) out = next
-      }
-      files = readProjectFiles(out)
-      fixed.push(...derived.fixed)
-    }
-  }
+  /*
+   * The decoration on the photograph, before the artwork pass: both are about
+   * what is drawn where, and this one only removes.
+   */
+  apply(fixIconOnPhotograph(files, kind))
 
-  if (kind === 'vue') {
-    const hash = fixVueNonReactiveHash(files)
-    if (hash.fixed.length > 0) {
-      for (const [path, body] of hash.files) {
-        const next = writeProjectFile(out, path, body)
-        if (next) out = next
-      }
-      files = readProjectFiles(out)
-      fixed.push(...hash.fixed)
-    }
-  }
+  /*
+   * The tokens the drawings read, before the drawings: a picture drawn in
+   * `var(--border)` is invisible until something defines `--border`, and
+   * putting it on screen first would report a fix nobody can see.
+   */
+  apply(fixUndefinedTokens(files))
+
+  /*
+   * And the drawing, before the styling passes for the same reason: the
+   * element it inserts carries no class the utility pass would have to define.
+   */
+  apply(fixArtworkNotDrawn(files, kind))
+
+  /*
+   * The glyphs after the drawing: both read the markup, and a button given a
+   * glyph is not a place an illustration would have gone.
+   */
+  apply(fixIconsNotDrawn(files, kind))
+
+  apply(fixUnstyledNav(files))
+
+  apply(fixDeadUtilityClasses(files))
+
+  apply(fixCatalogueWithoutPhotos(files))
+
+  apply(fixPlaceholderImageBoxes(files))
+
+  apply(fixDetailIdNotPassed(files))
 
   for (const [path, body] of files) {
     const r = fixupFile(kind, path, body)
@@ -822,33 +400,6 @@ export function fixupProject(html: string, kind: OutputKind): { html: string; fi
   }
   return { html: out, fixed }
 }
-
-/**
- * Names a Svelte project may not export, because `$` + the name is a rune.
- *
- * The one that actually happened is `state`, and the mechanism is worth writing
- * down because nothing about it is obvious. A component wrote
- *
- *     import { state } from '../lib/store.svelte';
- *     let toastVisible = $state(false);
- *
- * and Svelte compiled the SECOND line to
- *
- *     const $state = () => $.store_get(_storesvelte.state, '$state', $$stores);
- *     let toastVisible = $state()(false);
- *
- * With a binding called `state` in scope, `$state` is read as a store
- * subscription on it rather than as the rune — the store-prefix rule wins, and
- * it wins silently. The module is a rune module, not a store, so `subscribe` is
- * not a function and the page throws on first render:
- *
- *     TypeError: e.subscribe is not a function
- *
- * Nothing fails at build time. Both files compile. Measured on a real Svelte
- * generation: eight components and screens, every one of them poisoned by the
- * same import, and a blank page.
- */
-const RUNE_SHADOWS = ['state', 'props', 'derived', 'effect', 'inspect', 'bindable', 'host']
 
 /**
  * Renames any export whose name shadows a rune, across the whole project.
@@ -923,72 +474,6 @@ const RUNE_SHADOWS = ['state', 'props', 'derived', 'effect', 'inspect', 'bindabl
  * the handler's signature. The audit still reports the accessibility gap; a
  * blank page reports nothing.
  */
-/**
- * `$derived` handed a function where `$derived.by` was meant.
- *
- *     let filtered = $derived(() => {
- *       …
- *       return results;
- *     })();
- *
- * Svelte has two forms: `$derived(expr)` for an expression, and `$derived.by(fn)`
- * for a callback. Reaching for a callback and then invoking it — because the
- * value plainly should not be a function — produces `$derived(...)()`, which is
- * a call rather than a declaration initialiser, and Svelte refuses it:
- *
- *     `$derived(...)` can only be used as a variable declaration initializer …
- *
- * Measured in a real Svelte run, in a screen computing a filtered list. The
- * error message is unhelpful here — it names a rule the line appears to follow,
- * because `let x = $derived(…)` really is a declaration initialiser; what it
- * objects to is the `()` after it.
- *
- * Both shapes are rewritten to `$derived.by`. The invoked one is unambiguous.
- * The bare `$derived(() => …)` is left ambiguous only in theory: it would mean a
- * derived value that IS a function, which no generated screen has ever wanted,
- * and which would make every template reading it render "function () { … }".
- */
-export function fixSvelteDerivedThunk(source: string): { source: string; fixed: string[] } {
-  const fixed: string[] = []
-  let out = source
-
-  for (let guard = 0; guard < 32; guard++) {
-    const at = out.search(/\$derived\s*\(\s*(?:\(|async\b|function\b)/)
-    if (at < 0) break
-
-    const open = out.indexOf('(', at)
-    // The argument has to look like a function, not a parenthesised expression:
-    // `$derived((a + b) * c)` is correct as written and must be left alone.
-    const head = out.slice(open + 1, open + 200)
-    if (!/^\s*(?:async\s+)?(?:function\b|\([^)]*\)\s*=>|[A-Za-z_$][\w$]*\s*=>)/.test(head)) break
-
-    let depth = 0
-    let close = -1
-    for (let i = open; i < out.length; i++) {
-      if (out[i] === '(') depth++
-      else if (out[i] === ')') {
-        depth--
-        if (depth === 0) { close = i; break }
-      }
-    }
-    if (close < 0) break
-
-    // Drop an immediate invocation if there is one — that is the whole mistake.
-    const after = out.slice(close + 1)
-    const invoked = /^\s*\(\s*\)/.exec(after)
-    const tail = invoked ? after.slice(invoked[0].length) : after
-
-    out = `${out.slice(0, at)}$derived.by${out.slice(open, close + 1)}${tail}`
-    fixed.push(invoked ? '$derived(fn)() → $derived.by(fn)' : '$derived(fn) → $derived.by(fn)')
-  }
-
-  return {
-    source: out,
-    fixed: fixed.length
-      ? [`コールバック形のルーンを修正（式は $derived、コールバックは $derived.by）: ${[...new Set(fixed)].join(', ')}`]
-      : [],
-  }
-}
 
 /**
  * Svelte's attribute shorthand, written with a value inside it.
@@ -1010,134 +495,6 @@ export function fixSvelteDerivedThunk(source: string): { source: string; fixed: 
  * thing meant is always `name=…`. The braces around the value are kept exactly
  * as written, so an expression stays an expression and a string stays a string.
  */
-/**
- * `$props()` called more than once in a component.
- *
- *     let { params = {} } = $props();
- *     let { onSelect } = $props();
- *
- * Svelte refuses it — "Cannot use `$props()` more than once"
- * (svelte.dev/e/props_duplicate) — so the component, and therefore the whole
- * project, does not build.
- *
- * This is the Svelte spelling of a fault a user already reported in Vue:
- * `duplicate defineProps() call`, which `fixVueMacros` above exists for. The
- * cause is the same in both — a component acquires a second prop while being
- * written, and declaring it looks exactly like declaring the first — so it is
- * worth repairing the same way rather than waiting to be told about it again in
- * a different framework.
- *
- * The destructuring patterns are merged into the first call and the rest are
- * deleted. That is what was meant: two `$props()` calls naming different props
- * are one component wanting all of them.
- *
- * The pattern is found by counting braces rather than by a regex, because a
- * default value is itself a brace — `{ params = {} }` — and `[^}]*` stops at the
- * wrong one. That mistake made the first version of this match nothing at all,
- * which is the failure mode worth being careful about: it looks like success.
- *
- * A call that is not destructured (`const p = $props()`) is left alone, and the
- * file goes to the repair loop. A merge that guesses is worse than an error.
- */
-export function fixSvelteDuplicateProps(source: string): { source: string; fixed: string[] } {
-  interface Call { start: number; end: number; inner: string }
-  const calls: Call[] = []
-
-  for (const m of source.matchAll(/=\s*\$props\s*\(\s*\)\s*;?/g)) {
-    const eq = m.index ?? 0
-    /*
-     * Back to the destructuring pattern, over an optional type annotation.
-     *
-     * `let { a }: { a: string } = $props()` puts a second brace group between
-     * the pattern and the `=`, and taking the first `}` found gives the TYPE.
-     * The two are told apart by what precedes the group: a `:` means it was the
-     * annotation, so keep going.
-     */
-    const matchingOpen = (from: number): number => {
-      let depth = 0
-      for (let j = from; j >= 0; j--) {
-        if (source[j] === '}') depth++
-        else if (source[j] === '{') {
-          depth--
-          if (depth === 0) return j
-        }
-      }
-      return -1
-    }
-
-    let i = eq - 1
-    while (i >= 0 && /\s/.test(source[i])) i--
-    if (source[i] !== '}') continue
-
-    let open = matchingOpen(i)
-    if (open < 0) continue
-
-    let before = open - 1
-    while (before >= 0 && /\s/.test(source[before])) before--
-    if (source[before] === ':') {
-      // That was the annotation. The pattern is the group before it.
-      i = before - 1
-      while (i >= 0 && /\s/.test(source[i])) i--
-      if (source[i] !== '}') continue
-      open = matchingOpen(i)
-      if (open < 0) continue
-    }
-
-    // And back over the declaration keyword.
-    let k = open - 1
-    while (k >= 0 && /\s/.test(source[k])) k--
-    const kw = /(let|const|var)$/.exec(source.slice(Math.max(0, k - 5), k + 1))
-    if (!kw) continue
-
-    calls.push({
-      start: k + 1 - kw[1].length,
-      end: eq + m[0].length,
-      inner: source.slice(open + 1, i),
-    })
-  }
-  if (calls.length < 2) return { source, fixed: [] }
-
-  // Every name, in the order first written, without repeats: a name appearing in
-  // two calls is one prop, not two.
-  const seen = new Set<string>()
-  const names: string[] = []
-  for (const call of calls) {
-    let depth = 0
-    let part = ''
-    // Split on top-level commas only — a default can contain its own.
-    for (const ch of `${call.inner},`) {
-      if (ch === '{' || ch === '[' || ch === '(') depth++
-      else if (ch === '}' || ch === ']' || ch === ')') depth--
-      if (ch === ',' && depth === 0) {
-        const name = part.trim()
-        part = ''
-        if (!name) continue
-        const key = name.split(/[:=]/)[0].trim()
-        if (seen.has(key)) continue
-        seen.add(key)
-        names.push(name)
-        continue
-      }
-      part += ch
-    }
-  }
-  if (names.length === 0) return { source, fixed: [] }
-
-  let out = ''
-  let at = 0
-  for (const [i, call] of calls.entries()) {
-    out += source.slice(at, call.start)
-    if (i === 0) out += `let { ${names.join(', ')} } = $props();`
-    at = call.end
-  }
-  out += source.slice(at)
-
-  return {
-    source: out,
-    fixed: [`$props() の重複呼び出し ${calls.length} 件を1つにまとめました: ${[...seen].join(', ')}`],
-  }
-}
-
 
 /**
  * `{#const …}`, which is not a Svelte block.
@@ -1160,732 +517,6 @@ export function fixSvelteDuplicateProps(source: string): { source: string; fixed
  * this way, so the rewrite is exactly one word wide and unambiguous: there is no
  * program in which `{#const}` means anything at all.
  */
-/**
- * A prop named after a reserved word, declared as if it could be a binding.
- *
- *     export let class: additionalClass = '';
- *
- * `class` cannot be a variable, so this is a syntax error — "Unexpected token" —
- * and the component does not build. Measured across a whole generated project:
- * nine components had this same line, so nine of them failed and the application
- * showed nothing.
- *
- * The intent is legible, and it is a real Svelte idiom written from memory.
- * Passing an attribute whose name is a keyword needs the export renamed:
- *
- *     let additionalClass = '';
- *     export { additionalClass as class };
- *
- * That is what this produces, keeping the default. Both halves of the mangled
- * line are already there — the outward name before the colon, the local name
- * after it — which is why the rewrite is a rearrangement rather than a guess.
- *
- * Only reserved words. `export let size: number = 24` is ordinary TypeScript and
- * must survive untouched; the distinction is safe because a reserved word can
- * never be a `let` binding, so a line matching this pattern cannot be valid code
- * under any reading.
- */
-const RESERVED_PROPS = ['class', 'for', 'default', 'case', 'new', 'this', 'in', 'of', 'function']
-
-/**
- * Svelte 4 props in a file that also uses runes.
- *
- *     <script>
- *       export let variant = 'primary';
- *       export let disabled = false;
- *       let additionalClass = '';
- *       export { additionalClass as class };
- *
- *       let isLoading = $state(loading);   // ← this puts the file in runes mode
- *       $effect(() => { isLoading = loading });
- *     </script>
- *
- * One rune anywhere in the file switches it to runes mode, and there `export let`
- * is not a prop declaration any more:
- *
- *     Cannot use `export let` in runes mode — use `$props()` instead
- *
- * Measured across one generated project: five components written this way, all
- * five refused, and the application showed nothing. The mixture is not careless
- * — Svelte 4 is most of what has been written about Svelte, and `$state` is the
- * thing a model reaches for when it wants reactivity, so the two arrive in the
- * same file from different memories.
- *
- * Every prop becomes one destructuring of `$props()`, which is what the compiler
- * asks for. The renamed form carries across as a destructuring alias:
- * `export { additionalClass as class }` is `class: additionalClass`, which is
- * also how a reserved word is spelled in runes mode — so the two problems have
- * the same answer.
- *
- * A file with NO rune is a legitimate Svelte 4 component and is left alone. The
- * point is the contradiction, not the syntax.
- */
-export function fixSvelteLegacyProps(source: string): { source: string; fixed: string[] } {
-  // Runes mode is decided by the file, not by the framework version: any one of
-  // these makes `export let` an error in the same file.
-  if (!/\$(?:state|derived|props|effect|bindable)\b/.test(source)) return { source, fixed: [] }
-  if (!/export\s+(?:let\b|\{)/.test(source)) return { source, fixed: [] }
-
-  interface Cut { start: number; end: number }
-  const cuts: Cut[] = []
-  const entries: string[] = []
-  const names: string[] = []
-
-  // 1. `export let name [: type] [= default];`
-  for (const m of source.matchAll(
-    /export\s+let\s+([A-Za-z_$][\w$]*)\s*(?::\s*[^=;\n]+)?\s*(=\s*[^;\n]+)?;?/g
-  )) {
-    const [whole, name, init] = m
-    cuts.push({ start: m.index ?? 0, end: (m.index ?? 0) + whole.length })
-    entries.push(init ? `${name} ${init.trim()}` : name)
-    names.push(name)
-  }
-
-  // 2. `export { local as outward };` — how Svelte 4 spells a prop whose name is
-  //    a reserved word. The local declaration above it carries the default.
-  for (const m of source.matchAll(/export\s*\{\s*([A-Za-z_$][\w$]*)\s+as\s+([A-Za-z_$][\w$]*)\s*\}\s*;?/g)) {
-    const [whole, local, outward] = m
-
-    /*
-     * The same syntax spells a second, unrelated thing: a component method.
-     *
-     *     function openModal() { isOpen = true }
-     *     export { openModal as open };
-     *
-     * That is not a prop and Svelte 5 accepts it as written — the file compiles
-     * before this function touches it. Rewritten as a prop it becomes
-     * `open: openModal` in the destructuring while `function openModal` stays
-     * where it was, and the component dies on `Identifier 'openModal' has
-     * already been declared`. Measured on one corpus document: valid Svelte in,
-     * blank page out.
-     *
-     * `let` is the discriminator the compiler itself uses. A `let` export is a
-     * prop; a `function`/`const`/`class` export is a static binding, and those
-     * are left exactly as they are.
-     */
-    if (new RegExp(`(?:^|\\n)[ \\t]*(?:function|const|class|var)\\s+${local}\\b`).test(source)) continue
-
-    cuts.push({ start: m.index ?? 0, end: (m.index ?? 0) + whole.length })
-
-    const declaration = new RegExp(`(?:^|\\n)[ \\t]*let\\s+${local}\\s*(?::\\s*[^=;\\n]+)?\\s*(=\\s*[^;\\n]+)?;?`)
-    const decl = declaration.exec(source)
-    if (decl) {
-      cuts.push({ start: decl.index + (decl[0].startsWith('\n') ? 1 : 0), end: decl.index + decl[0].length })
-      entries.push(decl[1] ? `${outward}: ${local} ${decl[1].trim()}` : `${outward}: ${local}`)
-    } else {
-      entries.push(`${outward}: ${local}`)
-    }
-    names.push(outward)
-  }
-
-  if (entries.length === 0) return { source, fixed: [] }
-
-  // Rebuild without the removed declarations, putting the destructuring where
-  // the first one was so the props still read before the code that uses them.
-  cuts.sort((a, b) => a.start - b.start)
-  const insertAt = cuts[0].start
-  let out = ''
-  let at = 0
-  for (const cut of cuts) {
-    if (cut.start < at) continue // overlapping match; already consumed
-    out += source.slice(at, cut.start)
-    if (cut.start === insertAt) out += `let { ${entries.join(', ')} } = $props();`
-    at = cut.end
-  }
-  out += source.slice(at)
-
-  return {
-    // Removing six declarations leaves six blank lines where they were. The
-    // generated project is something a developer opens and continues from, so
-    // the debris matters: collapse a run of them back to one.
-    // Anchored so it consumes only the blank lines themselves: a pattern ending
-    // in `[ \t]*` also swallows the NEXT line's indentation, which un-indents
-    // the statement after the props and looks worse than the gap did.
-    source: out.replace(/\n(?:[ \t]*\n){2,}/g, '\n\n'),
-    fixed: [`Svelte 4 の export let を $props() に変換（ルーンと混在するとコンパイルエラー）: ${names.join(', ')}`],
-  }
-}
-
-function fixSvelteReservedProp(source: string): { source: string; fixed: string[] } {
-  const fixed: string[] = []
-  let out = source
-
-  for (const word of RESERVED_PROPS) {
-    const pattern = new RegExp(
-      // export let <reserved> : <localName> [= <default>] ;
-      `export\\s+let\\s+${word}\\s*:\\s*([A-Za-z_$][\\w$]*)\\s*(=\\s*[^;\\n]+)?;?`,
-      'g'
-    )
-    out = out.replace(pattern, (_whole, local: string, init: string | undefined) => {
-      fixed.push(`${word} → ${local}`)
-      const declaration = init ? `let ${local} ${init.trim()};` : `let ${local};`
-      return `${declaration}\n  export { ${local} as ${word} };`
-    })
-  }
-
-  return {
-    source: out,
-    fixed: fixed.length
-      ? [`予約語のプロパティ宣言を Svelte の形式に修正（export { local as name }）: ${[...new Set(fixed)].join(', ')}`]
-      : [],
-  }
-}
-
-/**
- * A `{@const}` where Svelte does not allow one.
- *
- *     <main class="content">
- *       {@const Screen = renderScreen()}
- *       <Screen />
- *     </main>
- *
- *     `{@const}` must be the immediate child of `{#snippet}`, `{#if}`,
- *     `{:else if}`, `{:else}`, `{#each}`, `{:then}`, `{:catch}`,
- *     `<svelte:fragment>`, `<svelte:boundary>` or `<Component>`
- *
- * The tag is spelled correctly and the expression is valid; only the position is
- * wrong, and the whole project fails to build. Measured at v195 in App.svelte —
- * five screens, seventeen components, and a page that rendered nothing. The
- * shell cannot be stubbed, so nothing rescued it.
- *
- * This is the fourth spelling of the same reach, after `{width={size}}`,
- * `{#const …}` and `{width}`. Here the fix is to put the binding where it was
- * always going to work: the script, as `$derived`, which is what a value
- * computed from state is.
- *
- * Deliberately narrow. Only a `{@const}` with no block open above it anywhere in
- * the markup is touched, because that is the case where the expression provably
- * cannot reference a loop variable, an awaited value or a snippet parameter —
- * there is no block to have introduced one. A `{@const}` inside `{#each}` may be
- * misplaced too, and hoisting it would silently change what it computes, so it
- * is left for the build repair to read with the compiler's message in hand.
- */
-export function fixSvelteConstPlacement(source: string): { source: string; fixed: string[] } {
-  const script = /<script(?![^>]*\bmodule\b)[^>]*>([\s\S]*?)<\/script>/.exec(source)
-  if (!script) return { source, fixed: [] }
-
-  const fixed: string[] = []
-  const hoisted: string[] = []
-  let out = source
-  // Only the markup, so a `{@const` written inside a string in the script is not
-  // counted and the offsets are the ones the compiler complains about.
-  const markupFrom = script.index + script[0].length
-
-  for (let guard = 0; guard < 12; guard++) {
-    const markup = out.slice(markupFrom)
-    let depth = 0
-    let target = -1
-    for (const m of markup.matchAll(/\{#[a-z]+|\{\/[a-z]+\}|\{@const\s/g)) {
-      if (m[0].startsWith('{#')) depth++
-      else if (m[0].startsWith('{/')) depth--
-      else if (depth === 0) { target = m.index ?? -1; break }
-    }
-    if (target < 0) break
-
-    // Balance from the tag's own brace so a nested object or a call with braces
-    // cannot end it early.
-    const open = markupFrom + target
-    let braces = 0
-    let close = -1
-    for (let i = open; i < out.length; i++) {
-      if (out[i] === '{') braces++
-      else if (out[i] === '}') {
-        braces--
-        if (braces === 0) { close = i; break }
-      }
-    }
-    if (close < 0) break
-
-    const body = out.slice(open + '{@const'.length, close).trim()
-    const eq = body.indexOf('=')
-    if (eq < 0) break
-    const name = body.slice(0, eq).trim()
-    const expr = body.slice(eq + 1).trim()
-    if (!/^[A-Za-z_$][\w$]*$/.test(name) || !expr) break
-
-    out = out.slice(0, open) + out.slice(close + 1)
-    hoisted.push(`  const ${name} = $derived(${expr});`)
-    fixed.push(name)
-  }
-
-  if (fixed.length === 0) return { source, fixed: [] }
-
-  // Appended to the end of the instance script, after everything it may read.
-  const reopened = /<script(?![^>]*\bmodule\b)[^>]*>([\s\S]*?)<\/script>/.exec(out)!
-  const at = reopened.index + reopened[0].lastIndexOf('</script>')
-  out = `${out.slice(0, at)}\n${hoisted.join('\n')}\n${out.slice(at)}`
-
-  return {
-    source: out,
-    fixed: [
-      `ブロックの外にある {@const} を script の $derived に移動（{@const} は {#if} や {#each} の直下にしか置けません）: ${fixed.join(', ')}`,
-    ],
-  }
-}
-
-/**
- * A second `<script>` block, usually appended after the markup.
- *
- *     <script>
- *       let period = $state('month');
- *     </script>
- *
- *     <div id="app"> … </div>
- *
- *     <script>
- *       let errorMessage = '';
- *       function handleApplyPeriod() { … }
- *     </script>
- *
- *     A component can have a single top-level <script> element and/or a single
- *     top-level <script module> element
- *     https://svelte.dev/e/script_duplicate
- *
- * Fatal, and in the shell, which is where it costs everything: App.svelte
- * cannot be stubbed, so the whole application renders nothing. Measured at
- * v203 — four screens, four components, zero rendered, score 30 with a 45-point
- * reach deduction on top.
- *
- * The correct form is unambiguous. Svelte allows one instance script and one
- * module script; every declaration in the instance script is in scope for the
- * markup wherever it sits, so the fix is to move the later bodies into the
- * first block and delete the empty tags. Nothing is reordered relative to
- * itself and nothing is dropped.
- *
- * `<script module>` — and its Svelte 4 spelling `context="module"` — is the
- * legal second block and is left exactly where it is.
- */
-export function fixSvelteDuplicateScript(source: string): { source: string; fixed: string[] } {
-  const blocks = [...source.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/g)]
-  const instance = blocks.filter((b) => !/\b(?:module\b|context\s*=\s*["']module["'])/.test(b[1]))
-  if (instance.length < 2) return { source, fixed: [] }
-
-  const [first, ...rest] = instance
-  // Removed from the end so the earlier offsets stay valid.
-  let out = source
-  for (const b of [...rest].reverse()) {
-    const at = b.index ?? 0
-    out = out.slice(0, at) + out.slice(at + b[0].length)
-  }
-  const merged = [first[2].replace(/\s+$/, ''), ...rest.map((b) => b[2].trim())].join('\n\n  ')
-  out = out.replace(first[0], `<script${first[1]}>${merged}\n</script>`)
-
-  return {
-    source: out,
-    fixed: [
-      `2つ目以降の <script> を1つ目に統合（Svelte のコンポーネントは instance script を1つしか持てません）: ${rest.length}箇所`,
-    ],
-  }
-}
-export function fixSvelteConstBlock(source: string): { source: string; fixed: string[] } {
-  let count = 0
-  const out = source.replace(/\{#const\b/g, () => {
-    count++
-    return '{@const'
-  })
-  return {
-    source: out,
-    fixed: count > 0 ? [`{#const} を {@const} に修正（const はブロックではなくタグ）: ${count}箇所`] : [],
-  }
-}
-
-/**
- * A shorthand attribute naming something that does not exist.
- *
- *     <script>
- *       let { size = 24 } = $props();
- *     </script>
- *     <svg {width} {height} viewBox="0 0 24 24">
- *
- * `{width}` is Svelte's shorthand for `width={width}` — it passes a variable of
- * that name, and there is no such variable. The component COMPILES, because
- * Svelte does not resolve the identifier at build time, and then throws the
- * first time it renders:
- *
- *     ReferenceError: width is not defined
- *       at CartIcon  at Header  at App
- *
- * Measured at v165. One icon, and the entire application rendered nothing —
- * caught only by running the document in a real browser, because every static
- * check and the compile gate pass.
- *
- * This is the third spelling of one mistake. The component wants its icon sized
- * by a prop, and reaches for the shorthand:
- *
- *     v151   {width={size}}   the shorthand with a value inside it — a parse error
- *     v153   {#const …}       a tag written as a block — a parse error
- *     v165   {width}          the shorthand with nothing behind it — a ReferenceError
- *
- * The first two fail loudly at build. This one waits.
- *
- * Two repairs, in order of how much they preserve:
- *
- *   - the component declares exactly one prop and the attribute is a dimension:
- *     bind it. `{width}` beside `let { size } = $props()` means `width={size}`,
- *     which is what an icon component is for.
- *   - otherwise: drop the attribute. An SVG without width renders at its CSS or
- *     default size, which is a smaller wrong than a blank page.
- */
-export function fixSvelteUndefinedShorthand(source: string): { source: string; fixed: string[] } {
-  const script = /<script[^>]*>([\s\S]*?)<\/script>/g
-  let declared = new Set<string>()
-  let props: string[] = []
-
-  for (const block of source.matchAll(script)) {
-    const code = block[1]
-    // Destructured props: `let { size = 24, variant } = $props()`.
-    for (const m of code.matchAll(/(?:let|const|var)\s*\{([^}]*)\}\s*(?::[^=]+)?=\s*\$props\s*\(\s*\)/g)) {
-      for (const part of m[1].split(',')) {
-        const name = part.split(/[:=]/)[0].trim()
-        if (name) { declared.add(name); props.push(name) }
-      }
-    }
-    // Everything else a name can come from.
-    for (const m of code.matchAll(/(?:let|const|var)\s+([A-Za-z_$][\w$]*)/g)) declared.add(m[1])
-    for (const m of code.matchAll(/function\s+([A-Za-z_$][\w$]*)/g)) declared.add(m[1])
-    for (const m of code.matchAll(/import\s+(?:\{([^}]*)\}|([A-Za-z_$][\w$]*))/g)) {
-      if (m[2]) declared.add(m[2])
-      for (const part of (m[1] ?? '').split(',')) {
-        const name = part.split(/\s+as\s+/).pop()?.trim()
-        if (name) declared.add(name)
-      }
-    }
-  }
-
-  /*
-   * Names the MARKUP binds, which the script never mentions.
-   *
-   * `{#each filteredItems as product}` then `<ProductCard {product} />` is the
-   * idiomatic way to pass a row to a component, and the first version of this
-   * deleted it — the scan looked only at <script>, so `product` was undeclared
-   * as far as it could see. Measured on a real grid before it shipped: the
-   * repair for a blank page would have emptied the product list instead.
-   */
-  for (const m of source.matchAll(/\{#each\s+[^}]*?\bas\s+([^}()]+?)\s*(?:\(|\}|,)/g)) {
-    for (const part of m[1].replace(/[{}[\]]/g, ',').split(',')) {
-      const name = part.split(':').pop()?.trim()
-      if (name && /^[A-Za-z_$][\w$]*$/.test(name)) declared.add(name)
-    }
-  }
-  // `{#each xs as x, i}` — the index, and `{#await p then v}` / `catch e`.
-  for (const m of source.matchAll(/\{#each\s+[^}]*?,\s*([A-Za-z_$][\w$]*)/g)) declared.add(m[1])
-  for (const m of source.matchAll(/\{[#:]await\s+[^}]*?\b(?:then|catch)\s+([A-Za-z_$][\w$]*)/g)) declared.add(m[1])
-  for (const m of source.matchAll(/\{@const\s+([A-Za-z_$][\w$]*)/g)) declared.add(m[1])
-  for (const m of source.matchAll(/\{#snippet\s+([A-Za-z_$][\w$]*)\s*\(([^)]*)\)/g)) {
-    declared.add(m[1])
-    for (const part of m[2].split(',')) {
-      const name = part.split(/[:=]/)[0].trim()
-      if (name) declared.add(name)
-    }
-  }
-  // `let:item` on a component binds `item` for its children.
-  for (const m of source.matchAll(/\blet:([A-Za-z_$][\w$]*)/g)) declared.add(m[1])
-
-  const DIMENSION = new Set(['width', 'height'])
-  const sizeProp = props.length === 1 ? props[0] : null
-  const fixed: string[] = []
-
-  // Only inside a tag: `{count}` in text content is an expression, not an
-  // attribute, and removing it would delete what the screen is there to show.
-  const out = source.replace(/<[a-zA-Z][^>]*>/g, (tag) => {
-    if (tag.startsWith('</')) return tag
-    return tag.replace(/\s\{\s*([A-Za-z_$][\w$]*)\s*\}/g, (whole, name: string) => {
-      if (declared.has(name)) return whole
-      if (sizeProp && DIMENSION.has(name)) {
-        fixed.push(`{${name}} → ${name}={${sizeProp}}`)
-        return ` ${name}={${sizeProp}}`
-      }
-      fixed.push(`{${name}} を削除`)
-      return ''
-    })
-  })
-
-  return {
-    source: out,
-    fixed: fixed.length
-      ? [`未定義の変数を指す短縮記法を修正（コンパイルは通り、描画時に ReferenceError になる）: ${[...new Set(fixed)].join(', ')}`]
-      : [],
-  }
-}
-
-/**
- * Svelte 4 event modifiers, which Svelte 5 removed.
- *
- *     <form onsubmit|preventDefault={handleSubmit}>
- *
- *     'onsubmit|preventDefault' is not a valid attribute name
- *
- * The whole component refuses, so the page is blank. Measured on the corpus:
- * one project, two forms, both written this way — which is the shape of this
- * mistake, since a model that reaches for the Svelte 4 idiom reaches for it
- * everywhere it submits something.
- *
- * `preventDefault`, `stopPropagation` and `self` have exact expressions, so they
- * are written out. Anything else — `once`, `capture`, `passive` — is dropped
- * with the modifier removed: that changes behaviour, and it is still the better
- * of the two outcomes available, because the alternative is a component that
- * does not compile and a screen with nothing on it.
- */
-export function fixSvelteEventModifiers(source: string): { source: string; fixed: string[] } {
-  const fixed: string[] = []
-  const BODY: Record<string, string> = {
-    preventDefault: 'e.preventDefault();',
-    stopPropagation: 'e.stopPropagation();',
-    self: 'if (e.target !== e.currentTarget) return;',
-  }
-
-  const out = source.replace(
-    /\bon([a-z]+)((?:\|[a-zA-Z]+)+)=\{([^{}]+)\}/g,
-    (_whole, event: string, mods: string, handler: string) => {
-      const names = mods.split('|').filter(Boolean)
-      const known = names.filter((n) => n in BODY)
-      const dropped = names.filter((n) => !(n in BODY))
-      fixed.push(
-        `on${event}|${names.join('|')} → on${event}（Svelte 5 で修飾子は廃止）` +
-          (dropped.length ? `。${dropped.join(', ')} は再現できないため除去` : '')
-      )
-      const prelude = known.map((n) => BODY[n]).join(' ')
-      return `on${event}={(e) => { ${prelude}${prelude ? ' ' : ''}(${handler.trim()})(e); }}`
-    }
-  )
-  return { source: out, fixed }
-}
-
-/**
- * `$props()` called with an argument.
- *
- *     let { navigate } = $props(useNavigation());
- *
- *     `$props` cannot be called with arguments
- *
- * The rune takes none, so anything inside the parentheses is a mistake — but
- * which mistake decides the repair, and the two readings give opposite results.
- *
- * A CALL is where the values actually come from. Measured on the corpus
- * document this was found in: `useNavigation` is a real export, and `<Header />`
- * is rendered in six places with no props at all. Dropping the argument would
- * compile and leave `navigate` undefined — a dead navigation, silent, on every
- * screen. Unwrapping it gives `let { navigate } = useNavigation()`, which is
- * what the line plainly means.
- *
- * An OBJECT LITERAL reads as defaults rather than a source, and there the safe
- * repair is the other one: keep `$props()` and let the parent supply them.
- */
-export function fixSveltePropsArgument(source: string): { source: string; fixed: string[] } {
-  const fixed: string[] = []
-  const out = source.replace(/\$props\(\s*([^)]*?)\s*\)/g, (whole, arg: string) => {
-    const inner = arg.trim()
-    if (!inner) return whole
-    if (inner.startsWith('{')) {
-      fixed.push('$props() の引数（オブジェクト）を除去（ルーンは引数を取りません）')
-      return '$props()'
-    }
-    fixed.push(`$props(${inner}) → ${inner}（ルーンは引数を取らないため、値の出所をそのまま使用）`)
-    return inner
-  })
-  return { source: out, fixed }
-}
-
-export function fixSvelteAttributeShorthand(source: string): { source: string; fixed: string[] } {
-  const fixed: string[] = []
-
-  /*
-   * Markup only. `<script>` is JavaScript, where the same shape is ordinary and
-   * correct:
-   *
-   *     let { params = {} } = $props();
-   *
-   * is a destructuring pattern with a default, and rewriting it to
-   * `params={}` destroys the declaration. Measured as a regression on a document
-   * that had been compiling — caught by re-running every stored Svelte project
-   * rather than only the one being fixed, which is the argument for doing that.
-   */
-  const rewrite = (markup: string): string =>
-    markup.replace(
-      // `{name={expr}}` and `{name="literal"}`. The name has to look like an
-      // attribute, so `{#if a === b}` is not touched.
-      /\{\s*([A-Za-z_:][\w:.-]*)\s*=\s*(\{[^{}]*\}|"[^"]*"|'[^']*')\s*\}/g,
-      (_whole, name: string, value: string) => {
-        fixed.push(name)
-        return `${name}=${value}`
-      }
-    )
-
-  // Split on script and style blocks, rewrite only what falls between them.
-  const out = source
-    .split(/(<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>)/i)
-    .map((part, i) => (i % 2 === 1 ? part : rewrite(part)))
-    .join('')
-
-  return {
-    source: out,
-    fixed: fixed.length
-      ? [`属性の短縮記法に値が入っていたのを修正（{name} か name={expr} のどちらか）: ${[...new Set(fixed)].join(', ')}`]
-      : [],
-  }
-}
-
-export function fixSvelteNestedButton(source: string): { source: string; fixed: string[] } {
-  const fixed: string[] = []
-  let out = source
-
-  for (let guard = 0; guard < 16; guard++) {
-    const rewritten = rewriteOuterButton(out)
-    if (!rewritten) break
-    out = rewritten
-    fixed.push('button')
-  }
-
-  return {
-    source: out,
-    fixed: fixed.length
-      ? [`入れ子の <button> を解消（外側を div[role=button] に。HTML として不正で、Svelte はビルドを止めます）: ${fixed.length}箇所`]
-      : [],
-  }
-}
-
-/** One outer button that contains another, rewritten. Null when there is none. */
-function rewriteOuterButton(source: string): string | null {
-  const OPEN = /<button\b([^>]*)>/g
-  for (const open of [...source.matchAll(OPEN)]) {
-    const bodyStart = (open.index ?? 0) + open[0].length
-
-    // The matching close, counting nested opens.
-    let depth = 1
-    let i = bodyStart
-    let closeStart = -1
-    while (i < source.length && depth > 0) {
-      const nextOpen = source.indexOf('<button', i)
-      const nextClose = source.indexOf('</button>', i)
-      if (nextClose === -1) break
-      if (nextOpen !== -1 && nextOpen < nextClose) {
-        depth++
-        i = nextOpen + 7
-      } else {
-        depth--
-        if (depth === 0) closeStart = nextClose
-        i = nextClose + 9
-      }
-    }
-    if (closeStart === -1) continue
-
-    const inner = source.slice(bodyStart, closeStart)
-    if (!/<button\b/.test(inner)) continue
-
-    // Keep every attribute; add the two that make a div behave like a control,
-    // unless the markup already carries them.
-    let attrs = open[1]
-    if (!/\brole=/.test(attrs)) attrs += ' role="button"'
-    if (!/\btabindex=/.test(attrs)) attrs += ' tabindex="0"'
-    // `disabled` means nothing on a div and would read as a stray attribute.
-    attrs = attrs.replace(/\s+disabled(=(\{[^}]*\}|"[^"]*"|'[^']*'))?/g, '')
-
-    return (
-      source.slice(0, open.index) +
-      `<div${attrs}>` +
-      inner +
-      '</div>' +
-      source.slice(closeStart + '</button>'.length)
-    )
-  }
-  return null
-}
-
-export function fixSvelteDerivedExport(files: Map<string, string>): { files: Map<string, string>; fixed: string[] } {
-  const out = new Map(files)
-  const fixed: string[] = []
-
-  for (const [path, body] of files) {
-    if (!/\.svelte\.[jt]s$/.test(path)) continue
-
-    /*
-     * Two rules with one shape, which Svelte states separately.
-     *
-     *   export const d = $derived(x)     always refused
-     *   export let  s = $state(x)        refused ONLY if s is reassigned
-     *
-     * The second cost a blank page at v167:
-     *
-     *     export let currentRoute = $state<Route>(parseHash(location.hash));
-     *     …
-     *     currentRoute = parseHash(location.hash);   // ← makes the export illegal
-     *
-     *     Cannot export state from a module if it is reassigned.
-     *
-     * Mutating an exported `$state` object — `appState.cart.push(x)` — stays
-     * legal and must stay untouched, so the test is for reassignment of the
-     * binding, not for the export.
-     *
-     * Neither shape can be rescued by the component stub: a module is imported
-     * for the values it exports, so replacing it breaks every reader. That is
-     * the right refusal, and it is why this repair has to work.
-     */
-    const reassigned = (name: string, after: string): boolean =>
-      new RegExp(`(?:^|[^\\w$.])${name}\\s*=(?!=)`, 'm').test(after)
-
-    const candidates = [
-      ...body.matchAll(/export\s+const\s+([A-Za-z_$][\w$]*)\s*=\s*\$derived\b/g),
-      ...[...body.matchAll(/export\s+(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=]+)?=\s*\$state\b/g)]
-        .filter((m) => reassigned(m[1], body.slice((m.index ?? 0) + m[0].length))),
-    ]
-
-    for (const m of candidates) {
-      const name = m[1]
-      // Doubled escapes: inside a template literal a single \s is an unknown
-      // escape and JavaScript drops it. The same slip has cost this codebase
-      // four defects — see test/source-hygiene.test.mjs.
-      const importsIt = new RegExp(`import\\s*\\{[^}]*\\b${name}\\b[^}]*\\}`)
-      const importers = [...files.entries()].filter(([other, text]) => other !== path && importsIt.test(text))
-
-      if (importers.length === 0) {
-        // Private after all: dropping the keyword is the whole fix.
-        out.set(
-          path,
-          (out.get(path) ?? body).replace(
-            new RegExp(`export\\s+((?:const|let|var)\\s+${name}\\s*(?::[^=]+)?=\\s*\\$(?:derived|state)\\b)`),
-            '$1'
-          )
-        )
-        fixed.push(`${name}: export を削除（他ファイルから参照されていません）`)
-        continue
-      }
-
-      const inner = `__makeui_${name}`
-      const rewritten = (out.get(path) ?? body)
-        .replace(
-          new RegExp(`export\\s+(?:const|let|var)\\s+${name}\\s*(?::[^=]+)?=\\s*(\\$(?:derived|state))`),
-          `let ${inner} = $1`
-        )
-        // Reassignments inside the module follow the rename, or it goes on
-        // writing to a binding that no longer exists.
-        .replace(new RegExp(`(^|[^\\w$.])${name}(\\s*=(?!=))`, 'gm'), `$1${inner}$2`)
-      out.set(path, `${rewritten}\n\nexport function ${name}() { return ${inner}; }\n`)
-
-      for (const [other] of importers) {
-        const text = out.get(other) ?? ''
-        // Every read that is not a property access and not already a call. The
-        // import statement itself is left alone — the name it binds is unchanged.
-        const read = new RegExp(`(^|[^\\w$.])${name}\\b(?!\\s*\\()`, 'g')
-        out.set(
-          other,
-          text
-            .split('\n')
-            .map((line) => (/^\s*import\b/.test(line) ? line : line.replace(read, `$1${name}()`)))
-            .join('\n')
-        )
-      }
-      fixed.push(`${name}: 関数化し、参照する ${importers.length} ファイルを呼び出しに変更`)
-    }
-  }
-
-  return {
-    files: out,
-    // Names the rune rather than assuming $derived: this also handles an
-    // exported $state that the module reassigns, and a log line that says the
-    // wrong one sends the next reader to the wrong rule.
-    fixed: fixed.length ? [`モジュールから export されたルーン状態を修正: ${fixed.join(' / ')}`] : [],
-  }
-}
 
 /**
  * A React project whose entry forgets to mount its own provider.
@@ -1972,7 +603,7 @@ export function fixReactMissingProvider(files: Map<string, string>): { files: Ma
   const wrapped = `<${providerName}>${root[0]}</${providerName}>`
 
   const importPath = `./${providerPath.replace(/^src\//, '').replace(/\.(tsx|jsx)$/, '')}`
-  let next = entry.replace(root[0], wrapped)
+  let next = entry.replace(root[0], () => wrapped)
   if (!new RegExp(`import\\s*\\{[^}]*\\b${providerName}\\b`).test(next)) {
     next = `import { ${providerName} } from '${importPath}';\n${next}`
   }
@@ -2047,127 +678,1276 @@ export function fixVueNonReactiveHash(files: Map<string, string>): { files: Map<
   return fixed.length ? { files: out, fixed } : { files, fixed: [] }
 }
 
-export function fixSvelteRuneShadowing(files: Map<string, string>): { files: Map<string, string>; fixed: string[] } {
-  const renames = new Map<string, string>()
-  for (const [path, body] of files) {
-    if (!/\.svelte\.[jt]s$/.test(path)) continue
-    for (const name of RUNE_SHADOWS) {
-      // Double backslashes: inside a template literal a single \s is an unknown
-      // escape and JavaScript drops it, so the pattern would compile to "exports+".
-      // The same slip once made the fenced-transport detector match nothing at all.
-      const exported =
-        new RegExp(`export\\s+(?:const|let|var|function|class)\\s+${name}\\b`).test(body) ||
-        new RegExp(`export\\s*\\{[^}]*\\b${name}\\b[^}]*\\}`).test(body)
-      if (exported) renames.set(name, `app${name.charAt(0).toUpperCase()}${name.slice(1)}`)
-    }
-  }
-  if (renames.size === 0) return { files, fixed: [] }
+/**
+ * The id a list row chose never reaches the detail screen, so the detail screen
+ * says the item does not exist.
+ *
+ * Measured on a real apparel storefront (2026-09-18, Spindle/React): tapping any
+ * product opened 「商品が見つかりません」 and nothing could be added to the cart.
+ * Three correct-looking pieces, wired to two different sources of truth:
+ *
+ *   ProductsScreen  dispatch({ type: 'SELECT_PRODUCT', payload: product.id })
+ *                   navigate('product-detail')                    // no params
+ *   App             <ProductDetailScreen productId={route.params?.id} />
+ *   Detail          state.products.find(p => p.id === productId)  // undefined
+ *
+ * Nothing throws, the route changes, the screen renders — it renders its empty
+ * state, which is precisely what the contract asks a detail screen to do when it
+ * has no id. The build is one line short of working, and neither the compiler nor
+ * the audits can see it: an empty state is a legitimate thing to render.
+ *
+ * The project contract says a row click passes the id through route params, so
+ * the call site is what is wrong and the fix is local to it. The id comes from
+ * whatever the same handler already knows the row to be — the payload it
+ * dispatches, or the binding the list maps over.
+ */
+export function fixDetailIdNotPassed(files: Map<string, string>): { files: Map<string, string>; fixed: string[] } {
+  const code = [...files].filter(([p]) => /\.(tsx?|jsx?|vue)$/.test(p))
+  if (code.length === 0) return { files, fixed: [] }
 
-  const out = new Map<string, string>()
-  const fixed: string[] = []
-  for (const [path, body] of files) {
-    let next = body
-    for (const [from, to] of renames) {
-      // Not after a dot (a property), not after a dollar (a rune), not a key.
-      const use = new RegExp(`(?<![.$\\w])${from}(?![\\w:])`, 'g')
-      const before = next
-      next = next.replace(use, to)
-      if (next !== before) fixed.push(`${path}: ${from} → ${to}`)
+  /**
+   * Screens rendered with an id read out of the route, and the key it is read
+   * under. Taken from wherever the shell branches on `route.screen`, which is the
+   * only place that knows which component a screen id renders.
+   */
+  const needsParam = new Map<string, string>()
+  for (const [, body] of code) {
+    /**
+     * Each branch, then what that branch renders — not "a screen name somewhere
+     * before a params read". Written the second way first, and on the real file
+     * it matched `case 'products'` and ran on to the params read two branches
+     * later, so the screen that actually needed the id was never seen.
+     */
+    for (const m of body.matchAll(/(?:case|route\.screen\s*===|screen\s*===|v-if\s*=\s*["'][^"']*===)\s*['"]([\w-]+)['"]/g)) {
+      const screen = m[1]
+      const branch = body.slice(m.index ?? 0, (m.index ?? 0) + 320)
+      const key = /route\.params[!?]?\.(\w+)/.exec(branch)
+      if (!key) continue
+      if (!needsParam.has(screen)) needsParam.set(screen, key[1])
     }
-    out.set(path, next)
   }
-  return { files: out, fixed: [...new Set(fixed.map((f) => f.split(': ')[1]))].map((r) => `ルーン名と衝突する export を改名: ${r}`) }
+  if (needsParam.size === 0) return { files, fixed: [] }
+
+  /**
+   * How this project's `navigate` takes a parameter: the contract's shape is
+   * `navigate(route: Route | ScreenId)`, but a build that wrote
+   * `navigate(screen, params)` must be repaired in ITS shape, not in ours — a fix
+   * that does not compile is worse than the defect.
+   */
+  const nav = code.find(([p]) => /useNavigation|router|navigation/i.test(p))?.[1] ?? ''
+  const twoArgs = /navigate\s*=?\s*(?:useCallback\()?\(?\s*\(?\s*\w+\s*:\s*ScreenId\s*,\s*\w+\s*[?:]/.test(nav)
+    || /function navigate\(\s*\w+\s*:\s*ScreenId\s*,/.test(nav)
+  const acceptsRoute = /Route\s*\|\s*ScreenId|ScreenId\s*\|\s*Route/.test(nav)
+  if (!twoArgs && !acceptsRoute) return { files, fixed: [] }
+
+  const out = new Map(files)
+  const fixed: string[] = []
+  for (const [path, body] of code) {
+    let next = body
+    let changed = 0
+    for (const [screen, key] of needsParam) {
+      const call = new RegExp(`navigate\\(\\s*['"]${screen.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}['"]\\s*\\)`, 'g')
+      next = next.replace(call, (whole, at: number) => {
+        const id = idExpressionNear(next, at)
+        if (!id) return whole
+        changed++
+        return twoArgs
+          ? `navigate('${screen}', { ${key}: String(${id}) })`
+          : `navigate({ screen: '${screen}', params: { ${key}: String(${id}) } })`
+      })
+    }
+    if (changed === 0) continue
+    out.set(path, next)
+    fixed.push(`${path}: 一覧から詳細へ遷移するときに id を渡していなかったため route params に載せた（詳細画面が「見つかりません」になる状態の修正・${changed}箇所）`)
+  }
+  return fixed.length ? { files: out, fixed } : { files, fixed: [] }
 }
 
 /**
- * SvelteKit imports in a project that is not a SvelteKit project.
+ * What the handler already knows this row to be.
  *
- * Measured: `import { goto } from '$app/navigation'` inside the project's OWN
- * `src/lib/navigation.svelte.ts`. It compiles — a bare specifier is assumed to
- * be a package — and throws `Module not found: $app/navigation` at first
- * require, so the page is blank. The contract already forbids it in so many
- * words; the model reached for what it knows anyway, which is what a rewrite is
- * for rather than another sentence in a prompt.
- *
- * Only applied when the project has its own navigation to redirect to. Without
- * that, removing the import would trade a clear error for an undefined function,
- * and the build gate should decline instead.
+ * In order of how certain each is: the id the same handler dispatches, the id it
+ * assigns to state, and failing both, the binding the enclosing list maps over.
+ * Nothing invented — with no candidate the call is left alone, because a wrong id
+ * navigates to a detail screen for the wrong item, which is worse than one that
+ * says it cannot find it.
  */
-function fixSvelteKitImports(files: Map<string, string>): { files: Map<string, string>; fixed: string[] } {
-  const navModule = [...files.entries()].find(
-    ([p, b]) => /navigation\.svelte\.[jt]s$/.test(p) && /export\s+function\s+navigate\b/.test(b)
+function idExpressionNear(source: string, at: number): string | null {
+  const before = source.slice(Math.max(0, at - 500), at)
+  const payload = [...before.matchAll(/payload\s*:\s*([A-Za-z_$][\w$]*(?:\.[\w$]+)*)/g)].pop()
+  if (payload && /\bid\b/i.test(payload[1])) return payload[1]
+  const setter = [...before.matchAll(/\bset[A-Z]\w*(?:Id|ID)\s*\(\s*([A-Za-z_$][\w$]*(?:\.[\w$]+)*)\s*\)/g)].pop()
+  if (setter) return setter[1]
+  if (payload && /^[A-Za-z_$][\w$]*$/.test(payload[1])) return `${payload[1]}.id`
+  const mapped = [...before.matchAll(/\.map\(\s*\(?\s*([A-Za-z_$][\w$]*)/g)].pop()
+  if (mapped) return `${mapped[1]}.id`
+  const each = [...before.matchAll(/v-for\s*=\s*["'][({]?\s*([A-Za-z_$][\w$]*)|#each\s+[\w.]+\s+as\s+([A-Za-z_$][\w$]*)/g)].pop()
+  if (each) return `${each[1] ?? each[2]}.id`
+  return null
+}
+
+/**
+ * A card that draws a grey box with the word 「商品画像」 in it, instead of the
+ * picture the item carries.
+ *
+ * Measured on the same storefront: every product had an `image` field, the card
+ * rendered `<div className="card-image"><span>商品画像</span></div>`, and the page
+ * shipped with no photograph on it at all. The pipeline's own photograph pass
+ * cannot help — it replaces image URLs and slots, and there was no image element
+ * to replace.
+ *
+ * The box is turned into the `<img>` it was standing in for. Deliberately narrow:
+ * the element has to be a picture frame by its own class name, hold nothing but a
+ * placeholder word, and the component has to receive an object whose type really
+ * does declare an image field — otherwise the repair would write a src that does
+ * not exist, which is the one outcome worse than a grey box.
+ */
+const PLACEHOLDER_WORD = /^(?:商品画像|画像|イメージ|写真|画像なし|no\s*image|image|photo|placeholder)$/i
+/*
+ * A picture field, whatever the project decided to call it.
+ *
+ * The list of exact names missed `thumbnailUrl: string` on an article feed of
+ * 2026-09-11 — three photographs sitting in the data and the word
+ * `thumbnailUrl` appearing nowhere else in the project. A suffix is allowed
+ * now, and only the suffixes that still mean "this IS the picture":
+ * `imageSrc`, `coverImage`, `photoUrl`. Not any suffix — `imageAlt` and
+ * `imageWidth` are about a picture without being one, and writing a URL into
+ * either would be worse than leaving the field alone.
+ */
+const PICTURE_NAME = '(?:image|img|thumbnail|thumb|photo|picture|cover|avatar|banner|hero)(?:Url|URL|Src|Image|Path)?'
+
+const IMAGE_FIELD = new RegExp(`\\b(${PICTURE_NAME})\\s*\\??\\s*:\\s*string`)
+const NAME_FIELD = /\b(name|title|label|productName)\s*\??\s*:\s*string/
+
+/** Every field name the project's own record types declare. */
+function declaredFields(files: Map<string, string>): Set<string> {
+  const names = new Set<string>()
+  for (const [path, body] of files) {
+    if (!/^src\/(data|store|lib|types)\//.test(path) && !/types?\.ts$/.test(path)) continue
+    for (const decl of body.matchAll(/(?:interface|type)\s+[A-Z][\w$]*\s*=?\s*\{([\s\S]*?)\n\}/g)) {
+      for (const m of decl[1].matchAll(/(?:^|\n)\s*([a-z][\w$]*)\s*\??\s*:/g)) names.add(m[1])
+    }
+  }
+  return names
+}
+
+/**
+ * A picture bound to a field the data does not have.
+ *
+ * Measured 2026-09-18, on the edit a user asked for after 「商品をクリックしても何も
+ * 起きません」. The model rewrote the whole screen rather than patching it, and in
+ * the rewrite it replaced `<ProductCard :product="product" />` with markup of
+ * its own:
+ *
+ *     <img :src="product.imageUrl" :alt="product.name" />
+ *
+ * `Product` declares `image`, not `imageUrl`, and the file it deleted had read
+ * it correctly. Nothing could see this: the SFC compiles, the template type is
+ * never checked, and `undefined` in `src` renders as a broken picture rather
+ * than as an error. The user reported it as 「画像が表示されなくなりました」.
+ *
+ * Deliberately only picture sources, and only when the name is declared NOWHERE
+ * in the project and exactly one declared name is a prefix of it. The same rule
+ * applied to expressions generally would rewrite `store.cartTotal` to
+ * `store.cart` — a legitimate computed whose name happens to start with a field.
+ * An image source has no such shape: it is a value read straight off a record.
+ */
+export function fixImageFieldMisspelt(files: Map<string, string>): {
+  files: Map<string, string>
+  fixed: string[]
+} {
+  const out = new Map<string, string>()
+  const fixed: string[] = []
+  const declared = declaredFields(files)
+  if (declared.size === 0) return { files: out, fixed }
+
+  /*
+   * `:src` in a Vue template, `src={…}` in JSX, and either spread over several
+   * lines — a bound attribute is rarely on the same line as its tag once the
+   * element has three of them. The bind prefix is why the word boundary goes
+   * before `src` and not before the colon: ` :src` has no boundary at the colon.
+   */
+  const SRC = /<img\b[^>]*?(?::src|\bsrc)\s*=\s*(?:"([^"]*)"|'([^']*)'|\{([^}]*)\})/g
+  for (const [path, body] of files) {
+    if (!/\.(vue|tsx|jsx)$/.test(path)) continue
+    let next = body
+    let touched = false
+    for (const m of body.matchAll(SRC)) {
+      const expr = m[1] ?? m[2] ?? m[3] ?? ''
+      const read = /^\s*([A-Za-z_$][\w$]*)\.([A-Za-z_$][\w$]*)\s*$/.exec(expr)
+      if (!read) continue
+      const [, item, field] = read
+      if (declared.has(field)) continue
+      const lower = field.toLowerCase()
+      const candidates = [...declared].filter((d) => d.length >= 4 && lower.startsWith(d.toLowerCase()))
+      if (candidates.length !== 1) continue
+      next = next.split(`${item}.${field}`).join(`${item}.${candidates[0]}`)
+      touched = true
+      fixed.push(`${path}: ${item}.${field} -> ${item}.${candidates[0]}`)
+    }
+    if (touched) out.set(path, next)
+  }
+
+  return {
+    files: out,
+    fixed: fixed.length
+      ? [
+          '画像の src が、データに無いフィールドを読んでいたので宣言されている名前に修正' +
+            `（undefined になり画像が出ません）: ${[...new Set(fixed)].join('、')}`,
+        ]
+      : [],
+  }
+}
+
+/**
+ * A route passed as a path where the router wants a screen and an id.
+ *
+ * From the same edit. The model wrote its own handler —
+ *
+ *     function handleProductClick(productId: string): void {
+ *       navigate(`product/${productId}`)
+ *     }
+ *
+ * — against a `navigate` whose string branch is `updateRoute({ screen: next })`.
+ * So the screen becomes the literal 「product/p1」, no screen matches it, and the
+ * detail screen that does eventually render through the hash listener reads
+ * `route.params.id` off a route that has no params. It compiles: `ScreenId` is
+ * a union of strings and a template literal is a string.
+ *
+ * Rewritten to the object form the same file already uses elsewhere, and only
+ * when the router declares `params` — without that this is not the shape being
+ * asked for and the string is simply a screen name.
+ */
+export function fixPathAsScreenId(files: Map<string, string>): {
+  files: Map<string, string>
+  fixed: string[]
+} {
+  const out = new Map<string, string>()
+  const fixed: string[] = []
+  const routerTakesParams = [...files].some(
+    // `params?: { id: string }` and `params?: Record<string, string>` are the
+    // two spellings the generated routers use; both take an id.
+    ([path, body]) =>
+      /routes?\.(ts|js)$/.test(path) && /\bparams\??\s*:\s*(?:\{[^}]*\bid\b|Record<)/.test(body)
   )
-  const hasKitImport = [...files.values()].some((b) => /['"]\$app\/[\w/]+['"]/.test(b))
-  if (!hasKitImport) return { files, fixed: [] }
-  if (!navModule) return { files, fixed: [] }
+  if (!routerTakesParams) return { files: out, fixed }
 
-  const out = new Map<string, string>()
-  const fixed: string[] = []
+  // navigate(`screen/${expr}`) and navigate('screen/' + expr).
+  const TEMPLATE = /\bnavigate\(\s*`([a-z][\w-]*)\/\$\{([^}]+)\}`\s*\)/g
+  const CONCAT = /\bnavigate\(\s*['"]([a-z][\w-]*)\/['"]\s*\+\s*([A-Za-z_$][\w$.]*)\s*\)/g
   for (const [path, body] of files) {
+    if (!/\.(vue|tsx|jsx|ts)$/.test(path)) continue
     let next = body
-    if (/['"]\$app\/[\w/]+['"]/.test(next)) {
-      // The import statement goes entirely; `goto` becomes the project's own
-      // `navigate`, which takes the same first argument.
-      next = next.replace(/^\s*import\s+\{[^}]*\}\s+from\s+['"]\$app\/[\w/]+['"];?\s*$/gm, '')
-      next = next.replace(/\bgoto\s*\(/g, 'navigate(')
-      if (path !== navModule[0] && !/from\s+['"][^'"]*navigation/.test(next)) {
-        // The file now calls navigate() and has to import it.
-        const depth = path.split('/').length - 2
-        const prefix = depth <= 1 ? './' : '../'.repeat(depth - 1)
-        next = `import { navigate } from '${prefix}lib/navigation.svelte';
-${next}`
-      }
-      fixed.push(`${path}: SvelteKit の $app import を除去し navigate() に置換`)
+    let touched = false
+    for (const re of [TEMPLATE, CONCAT]) {
+      next = next.replace(re, (_whole, screen: string, expr: string) => {
+        touched = true
+        fixed.push(`${path}: navigate('${screen}/…')`)
+        return `navigate({ screen: '${screen}', params: { id: String(${expr.trim()}) } })`
+      })
     }
-    out.set(path, next)
+    if (touched) out.set(path, next)
   }
-  return { files: out, fixed }
+
+  return {
+    files: out,
+    fixed: fixed.length
+      ? [
+          'navigate() にパスを渡していたので画面名と id に分割' +
+            `（画面名が「${'screen/id'}」になり、どの画面にも一致しません）: ${[...new Set(fixed)].join('、')}`,
+        ]
+      : [],
+  }
+}
+
+export function fixPlaceholderImageBoxes(files: Map<string, string>): { files: Map<string, string>; fixed: string[] } {
+  const code = [...files].filter(([p]) => /\.(tsx?|jsx?|vue)$/.test(p))
+  if (code.length === 0) return { files, fixed: [] }
+
+  // Types that carry a picture, so a component holding one can be given an <img>.
+  const withImage = new Map<string, { image: string; name: string | null }>()
+  for (const [, body] of code) {
+    for (const m of body.matchAll(/(?:interface|type)\s+(\w+)[^{]*\{([\s\S]*?)\n\}/g)) {
+      const image = IMAGE_FIELD.exec(m[2])
+      if (!image) continue
+      const name = NAME_FIELD.exec(m[2])
+      withImage.set(m[1], { image: image[1], name: name ? name[1] : null })
+    }
+  }
+  if (withImage.size === 0) return { files, fixed: [] }
+
+  const out = new Map(files)
+  const fixed: string[] = []
+  for (const [path, body] of code) {
+    // The object this file renders: a prop whose declared type carries a picture.
+    let holder: { object: string; image: string; name: string | null } | null = null
+    for (const m of body.matchAll(/(\w+)\s*\??\s*:\s*(\w+)\s*[;,\n]/g)) {
+      const type = withImage.get(m[2])
+      if (!type) continue
+      if (!new RegExp(`\\b${m[1]}\\.`).test(body)) continue
+      holder = { object: m[1], image: type.image, name: type.name }
+      break
+    }
+    if (!holder) continue
+
+    let changed = 0
+    const next = body.replace(
+      /<(div|span|figure|p)\b([^>]*)>\s*(?:<(?:span|p|div)\b[^>]*>\s*)?([^<>{}\n]{1,12}?)\s*(?:<\/(?:span|p|div)>\s*)?<\/\1>/g,
+      (whole, tag: string, attrs: string, text: string) => {
+        if (!PLACEHOLDER_WORD.test(text.trim())) return whole
+        // It has to be the picture's own frame. A caption that happens to read
+        // 「画像」 is not a frame, and replacing it would delete the caption.
+        if (!/class(?:Name)?\s*=\s*["'{][^"'}]*(image|photo|thumb|picture|visual)/i.test(attrs)) return whole
+        changed++
+        const src = `${holder!.object}.${holder!.image}`
+        const alt = holder!.name ? `${holder!.object}.${holder!.name}` : "''"
+        const isTemplate = path.endsWith('.vue')
+        const img = isTemplate
+          ? `<img :src="${src}" :alt="${alt}" style="width:100%;height:100%;object-fit:cover" />`
+          : `<img src={${src}} alt={${alt}} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />`
+        const inner = img
+        return `<${tag}${attrs}>${inner}</${tag}>`
+      }
+    )
+    if (changed === 0) continue
+    out.set(path, next)
+    fixed.push(`${path}: 「${'商品画像'}」と書いた枠を、品目が持つ画像の <img> に置き換え（写真が1枚も出ない状態の修正・${changed}箇所）`)
+  }
+  return fixed.length ? { files: out, fixed } : { files, fixed: [] }
 }
 
 /**
- * Svelte 5 mounts a component with `mount()`, not with `new`.
+ * A span of source with the strings taken out of consideration.
  *
- * Measured, and it is the third distinct way a Svelte generation has arrived
- * blank. The entry file came back as
- *
- *     import App from './App.svelte';
- *     const app = new App({ target: document.getElementById('app')! });
- *
- * which is the Svelte 3/4 class API. In Svelte 5 a compiled component is a
- * function, so `new App(...)` throws
- *
- *     TypeError: Cannot read properties of undefined (reading 'call')
- *
- * from inside the runtime, with nothing failing at compile time and nothing in
- * the project looking wrong. The contract already asks for `mount(App, {…})`;
- * this is the rewrite for when the model reaches for what it knows instead.
- *
- * `mount()` takes the same options object, so the arguments move across
- * unchanged — only the call shape and the import differ.
+ * The scanners below count braces, and a brace inside a Japanese product
+ * description is not a brace they are counting. Cheap and sufficient: quotes do
+ * not nest, and an escaped quote keeps its backslash.
  */
-export function fixSvelteLegacyMount(source: string): { source: string; fixed: string[] } {
-  // Default imports from a component file: those are the only things that can
-  // legitimately be mounted, and the only ones this may rewrite.
-  const components = new Set<string>()
-  for (const m of source.matchAll(/import\s+([A-Za-z_$][\w$]*)\s+from\s+['"][^'"]+\.svelte['"]/g)) {
-    components.add(m[1])
+function skipString(src: string, at: number): number {
+  const quote = src[at]
+  for (let i = at + 1; i < src.length; i++) {
+    if (src[i] === '\\') { i++; continue }
+    if (src[i] === quote) return i
   }
-  if (components.size === 0) return { source, fixed: [] }
+  return src.length - 1
+}
 
+/** The index of the bracket closing the one at `at`, or -1. */
+function closingBracket(src: string, at: number): number {
+  const open = src[at]
+  const close = open === '[' ? ']' : '}'
+  let depth = 0
+  for (let i = at; i < src.length; i++) {
+    const c = src[i]
+    if (c === '"' || c === "'" || c === '`') { i = skipString(src, i); continue }
+    if (c === open) depth++
+    else if (c === close && --depth === 0) return i
+  }
+  return -1
+}
+
+/** The object literals directly inside an array literal, as [start, end] pairs. */
+function recordsIn(src: string, arrayOpen: number): Array<[number, number]> {
+  const arrayClose = closingBracket(src, arrayOpen)
+  if (arrayClose === -1) return []
+  const out: Array<[number, number]> = []
+  for (let i = arrayOpen + 1; i < arrayClose; i++) {
+    const c = src[i]
+    if (c === '"' || c === "'" || c === '`') { i = skipString(src, i); continue }
+    if (c !== '{') continue
+    const end = closingBracket(src, i)
+    if (end === -1) break
+    out.push([i, end])
+    i = end
+  }
+  return out
+}
+
+/**
+ * A catalogue whose records carry no picture, given one.
+ *
+ * Measured 2026-09-19, comparing React and Vue on the same storefront brief,
+ * because the pictures 「Vueに比べてReactで生成したときに画像が出る枚数が少ない」.
+ * On the catalogue-shaped documents in the corpus the difference is not in the
+ * photograph pass at all — it is in what the build handed it:
+ *
+ *   vue    13 records, 13 image fields, 13 photographs
+ *   react  12 records, `image?: string` declared and set by NOT ONE of them,
+ *          and the card drawing `<div className="product-card__image">
+ *          <ContentFrame /></div>` — a stand-in where the photograph goes
+ *
+ * `assignItemImages` replaces picture URLs and slots. With no URL and no slot
+ * there is nothing for it to replace, so it correctly does nothing, and the
+ * storefront ships with drawn panels where twelve garments should be. The type
+ * says the picture was intended; the records simply never got one.
+ *
+ * So the slot is written where the model said it would be. `__PHOTO__` is the
+ * token the assembler is already told to write for exactly this, and the pass
+ * that resolves it reads the record's own `name` to decide what to photograph —
+ * so a record that says 「ニットセーター」 gets knitwear, which is the whole point
+ * of doing this here rather than picking a URL at random.
+ *
+ * Deliberately narrow, in three ways. The type must already DECLARE a picture —
+ * adding a field nobody asked for is a claim about the design, not a repair.
+ * Not one record may carry one — a catalogue where some items have photographs
+ * and others do not is a decision, not an omission. And the frame keeps
+ * whatever it was drawing as the fallback branch, so a project whose
+ * illustrations are only rendered here does not lose them.
+ *
+ * ## The card can ask too (2026-09-20)
+ *
+ * The first of those three was too narrow, and a user's storefront is the
+ * argument. 「商品一覧画面では商品の画像が表示されていない」 on a document where
+ * `Product` declares id, name, price, category, colors, sizes, material and
+ * dimensions — and no picture — while the card draws
+ *
+ *     <div className="da-card-image" aria-label={`${product.name}の画像`}>
+ *       <svg …> … a gradient, a dot pattern, a circle and a rectangle
+ *
+ * an invented abstract composition, which the IMAGERY contract names as the
+ * wrong answer for a catalogue in those words. The type never asked for a
+ * picture; the CARD asked, by its class and by the label it reads out. So
+ * "nobody asked for it" was not true of this shape, and the rule excluded a
+ * storefront that shipped twelve garments as gradients.
+ *
+ * Measured over 76 stored documents: 9 have a catalogue and a picture frame at
+ * all, 5 of those have a frame with no picture in it, and 2 of the 5 are this
+ * shape. So it is 2 in 76 of everything and 2 in 5 of the population this pass
+ * exists for.
+ *
+ * A frame declares a picture only with all of: a data array of at least three
+ * records of one type, that type having a name field, a component drawing an
+ * element whose class names it a picture BOUND to an item of that type, and no
+ * `<img>` already in it. Then the field is written onto the interface as well
+ * as into the records.
+ */
+const CATALOGUE_IMAGE = new RegExp(`\\b(${PICTURE_NAME})(\\s*\\?)?\\s*:\\s*string`)
+
+/** Whether the project holds an array of at least three records of this type. */
+function hasCatalogueOf(code: Array<[string, string]>, type: string): boolean {
+  for (const [path, body] of code) {
+    if (!/^src\/data\//.test(path)) continue
+    for (const m of body.matchAll(new RegExp(`export\\s+const\\s+\\w+\\s*:\\s*${type}\\[\\]\\s*=\\s*\\[`, 'g'))) {
+      if (recordsIn(body, (m.index ?? 0) + m[0].length - 1).length >= 3) return true
+    }
+  }
+  return false
+}
+
+/**
+ * Whether some component draws a picture frame for an item of this catalogue.
+ *
+ * Bound to the item, not merely present: a frame in a hero banner says nothing
+ * about the records. The binding is the same one the markup step uses, so a
+ * frame that argues for the field here is a frame that gets an `<img>` there.
+ */
+function frameAsksFor(code: Array<[string, string]>, nameField: string): boolean {
+  for (const [path, body] of code) {
+    if (/^src\/data\//.test(path)) continue
+    for (const m of body.matchAll(/<(?:div|figure|span)\b([^>]*)>/g)) {
+      if (!PICTURE_FRAME.test(m[1])) continue
+      if (/skeleton|loading|shimmer/i.test(m[1])) continue
+      const at = m.index ?? 0
+      // Already drawing one, so nothing is missing here.
+      if (/<img[\s>]/.test(body.slice(at, at + 400))) continue
+      const item = itemBindingNear(body, at, nameField)
+      if (item && new RegExp(`\\b${item}\\.${nameField}\\b`).test(body)) return true
+    }
+  }
+  return false
+}
+
+export function fixCatalogueWithoutPhotos(files: Map<string, string>): {
+  files: Map<string, string>
+  fixed: string[]
+} {
+  const code = [...files].filter(([p]) => /\.(tsx?|jsx?|vue)$/.test(p))
+  if (code.length === 0) return { files, fixed: [] }
+
+  /** Types that say they carry a picture, and where they say it. */
+  const carriers = new Map<string, { field: string; optional: boolean; declaredIn: string; nameField: string }>()
+  /** Record types with a name and no picture — candidates for the card to ask. */
+  const nameOnly = new Map<string, { declaredIn: string; nameField: string; at: number; body: string }>()
+  for (const [path, body] of code) {
+    for (const m of body.matchAll(/(?:interface|type)\s+(\w+)[^{]*\{([\s\S]*?)\n\}/g)) {
+      const img = CATALOGUE_IMAGE.exec(m[2])
+      const name = NAME_FIELD.exec(m[2])
+      if (!name) continue
+      if (!img) {
+        nameOnly.set(m[1], { declaredIn: path, nameField: name[1], at: m.index ?? 0, body: m[0] })
+        continue
+      }
+      carriers.set(m[1], { field: img[1], optional: Boolean(img[2]), declaredIn: path, nameField: name[1] })
+    }
+  }
+
+  /*
+   * And the types whose CARD asks, where the type did not. See the note above:
+   * a frame classed for a picture and bound to an item of the type is the build
+   * saying a photograph goes there, whatever the interface left out.
+   */
+  const declaredByFrame = new Set<string>()
+  for (const [type, info] of nameOnly) {
+    if (carriers.has(type)) continue
+    if (!hasCatalogueOf(code, type)) continue
+    if (!frameAsksFor(code, info.nameField)) continue
+    carriers.set(type, { field: 'image', optional: false, declaredIn: info.declaredIn, nameField: info.nameField })
+    declaredByFrame.add(type)
+  }
+
+  if (carriers.size === 0) return { files, fixed: [] }
+
+  const out = new Map(files)
   const fixed: string[] = []
-  let out = source
-  for (const name of components) {
-    const call = new RegExp(`new\\s+${name}\\s*\\(`, 'g')
-    if (!call.test(out)) continue
-    out = out.replace(new RegExp(`new\\s+${name}\\s*\\(`, 'g'), `mount(${name}, `)
-    fixed.push(`new ${name}(…) → mount(${name}, …)`)
-  }
-  if (fixed.length === 0) return { source, fixed: [] }
+  /** Types whose records this pass filled, so the markup below knows to draw them. */
+  const slotted = new Map<string, { field: string; nameField: string }>()
 
-  if (!/import\s*\{[^}]*\bmount\b[^}]*\}\s*from\s*['"]svelte['"]/.test(out)) {
-    out = `import { mount } from 'svelte';\n${out}`
+  for (const [path, body] of code) {
+    if (!/^src\/data\//.test(path)) continue
+    let next = out.get(path) ?? body
+    for (const m of body.matchAll(/export\s+const\s+\w+\s*:\s*(\w+)\[\]\s*=\s*\[/g)) {
+      const carrier = carriers.get(m[1])
+      if (!carrier) continue
+      const arrayOpen = (m.index ?? 0) + m[0].length - 1
+      const records = recordsIn(body, arrayOpen)
+      // Two records are a pair of examples; a catalogue is what this is for.
+      if (records.length < 3) continue
+      /*
+       * The ones without a picture, which is usually not the whole catalogue.
+       *
+       * This began as "not one record may carry one", on the reasoning that a
+       * catalogue where some items have photographs and others do not is a
+       * decision rather than an omission. Measured against the storefront that
+       * prompted this, that reasoning was wrong and it cost the repair: ONE of
+       * the twelve garments carried a photograph and eleven did not, which is
+       * not a decision — it is the shape the difference actually takes, and the
+       * rule excluded exactly the document it was written for.
+       *
+       * Records that already have one keep it. Only the gaps are filled.
+       */
+      const held = new RegExp(`\\b${carrier.field}\\s*:`)
+      const missing = records.filter(([a, b]) => !held.test(body.slice(a, b)))
+      /*
+       * A catalogue whose records ALREADY carry their pictures still reaches
+       * the markup step below, and that is the whole of the 2026-09-20 report:
+       * 「画像が一枚も挿入されていません」 on a document holding eleven real
+       * photographs in `src/data/products.ts` and not one `<img>` anywhere —
+       * the card drew `<div className="cds-product-image"><ContentFrame /></div>`.
+       *
+       * The data was complete, so this pass had nothing to slot, and gating the
+       * markup on having slotted something meant the one thing that was wrong
+       * went untouched. The two halves are independent: fill what is missing,
+       * and draw what is there.
+       */
+      slotted.set(m[1], { field: carrier.field, nameField: carrier.nameField })
+      if (missing.length === 0) continue
+
+      /*
+       * Written from the END of the file backwards, so an insertion does not
+       * move the offsets of the records still to be edited.
+       */
+      for (const [start] of [...missing].reverse()) {
+        const lineEnd = next.indexOf('\n', start)
+        if (lineEnd === -1) continue
+        const indent = /^[ \t]*/.exec(next.slice(lineEnd + 1))?.[0] ?? '    '
+        next = `${next.slice(0, lineEnd + 1)}${indent}${carrier.field}: '${PHOTO_SLOT}',\n${next.slice(lineEnd + 1)}`
+      }
+      fixed.push(`${path}: ${records.length}件中${missing.length}件に ${carrier.field} を追加`)
+    }
+    if (next !== (out.get(path) ?? body)) out.set(path, next)
   }
-  return { source: out, fixed: [`Svelte 5 のマウント形式に修正: ${fixed.join(', ')}`] }
+  if (slotted.size === 0) return { files, fixed: [] }
+
+  /*
+   * Now every record has one, so the declaration is no longer optional. Left
+   * optional, `src={item.image}` is `string | undefined` and `tsc` rejects the
+   * project this system exists to hand someone.
+   */
+  for (const [type, { field }] of slotted) {
+    const carrier = carriers.get(type)!
+    const body = out.get(carrier.declaredIn) ?? files.get(carrier.declaredIn) ?? ''
+    /*
+     * A type the CARD asked for has no line to un-optional — it has no line at
+     * all. Written beside the name field, because that is the field this pass
+     * already read the type for and it puts the picture with what it pictures.
+     */
+    if (declaredByFrame.has(type)) {
+      const decl = new RegExp(`(\\n([ \\t]*)${carrier.nameField}\\s*\\??\\s*:\\s*string;?)`)
+      const withField = body.replace(decl, `$1\n$2${field}: string;`)
+      if (withField !== body) {
+        out.set(carrier.declaredIn, withField)
+        fixed.push(`${carrier.declaredIn}: ${type} に ${field} を宣言（カードに写真枠があるのに型が写真を持っていませんでした）`)
+      }
+      continue
+    }
+    if (!carrier.optional) continue
+    const fixedDecl = body.replace(new RegExp(`(\\b${field})\\s*\\?\\s*:(\\s*string)`), '$1:$2')
+    if (fixedDecl !== body) out.set(carrier.declaredIn, fixedDecl)
+  }
+
+  /*
+   * And the frame gets the picture it was holding a place for.
+   *
+   * The element has to be a picture frame by its own class name, and hold
+   * nothing but a drawn stand-in — an empty box, or a single component. A frame
+   * with real content in it is not a frame with a missing picture.
+   */
+  /*
+   * A frame holding nothing, or holding one stand-in and nothing else.
+   *
+   * The stand-in was read as a capitalised self-closing component, which is
+   * `<ContentFrame />` on the list screen and missed the detail screen's
+   * `<div className="cds-image-placeholder" />` on the same document. Any
+   * single childless element counts now; a frame with real content in it still
+   * does not match, because the pattern allows exactly one and no text.
+   */
+  /*
+   * `<svg>…</svg>` is a stand-in too, and it is the one the storefront of
+   * 2026-09-20 used: sixty lines of gradient, dot pattern, circle and rectangle
+   * inside `<div className="da-card-image">`. The frames are found by matching
+   * tags rather than by a pattern — see tools/picture-frames.ts for the two
+   * documents a pattern broke.
+   */
+  for (const [path, body] of code) {
+    if (/^src\/data\//.test(path)) continue
+    const source = out.get(path) ?? body
+    const edits: Array<{ at: number; end: number; text: string }> = []
+    for (const frame of pictureFrames(source)) {
+      const { at, end, tag, attrs, child } = frame
+      /*
+       * A frame already drawing a picture is not a frame with a missing one.
+       * Widening the child to any childless element once let this match an
+       * `<img>`, so the repair replaced a working picture with its own.
+       */
+      if (/^<(?:img|picture|image)\b/i.test(child.trim())) continue
+      const type = [...slotted].find(([, info]) => {
+        const item = itemBindingNear(source, at, info.nameField)
+        return item !== null && new RegExp(`\\b${item}\\.${info.nameField}\\b`).test(source)
+      })
+      if (!type) continue
+      const item = itemBindingNear(source, at, type[1].nameField)
+      if (!item) continue
+      const { field, nameField } = type[1]
+      const vue = path.endsWith('.vue')
+      const img = vue
+        ? `<img :src="${item}.${field}" :alt="${item}.${nameField}" style="width:100%;height:100%;object-fit:cover" />`
+        : `<img src={${item}.${field}} alt={${item}.${nameField}} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />`
+      const open = `<${tag}${attrs.replace(/\s*\/$/, '')}>`
+      let inner: string
+      if (!child.trim()) {
+        inner = img
+      } else if (/^<svg[\s>]/i.test(child.trim())) {
+        /*
+         * An inline `<svg>` stand-in is replaced outright. The other branch
+         * exists so that a COMPONENT drawing the stand-in is still rendered
+         * somewhere and does not become an unused file; drawn inline there is
+         * no file, and sixty lines of invented gradient hanging off a ternary
+         * whose condition is a slot we just wrote is dead weight.
+         */
+        inner = img
+      } else {
+        // Trimmed: the child carries the frame's indentation, and a newline
+        // between `:` and the fallback makes the branch read as two statements.
+        const standIn = child.trim()
+        inner = vue
+          ? `${img.replace('<img ', `<img v-if="${item}.${field}" `)}${standIn.replace('/>', 'v-else />')}`
+          : `{${item}.${field} ? ${img} : ${standIn}}`
+      }
+      edits.push({ at, end, text: `${open}${inner}</${tag}>` })
+    }
+    if (edits.length === 0) continue
+    let next = source
+    // From the end, so an earlier rewrite does not move the offsets after it.
+    for (const e of [...edits].reverse()) next = next.slice(0, e.at) + e.text + next.slice(e.end)
+    out.set(path, next)
+    fixed.push(`${path}: 品目の写真枠に <img> を入れた（${edits.length}箇所）`)
+  }
+
+  /*
+   * A slot nothing draws is worse than no slot: `__PHOTO__` would ship as a
+   * broken `src`, or as a string in a record the screens never read. So the
+   * data change stands only when something renders the field — the frame this
+   * pass just gave an `<img>`, or an `<img>` the build already wrote elsewhere
+   * (a detail screen usually has one even when the cards do not).
+   */
+  /*
+   * Nothing was written, so nothing is reported. With the two halves
+   * independent this is reachable in a way it was not before: a catalogue that
+   * already carries its pictures AND already draws them leaves both halves
+   * with nothing to do, and the report below would otherwise announce a repair
+   * with an empty list of what it repaired.
+   */
+  if (fixed.length === 0) return { files, fixed: [] }
+  const drawnHere = fixed.some((f) => f.includes('<img>'))
+  const slottedHere = fixed.some((f) => f.includes('を追加'))
+  const drawnAlready = [...slotted].some(([, { field }]) =>
+    code.some(([p, b]) => !/^src\/data\//.test(p) && new RegExp(`<img[^>]*\\.${field}\\b`).test(b))
+  )
+  if (!drawnHere && !drawnAlready) return { files, fixed: [] }
+  /*
+   * Said as what happened, because the two halves are independent now and the
+   * commonest case is only the second: a catalogue whose records already carry
+   * their photographs, drawn by nothing.
+   */
+  const what = slottedHere && drawnHere
+    ? 'データに写真の枠を作り、カードに <img> を入れました（この後の工程が品名から実際の写真を割り当てます）'
+    : slottedHere
+      ? 'データに写真の枠を作りました（この後の工程が品名から実際の写真を割り当てます）'
+      : '品目が持っている写真がどこにも描画されていなかったので、写真枠に <img> を入れました'
+  return { files: out, fixed: [`${what}: ${fixed.join('、')}`] }
+}
+
+/**
+ * The record a frame is being rendered for, or null.
+ *
+ * A list says so in its `.map()` or its `v-for`. A DETAIL screen does not —
+ * it holds one record in a local, and the 2026-09-20 document's detail screen
+ * was missed for exactly that reason. So the last resort is the name the
+ * markup around the frame is already reading: whatever `X` is in `X.name`
+ * beside it is the record this frame belongs to.
+ */
+function itemBindingNear(source: string, at: number, nameField = 'name'): string | null {
+  const before = source.slice(Math.max(0, at - 1200), at)
+  const mapped = [...before.matchAll(/\.map\(\s*\(?\s*([A-Za-z_$][\w$]*)/g)].pop()
+  if (mapped) return mapped[1]
+  const each = [...before.matchAll(/v-for\s*=\s*["'][({]?\s*([A-Za-z_$][\w$]*)/g)].pop()
+  if (each) return each[1]
+  const window = source.slice(Math.max(0, at - 800), at + 600)
+  const named = [...window.matchAll(new RegExp(`([A-Za-z_$][\\w$]*)\\.${nameField}\\b`, 'g'))]
+    .map((m) => m[1])
+    .filter((name) => name !== 'props')
+  return named[0] ?? null
+}
+
+/**
+ * Utility classes that were written and never defined, given their CSS.
+ *
+ * `className="flex items-center gap-4 rounded-lg bg-white p-6 shadow-sm"` is
+ * the vocabulary of a framework these projects do not carry, and every one of
+ * those classes is inert. Measured over the last 102 stored documents, 23 (24%)
+ * ship with three or more of them and the worst carries 95 — a page with no
+ * padding, no card and no type scale, which is 「デザインが反映されておらず、
+ * チープなデザインになってしまっている」.
+ *
+ * The audit has reported this as `utility-classes` for weeks and a model is
+ * asked to rewrite the markup. It is still 24%. So the classes are made to work
+ * instead, which is both the thing the user asked for — 「確実に効くように」 — and
+ * the cheaper answer: a repair call not spent.
+ *
+ * See tools/utility-css.ts for what each class becomes and why colour, corners
+ * and shadow go through the project's own tokens while spacing does not.
+ * Classes it cannot map exactly are left alone and still reported.
+ */
+export function fixDeadUtilityClasses(files: Map<string, string>): {
+  files: Map<string, string>
+  fixed: string[]
+} {
+  const sheets = [...files].filter(([p]) => p.endsWith('.css'))
+  if (sheets.length === 0) return { files, fixed: [] }
+  // The largest stylesheet is the one carrying the tokens — the same choice
+  // `stylesheetOf` makes, and for the same reason.
+  const sheet = sheets.reduce((a, b) => (b[1].length > a[1].length ? b : a))
+
+  const defined = new Set<string>()
+  for (const [, body] of sheets) {
+    for (const c of definedClasses(body)) defined.add(c)
+  }
+  // A Vue project keeps its component CSS in the SFC, and a class defined there
+  // is defined.
+  for (const [path, body] of files) {
+    if (!path.endsWith('.vue')) continue
+    for (const style of body.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)) {
+      for (const c of definedClasses(style[1])) defined.add(c)
+    }
+  }
+
+  const dead = new Set<string>()
+  for (const [path, body] of files) {
+    if (!/\.(tsx|jsx|vue)$/.test(path)) continue
+    const values = [
+      ...[...body.matchAll(/\bclass(?:Name)?\s*=\s*["']([^"']*)["']/g)].map((m) => m[1]),
+      ...[...body.matchAll(/\bclass(?:Name)?\s*=\s*\{\s*`([^`]*)`/g)].map((m) => m[1].replace(/\$\{[^}]*\}/g, ' ')),
+    ]
+    for (const v of values) {
+      for (const c of v.split(/\s+/)) {
+        if (c && !defined.has(c) && UTILITY_CLASS.test(c)) dead.add(c)
+      }
+    }
+  }
+  /*
+   * Three, the same floor the audit uses. One or two stray classes on a page
+   * whose styling is otherwise its own is not the failure this is for, and
+   * appending a stylesheet section for them would be louder than the problem.
+   */
+  if (dead.size < 3) return { files, fixed: [] }
+
+  const written = utilityCss(dead, sheet[1])
+  if (written.handled.length === 0) return { files, fixed: [] }
+
+  const out = new Map(files)
+  out.set(sheet[0], `${sheet[1].replace(/\s+$/, '')}\n\n${written.css}\n`)
+  return {
+    files: out,
+    fixed: [
+      `${sheet[0]}: 定義の無いユーティリティクラス${written.handled.length}種類に CSS を書きました` +
+        `（余白・寸法・文字はその名前の尺度どおり、色・角丸・影はこのプロジェクトのトークン経由）` +
+        `${written.unhandled.length > 0 ? `。${written.unhandled.length}種類は対応表に無いのでそのままです` : ''}`,
+    ],
+  }
+}
+
+/**
+ * A glyph on the button whose label already says what the glyph would say.
+ *
+ * `icons` on 22 of 76 stored documents. `tools/action-icons.ts` holds the
+ * vocabulary, the shapes, and why this only touches buttons — two of the four
+ * places the finding's own instruction names turned out to be wrong, and a user
+ * reported both of them on one storefront.
+ *
+ * Reach: 17 of the 22 (77%), 53 pairings, every one read rather than counted.
+ */
+export function fixIconsNotDrawn(
+  files: Map<string, string>,
+  kind: OutputKind
+): { files: Map<string, string>; fixed: string[] } {
+  const ext = FRAMEWORKS[kind].componentExt
+  const icons = renderedFrom(files, ICON_DIR, ext)
+  if (icons.used.length > 0) return { files, fixed: [] }
+
+  const own = icons.all.map((p): [string, string] => [artName(p), p])
+  const places = iconPlacements(files, kind, own)
+  if (places.length === 0) return { files, fixed: [] }
+
+  const out = new Map(files)
+  const created = new Set<string>()
+  // Written from the end of each file, so an insertion does not move the
+  // offsets of the buttons still to come.
+  const byFile = new Map<string, IconPlacement[]>()
+  for (const p of places) byFile.set(p.path, [...(byFile.get(p.path) ?? []), p])
+
+  for (const [path, inFile] of byFile) {
+    let body = out.get(path)
+    if (body === undefined) continue
+    const imports: string[] = []
+    for (const p of [...inFile].sort((a, b) => b.at - a.at)) {
+      let from = p.from
+      if (!from) {
+        from = `${ICON_DIR}${p.render}${ext}`
+        if (!out.has(from)) { out.set(from, glyphSource(p.render, kind)); created.add(p.render) }
+      }
+      const source = out.get(from) ?? ''
+      const clause = isDefaultExport(source) || created.has(p.render) ? p.render : `{ ${p.render} }`
+      const statement = `import ${clause} from '${importPath(path, from)}'`
+      if (!imports.includes(statement)) imports.push(statement)
+      body = `${body.slice(0, p.at)}<${p.render} />${body.slice(p.at)}`
+    }
+    for (const statement of imports) body = withImport(body, statement, kind)
+    out.set(path, body)
+  }
+
+  /*
+   * And the rule that lines the glyph up with the words beside it. Without it
+   * an inline `<svg>` sits on the text's baseline rather than beside it, which
+   * is worse than the finding.
+   */
+  const sheets = [...out].filter(([p]) => p.endsWith('.css'))
+  if (sheets.length > 0 && !sheets.some(([, b]) => b.includes(ICON_BUTTON_MARKER))) {
+    const sheet = sheets.reduce((a, b) => (b[1].length > a[1].length ? b : a))
+    out.set(sheet[0], `${sheet[1].replace(/\s+$/, '')}\n\n${ICON_BUTTON_CSS}\n`)
+  }
+
+  const labels = [...new Set(places.map((p) => p.render))]
+  return {
+    files: out,
+    fixed: [
+      `ラベルが動作を表しているボタン${places.length}個にアイコンを付けました（${labels.join('、')}` +
+        `${created.size > 0 ? `。うち${[...created].join('、')}は新規作成` : ''}）`,
+    ],
+  }
+}
+
+/**
+ * Takes the magnifier off the photograph — 「商品をクリックすると画像が表示される
+ * が、中心に検索マークが表示されている」. What counts, and why it is narrow, is in
+ * tools/picture-frames.ts.
+ */
+export function fixIconOnPhotograph(
+  files: Map<string, string>,
+  kind: OutputKind
+): { files: Map<string, string>; fixed: string[] } {
+  const ext = FRAMEWORKS[kind].componentExt
+  const out = new Map(files)
+  let removed = 0
+  for (const [path, body] of files) {
+    if (!path.endsWith(ext)) continue
+    const found = iconsOnPhotographs(body)
+    if (found.length === 0) continue
+    let next = body
+    for (const r of [...found].reverse()) next = next.slice(0, r.at) + next.slice(r.end)
+    out.set(path, next)
+    removed += found.length
+  }
+  if (removed === 0) return { files, fixed: [] }
+  return {
+    files: out,
+    fixed: [`写真の上に重ねて描かれていた装飾アイコンを${removed}個取り除きました（写真が隠れます）`],
+  }
+}
+
+export const TOKEN_ALIAS_MARKER = '/* makeui:token-aliases */'
+
+/**
+ * Custom properties the project reads everywhere and defines nowhere.
+ *
+ * Found by looking at a drawing that was not there. doc25's empty cart renders
+ * `EmptyCartIllustration` at 160x160, in the DOM, and invisible: every stroke is
+ * `var(--border)`, the stylesheet defines no `--border`, and an undefined
+ * custom property on `stroke` computes to `none`.
+ *
+ * It is not one document. Measured 2026-09-20 over the 34 stored projects, 22
+ * (65%) read a custom property nothing defines, and in all 22 it happens inside
+ * `illustrations/` or `icons/`. Two names account for 304 of the roughly 360
+ * uses: `--text-muted` (208) and `--border` (96).
+ *
+ * Those two names are not the model's invention. They are the ones the repair
+ * instruction for this very finding dictates — 「空状態の線画は…var(--border) と
+ * var(--text-muted) を使い」 — while the presets name the same colours
+ * `--color-border-subtle` and `--color-text-secondary`. So the pipeline asks for
+ * a drawing in tokens the stylesheet does not have, the model complies, and the
+ * result is an invisible picture that the audit then reports as a missing one.
+ * That is a decent part of why `imagery-missing` survives half the runs it
+ * appears in: the repair does the work and nothing appears on screen.
+ *
+ * The fix ALIASES rather than invents. `--border: var(--color-border-subtle)`
+ * introduces no colour the design system did not already choose, so
+ * `palette-size` and `preset-drift` — which count distinct colours and values
+ * outside the bound system — do not move. A name whose role cannot be read from
+ * it (`--color-neutral-9`, `--color-semantic-error`) is left undefined, for the
+ * same reason: guessing at it would put a colour in the stylesheet that nothing
+ * chose.
+ *
+ * `var(--x, fallback)` is not touched. It already renders.
+ */
+export function fixUndefinedTokens(files: Map<string, string>): {
+  files: Map<string, string>
+  fixed: string[]
+} {
+  const sheets = [...files].filter(([p]) => p.endsWith('.css'))
+  if (sheets.length === 0) return { files, fixed: [] }
+  const sheet = sheets.reduce((a, b) => (b[1].length > a[1].length ? b : a))
+
+  const defined = new Set<string>()
+  for (const [path, body] of files) {
+    if (/\.(md|markdown|txt)$/i.test(path)) continue
+    for (const m of body.matchAll(/(--[\w-]+)\s*:/g)) defined.add(m[1])
+  }
+
+  const missing = new Set<string>()
+  for (const [path, body] of files) {
+    if (/\.(md|markdown|txt)$/i.test(path)) continue
+    for (const m of body.matchAll(/var\(\s*(--[\w-]+)\s*\)/g)) {
+      if (!defined.has(m[1])) missing.add(m[1])
+    }
+  }
+  if (missing.size === 0) return { files, fixed: [] }
+
+  const palette = paletteOf(sheet[1])
+  const lines: string[] = []
+  for (const name of [...missing].sort()) {
+    const role = roleOf(name)
+    if (!role) continue
+    const their = palette[role]
+    if (!their || their === name) continue
+    lines.push(`  ${name}: var(${their});`)
+  }
+  if (lines.length === 0) return { files, fixed: [] }
+
+  const block = `${TOKEN_ALIAS_MARKER}\n:root {\n${lines.join('\n')}\n}`
+  const out = new Map(files)
+  out.set(sheet[0], `${sheet[1].replace(/\s+$/, '')}\n\n${block}\n`)
+  return {
+    files: out,
+    fixed: [
+      `${sheet[0]}: 定義の無いカスタムプロパティ${lines.length}件を、このプロジェクトの` +
+        `同じ役割のトークンに結びつけました（${lines.map((l) => l.trim().split(':')[0]).join('、')}）` +
+        '。未定義の var() は stroke なら none になるため、図版が描画されていても見えません',
+    ],
+  }
+}
+
+/**
+ * The drawing an empty screen was supposed to have, actually drawn.
+ *
+ * `imagery-missing` on 15 of the 34 stored documents (44%), the largest
+ * source-visible finding there is. `tools/artwork.ts` holds the measurement, the
+ * two halves it splits into, where a drawing is put and why only one file is
+ * created when none exists.
+ */
+export function fixArtworkNotDrawn(
+  files: Map<string, string>,
+  kind: OutputKind
+): { files: Map<string, string>; fixed: string[] } {
+  const ext = FRAMEWORKS[kind].componentExt
+  const art = renderedFrom(files, ART_DIR, ext)
+  if (art.used.length > 0) return { files, fixed: [] }
+
+  const hosts = findArtHosts(files, kind)
+  if (hosts.length === 0) return { files, fixed: [] }
+
+  const out = new Map(files)
+  let created = ''
+
+  /*
+   * Nothing to draw, so one is drawn. ONE file, and it is rendered: three files
+   * with none of them on screen is the shape this finding exists to report.
+   *
+   * Not into a header, though. The drawing made here is a tray for an empty
+   * list, and the header fallback exists for a wordmark the project already has
+   * — inventing one and putting a tray in the brand corner would be worse than
+   * the finding.
+   */
+  if (art.all.length === 0) {
+    if (hosts[0].place !== 'empty') return { files, fixed: [] }
+    created = `${ART_DIR}${CREATED_ART}${ext}`
+    out.set(created, emptyStateArt(kind))
+  }
+  const available = created ? [created] : art.all
+
+  // Grouped by file and applied from the end of each, so an earlier insertion
+  // does not move the offsets of the hosts still to come.
+  const byFile = new Map<string, ArtHost[]>()
+  for (const h of hosts) byFile.set(h.path, [...(byFile.get(h.path) ?? []), h])
+
+  const drawn: string[] = []
+  for (const [path, inFile] of byFile) {
+    let body = out.get(path)
+    if (body === undefined) continue
+    const source = pickArtwork(available, inFile[0].place, path)
+    if (!source) continue
+    const exported = artName(source)
+    /*
+     * The name it is rendered under, which is not always its own.
+     *
+     * A project's empty-state COMPONENT and its empty-state DRAWING are both
+     * called `EmptyState` often enough that this was the first case the corpus
+     * produced: importing `EmptyState` into a file that declares one puts an
+     * import binding beside a function declaration of the same name. Sucrase
+     * compiles that; a real module loader does not.
+     */
+    const name = declares(body, exported) ? `${exported}Illustration` : exported
+    const clause = isDefaultExport(out.get(source) ?? '') || source === created
+      ? name
+      : name === exported ? `{ ${exported} }` : `{ ${exported} as ${name} }`
+    const statement = `import ${clause} from '${importPath(path, source)}'`
+
+    for (const h of [...inFile].sort((a, b) => b.at - a.at)) {
+      /*
+       * An icon already standing in for the drawing is REPLACED, not joined.
+       * 「カートが空のときの…妙な位置に検索マークが表示されている」 was
+       * `<EmptyStateArt />` inserted above the `<SearchIcon />` the build had
+       * already put in that empty state. See `ArtHost.replaces`.
+       */
+      body = h.replaces
+        ? body.slice(0, h.replaces.at) + `<${name} />` + body.slice(h.replaces.end)
+        : body.slice(0, h.at) + `\n${h.indent}  <${name} />` + body.slice(h.at)
+    }
+    out.set(path, withImport(body, statement, kind))
+    drawn.push(`${path}${inFile.length > 1 ? ` (${inFile.length})` : ''}`)
+  }
+  if (drawn.length === 0) return { files, fixed: [] }
+
+  const where = hosts[0].place === 'empty' ? '空状態' : 'ヘッダー'
+  return {
+    files: out,
+    fixed: [
+      `${where}に図版を描画しました（${drawn.join('、')}）` +
+        `${created ? `。${created} を作成` : `。${art.all.length}個あって1つも描画されていませんでした`}`,
+    ],
+  }
+}
+
+/**
+ * The same file with an import added, wherever this framework keeps them.
+ *
+ * After the last existing import, so it sits with its neighbours; failing that,
+ * at the top of the module — which for a Vue SFC means inside `<script setup>`,
+ * and means creating that block when the component has none.
+ */
+function withImport(source: string, statement: string, kind: OutputKind): string {
+  if (source.includes(statement)) return source
+  if (kind === 'vue') {
+    const block = /<script[^>]*\bsetup\b[^>]*>/.exec(source)
+    if (!block) {
+      return `<script setup lang="ts">\n${statement};\n</script>\n\n${source}`
+    }
+    const at = (block.index ?? 0) + block[0].length
+    const inner = source.slice(at)
+    const last = lastImportEnd(inner)
+    return source.slice(0, at + last) + `\n${statement};` + source.slice(at + last)
+  }
+  const last = lastImportEnd(source)
+  return last === 0
+    ? `${statement};\n${source}`
+    : source.slice(0, last) + `\n${statement};` + source.slice(last)
+}
+
+/** Whether the file already binds this name — a declaration or an import. */
+function declares(source: string, name: string): boolean {
+  const n = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return (
+    new RegExp(`\\b(?:function|const|let|var|class)\\s+${n}(?![\\w$])`).test(source) ||
+    new RegExp(`\\bimport\\s[^\\n]*?(?<![\\w$])${n}(?![\\w$])[^\\n]*?from`).test(source) ||
+    new RegExp(`\\bas\\s+${n}(?![\\w$])`).test(source)
+  )
+}
+
+/** Just past the last top-level import, or 0 when there is none. */
+function lastImportEnd(source: string): number {
+  let end = 0
+  for (const m of source.matchAll(/^import\s[^\n]*?;?\s*$/gm)) {
+    end = (m.index ?? 0) + m[0].replace(/\s+$/, '').length
+  }
+  return end
+}
+
+/**
+ * Cards and rows that open something when clicked, and nothing when tabbed to.
+ *
+ * Reported by a user as 「依頼された要件が反映されていません: 商品カードはTabキーで
+ * 辿れる」 on a storefront whose product cards were `<div … onClick={…}>`. The
+ * requirement was real and the finding was right; what neither the check nor the
+ * repair instruction said is that Tab reachability is not something a Tab key
+ * handler provides. See `requirements.ts` for that half.
+ *
+ * Measured over the 34 stored project documents: 21 (62%) have at least one
+ * such element. `tools/keyboard-reach.ts` holds the scan, what it refuses to
+ * touch, and why the key handler re-dispatches a click rather than copying the
+ * click expression.
+ *
+ * Vue is edited inside `<template>` only: the `<script>` block of an SFC is full
+ * of `<` that opens nothing.
+ */
+export function fixKeyboardUnreachable(
+  files: Map<string, string>,
+  kind: OutputKind
+): { files: Map<string, string>; fixed: string[] } {
+  const ext = FRAMEWORKS[kind].componentExt
+  const out = new Map(files)
+  let total = 0
+  const touched: string[] = []
+  for (const [path, body] of files) {
+    if (!path.endsWith(ext)) continue
+    if (kind === 'vue') {
+      const template = /<template>([\s\S]*)<\/template>/.exec(body)
+      if (!template) continue
+      const { source, count } = reachByKeyboard(template[1], kind)
+      if (count === 0) continue
+      out.set(path, body.slice(0, template.index + 10) + source + body.slice(template.index + 10 + template[1].length))
+      total += count
+      touched.push(path)
+      continue
+    }
+    const { source, count } = reachByKeyboard(body, kind)
+    if (count === 0) continue
+    out.set(path, source)
+    total += count
+    touched.push(path)
+  }
+  if (total === 0) return { files, fixed: [] }
+  return {
+    files: out,
+    fixed: [
+      `クリックできるがキーボードで辿れない要素${total}個に tabindex と Enter/Space の処理を付けました` +
+        `（${touched.slice(0, 3).join('、')}${touched.length > 3 ? ` ほか${touched.length - 3}件` : ''}）`,
+    ],
+  }
+}
+
+/**
+ * A navigation left in the browser's bulleted list, given the design the rest
+ * of the product has.
+ *
+ * Measured 2026-09-20 over 102 stored documents: 30 carry a list inside
+ * `<nav>` and 17 of those (57%) render with a dot beside every item, no
+ * spacing, no hover and no current-page state — 「ナビゲーションが箇条書きのまま
+ * 表示されている…見栄えがかなり悪い」. Twelve of the seventeen put no class on the
+ * list at all; the other five use one no stylesheet defines.
+ *
+ * The runtime audit reports this as `nav-unstyled` and asks a model to write
+ * the rules. It is still 57%. See tools/nav-css.ts for what gets written and
+ * why it descends from the nav rather than from the list.
+ */
+export function fixUnstyledNav(files: Map<string, string>): {
+  files: Map<string, string>
+  fixed: string[]
+} {
+  const sheets = [...files].filter(([p]) => p.endsWith('.css'))
+  if (sheets.length === 0) return { files, fixed: [] }
+  const sheet = sheets.reduce((a, b) => (b[1].length > a[1].length ? b : a))
+
+  /*
+   * Every rule the project has, wherever it keeps them — a Vue project puts
+   * component CSS in the SFC, and a rule there styles the navigation just as
+   * well as one in the stylesheet.
+   */
+  const allCss = [...files]
+    .map(([path, body]) =>
+      path.endsWith('.css')
+        ? body
+        : path.endsWith('.vue')
+          ? [...body.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)].map((m) => m[1]).join('\n')
+          : ''
+    )
+    .join('\n')
+  const defined = definedClasses(allCss)
+
+  const navs: NavRoot[] = []
+  for (const [path, body] of files) {
+    if (!/\.(tsx|jsx|vue)$/.test(path)) continue
+    for (const found of body.matchAll(/<nav\b([^>]*)>([\s\S]{0,3000}?)<\/nav>/g)) {
+      const list = /<(ul|ol)\b([^>]*)>/.exec(found[2])
+      if (!list) continue
+      const classesOf = (attrs: string): string[] => {
+        const m = /\bclass(?:Name)?\s*=\s*["']([^"']*)["']/.exec(attrs)
+        return m ? m[1].split(/\s+/).filter(Boolean) : []
+      }
+      const navClasses = classesOf(found[1])
+      const listClasses = classesOf(list[2])
+      const nav: NavRoot = {
+        path,
+        // A class no stylesheet defines is no better than none for hanging a
+        // rule on, but it is still the honest selector to write.
+        className: navClasses[0] ?? null,
+        tag: list[1] as 'ul' | 'ol',
+        listClasses,
+        vertical: VERTICAL_NAV.test(
+          `${navClasses.join(' ')} ${listClasses.join(' ')} ${path}`
+        ),
+      }
+      /*
+       * Anything that might already be reaching this list means this pass does
+       * nothing. A class the project defines, a rule on the bare tag, a `*`
+       * reset — see `listIsStyled`.
+       */
+      if (listClasses.some((c) => defined.has(c))) continue
+      if (listIsStyled(allCss, nav)) continue
+      navs.push(nav)
+    }
+  }
+  if (navs.length === 0) return { files, fixed: [] }
+
+  const written = navCss(navs, sheet[1])
+  if (!written.css) return { files, fixed: [] }
+
+  const out = new Map(files)
+  out.set(sheet[0], `${sheet[1].replace(/\s+$/, '')}\n\n${written.css}\n`)
+  return {
+    files: out,
+    fixed: [
+      `${sheet[0]}: ナビゲーションが箇条書きのままだったので CSS を書きました` +
+        `（list-style の解除・並べ方・リンクの見た目・:hover・:focus-visible・現在地）: ${written.styled.join('、')}`,
+    ],
+  }
 }
 
 /**
@@ -2340,11 +2120,6 @@ function componentStub(kind: OutputKind, path: string): string {
   if (kind === 'vue') {
     return `<template>\n  <div style="${style}">${note}</div>\n</template>\n`
   }
-  if (kind === 'svelte') {
-    // `$props()` is called and discarded so a parent passing props is not an
-    // error, and so the component reads as deliberate rather than truncated.
-    return `<script lang="ts">\n  const _props = $props();\n</script>\n\n<div style="${style}">${note}</div>\n`
-  }
   return (
     `export default function BrokenComponent(_props: Record<string, unknown>) {\n` +
     `  return (\n` +
@@ -2399,7 +2174,7 @@ export function salvageUnparsableStyles(
     // svelte.dev/e/css_*; Vue's SFC compiler names the block outright.
     if (!/\bcss[_\s-]|CSS|<style/i.test(error)) break
 
-    const named = /(src\/[\w./-]+\.(?:svelte|vue))/.exec(error)?.[1]
+    const named = /(src\/[\w./-]+\.(?:vue))/.exec(error)?.[1]
     if (!named || stripped.includes(named)) break
 
     const files = readProjectFiles(out)
@@ -2420,251 +2195,6 @@ export function salvageUnparsableStyles(
   }
 
   return { html: out, stripped }
-}
-
-/**
- * A rune store the rest of the project subscribes to.
- *
- *     // src/lib/store.svelte.ts
- *     function createStore() {
- *       let state = $state<AppState>(initialState);
- *       return {
- *         get currentState() { return state; },
- *         addExpense(e) { state.expenses = [e, ...state.expenses]; },
- *       };
- *     }
- *     export const appState = createStore();
- *
- *     // five screens, all of them
- *     appState.subscribe((s) => { … });
- *
- * Measured at v171. The producer is written in the rune idiom and every consumer
- * in the store idiom, and each half is idiomatic on its own — the module is a
- * textbook Svelte 5 rune store, and `subscribe` is how the rest of Svelte has
- * always read shared state. They just never meet, so the page is blank with
- * `appState.subscribe is not a function`.
- *
- * The two idioms are bridgeable and Svelte 5 supplies the exact piece: an
- * `$effect` re-runs when the state it read changes, and `$effect.root` returns
- * its own teardown — which is the unsubscribe contract, handed back by the
- * function that has to return it. So the object gains a real `subscribe` rather
- * than a snapshot: consumers get the value now AND on every later change, which
- * is what they were written expecting.
- *
- * A snapshot would have been three lines and would have rendered — once. Every
- * button in the app would then have looked dead, which is the worse failure:
- * a blank page is at least obviously broken.
- *
- * Only when the consumers say so. A rune module nobody subscribes to is correct
- * as written and is left alone — adding a subscribe there would be inventing an
- * API for a project that never asked for one.
- */
-export function fixSvelteRuneStoreSubscribe(files: Map<string, string>): {
-  files: Map<string, string>
-  fixed: string[]
-} {
-  const fixed: string[] = []
-  const out = new Map(files)
-  const RUNE = /(?:let|const|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=\n]+)?=\s*\$state\b/
-  const SUBSCRIBE = /\bsubscribe\s*[(:]/
-
-  for (const [path, body] of files) {
-    if (!/\.svelte\.(ts|js)$/.test(path)) continue
-    if (!/\$state\b/.test(body)) continue
-
-    const exported = [...body.matchAll(/export\s+const\s+([A-Za-z_$][\w$]*)\s*=\s*([A-Za-z_$][\w$]*)\s*\(\s*\)/g)]
-
-    for (const [, name, factory] of exported) {
-      const consumers = [...files].filter(
-        ([p, b]) => p !== path && new RegExp(`\\b${name}\\s*\\.\\s*subscribe\\s*\\(`).test(b)
-      )
-      if (consumers.length === 0) continue
-
-      // Read from what the file holds now — an earlier export in the same
-      // module may already have shifted every offset in it.
-      const src = out.get(path) ?? body
-      const fnAt = src.search(new RegExp(`function\\s+${factory}\\s*\\(`))
-      if (fnAt < 0) continue
-
-      const tail = src.slice(fnAt)
-      const stateName = RUNE.exec(tail)?.[1]
-      if (!stateName) continue
-
-      const returnAt = tail.search(/return\s*\{/)
-      if (returnAt < 0) continue
-      // Already a store — nothing to bridge.
-      if (SUBSCRIBE.test(tail.slice(returnAt, returnAt + 2000))) continue
-
-      const insertAt = fnAt + returnAt + tail.slice(returnAt).indexOf('{') + 1
-      const method = [
-        '',
-        '    subscribe(run) {',
-        // Synchronously first. A store's subscribe hands over the current
-        // value before it returns — consumers assign it and clear their own
-        // loading flag on that call — while `$effect` is scheduled, not
-        // immediate. With only the effect, the first screen rendered its
-        // 「読み込み中...」 placeholder and stayed there: no error, no content.
-        `      run(${stateName});`,
-        '      return $effect.root(() => {',
-        `        $effect(() => { run(${stateName}); });`,
-        '      });',
-        '    },',
-      ].join('\n')
-
-      out.set(path, src.slice(0, insertAt) + method + src.slice(insertAt))
-      fixed.push(
-        `${path} の ${name} に subscribe を追加（ルーン製のストアを .subscribe() で読む利用側が ${consumers.length} ファイル）`
-      )
-    }
-  }
-
-  return { files: out, fixed }
-}
-
-/**
- * An array sorted where it stands, on the way to being rendered.
- *
- *     function getFilteredExpenses() {
- *       let filtered = state.expenses;          // the $state proxy itself
- *       if (filter) filtered = filtered.filter(…);
- *       filtered.sort((a, b) => …);             // sorts state, in place
- *       return filtered;
- *     }
- *
- *     {#if getFilteredExpenses().length === 0}  ← called from the template
- *
- * `sort` mutates. When the filter is empty, `filtered` is still the very array
- * the rune holds, so the sort writes to state — from inside a template
- * expression, which Svelte 5 stops outright:
- *
- *     https://svelte.dev/e/state_unsafe_mutation
- *
- * Measured at v171, and it had been sitting there unreached: the screen's store
- * was broken, `state` stayed null, and the function returned `[]` from its guard
- * before it ever got to the sort. Fixing the store is what surfaced this —
- * the second defect was always the one that would blank the screen.
- *
- * The rewrite is the copy the code should have taken:
- *
- *     filtered = [...filtered].sort((a, b) => …);
- *
- * Only a bare `x.sort(…);` statement, whose result is thrown away — that is the
- * form that exists purely for the mutation, and copying it is what the author
- * meant. A `return x.sort(…)` or `const y = x.sort(…)` is left alone: the value
- * is being used, and changing those would be rewriting working code on
- * suspicion. And only when `x` is a `let`, since the rewrite assigns to it.
- */
-export function fixSvelteInPlaceSort(source: string): { source: string; fixed: string[] } {
-  const fixed: string[] = []
-
-  // (1) The statement form, whose result is thrown away — it exists purely for
-  // the mutation, so the copy has to be assigned back.
-  let out = source.replace(
-    /^([ \t]*)([A-Za-z_$][\w$]*)\.sort\(/gm,
-    (whole, indent: string, name: string, at: number) => {
-      if (!new RegExp(`\\blet\\s+${name}\\b`).test(source)) return whole
-      const before = source.slice(0, at).replace(/\s+$/, '')
-      if (before !== '' && !/[;{}]$/.test(before)) return whole
-      fixed.push(name)
-      return `${indent}${name} = [...${name}].sort(`
-    }
-  )
-
-  /*
-   * (2) The chained form, whose result IS used:
-   *
-   *     return appState.expenses
-   *       .sort((a, b) => …)
-   *       .slice(0, 5)
-   *
-   * Reads as a query and is a mutation — `sort` reorders the array it is given,
-   * and that array is the rune's own. Called from a $derived, which is where
-   * Svelte stops it: https://svelte.dev/e/state_unsafe_mutation. Measured at
-   * v180, and it had been hiding behind an effect_orphan that threw first.
-   *
-   * Only a plain member chain. A receiver that ends in a call — `.filter(…)`,
-   * `.slice()` — is already a fresh array, and copying it again would be noise
-   * rather than a repair.
-   */
-  out = out.replace(
-    /(^|[^\w$.\]])((?:[A-Za-z_$][\w$]*)(?:\s*\.\s*[A-Za-z_$][\w$]*)+)(\s*)\.sort\(/gm,
-    (whole, before: string, chain: string, gap: string) => {
-      if (/=\s*$/.test(before)) return whole
-      fixed.push(chain)
-      return `${before}[...${chain}]${gap}.sort(`
-    }
-  )
-
-  return {
-    source: out,
-    fixed: fixed.length
-      ? [
-          `配列を書き換える sort をコピーに変更（$state を描画中に破壊すると state_unsafe_mutation になります）: ${[
-            ...new Set(fixed),
-          ]
-            .slice(0, 5)
-            .join(', ')}`,
-        ]
-      : [],
-  }
-}
-
-/**
- * A rune value called as though it were a function.
- *
- *     const recentApplications = $derived.by(() => { … });
- *
- *     {#each recentApplications() as app}
- *
- * `$derived` produces a value, not a getter, so the markup calls the array —
- * `$.get(recentApplications)()` in the compiled output — and the page throws
- * `TypeError: $.get(...) is not a function`.
- *
- * Measured at v172. The mistake is easy to see how it happens: the accessor
- * shape (`route()`, `appState()`) is everywhere in Svelte 5 code because it is
- * how you export rune state across a module boundary, and inside the file that
- * declares it the rune needs no call at all. Both forms are correct Svelte, one
- * line apart, and only one is correct here.
- *
- * Only an empty call on a name this same file declares as a rune. Arguments
- * mean it was never this rune being called — a shadowed helper, an import of
- * the same name — and dropping them would change what the code does rather
- * than repair it.
- */
-export function fixSvelteRuneCalledAsFunction(source: string): { source: string; fixed: string[] } {
-  const fixed: string[] = []
-  let out = source
-
-  for (const m of source.matchAll(
-    /(?:let|const|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=\n]+)?=\s*\$(?:state|derived)\b/g
-  )) {
-    const name = m[1]
-    const call = new RegExp(`(^|[^\\w$.])${name}\\s*\\(\\s*\\)(\\s*)`, 'g')
-    let hit = false
-    out = out.replace(call, (whole, before: string, after: string, at: number) => {
-      // `function appState() {` and the method shorthand `appState() {` are
-      // declarations, not calls. Stripping their parens produces
-      // `function appState {`, which does not parse — measured as six corpus
-      // documents failing where four had before.
-      const preceding = out.slice(Math.max(0, at - 12), at + before.length)
-      if (/\b(?:function|get|set)\s*$/.test(preceding)) return whole
-      if (after.startsWith('{')) return whole
-      hit = true
-      return `${before}${name}${after}`
-    })
-    if (hit) fixed.push(name)
-  }
-
-  return {
-    source: out,
-    fixed: fixed.length
-      ? [
-          `ルーンの値を関数として呼んでいたため () を削除（$derived / $state は値です）: ${[
-            ...new Set(fixed),
-          ].join(', ')}`,
-        ]
-      : [],
-  }
 }
 
 /**
@@ -2718,7 +2248,7 @@ export function fixRequireNamedDefault(files: Map<string, string>): {
       else stack.push(p)
     }
     const base = stack.join('/')
-    return [...files.keys()].find((k) => k === base || k.replace(/\.(tsx|ts|jsx|js|vue|svelte)$/, '') === base)
+    return [...files.keys()].find((k) => k === base || k.replace(/\.(tsx|ts|jsx|js|vue)$/, '') === base)
   }
 
   for (const [path, body] of files) {
@@ -2757,138 +2287,6 @@ export function fixRequireNamedDefault(files: Map<string, string>): {
 }
 
 /**
- * A class directive whose name was written as an expression.
- *
- *     <div class="toast"
- *          class:{'toast--success'}={appState.toast.type === 'success'}
- *          class:{'toast--error'}={appState.toast.type === 'error'}>
- *
- *     src/App.svelte: Expected token =
- *
- * `class:` takes a literal name — `class:toast--success={cond}` — and the parser
- * wants the `=` straight after it. Wrapping the name in braces is how you would
- * write a dynamic key everywhere else in the language, which is presumably why
- * it gets written here; it is a parse error, so the file never compiles and the
- * whole project goes with it.
- *
- * Measured at v177. The quoted name is already a literal, so unwrapping it is
- * not a guess — it is the same directive with the braces removed.
- *
- * Only when the quoted string is a usable class-directive name. A name with a
- * space in it is two classes and cannot be one directive, and interpolation
- * means it really is dynamic; both are left for the repair pass, which can
- * rewrite them as a `class={...}` expression.
- */
-export function fixSvelteClassDirectiveExpression(source: string): { source: string; fixed: string[] } {
-  const fixed: string[] = []
-  const out = source.replace(
-    /class:\{\s*(['"])([^'"]+)\1\s*\}\s*=/g,
-    (whole, _q: string, name: string) => {
-      if (!/^[A-Za-z_-][\w-]*$/.test(name)) return whole
-      fixed.push(name)
-      return `class:${name}=`
-    }
-  )
-  return {
-    source: out,
-    fixed: fixed.length
-      ? [
-          `class: ディレクティブ名の {} を削除（名前はリテラルで書きます。式にすると Expected token = になります）: ${[
-            ...new Set(fixed),
-          ].join(', ')}`,
-        ]
-      : [],
-  }
-}
-
-/**
- * A Svelte 4 reactive statement in a runes file.
- *
- *     $: filteredExpenses = getFilteredExpenses();
- *
- *     src/screens/DetailScreen.svelte: `$:` is not allowed in runes mode,
- *     use `$derived` or `$effect` instead
- *
- * The moment any rune appears in a component, the whole file is in runes mode
- * and the old reactive label is a compile error — so one leftover line takes the
- * project down. Measured at v177, three of them across two screens in a project
- * that was otherwise written in runes throughout.
- *
- * Only the assignment form, and only when the name belongs to this statement
- * alone: nothing else declares it and nothing else assigns to it. That is the
- * case where `$: x = expr` and `const x = $derived(expr)` mean the same thing.
- *
- * A bare `$: doSomething()` or a `$: { … }` block is an effect, not a value, and
- * turning one into `$effect` changes WHEN it runs relative to the rest of the
- * component. Those are left for the repair pass, which can read the intent.
- */
-export function fixSvelteReactiveStatement(source: string): { source: string; fixed: string[] } {
-  const fixed: string[] = []
-  const out = source.replace(
-    /^([ \t]*)\$:\s*([A-Za-z_$][\w$]*)\s*=\s*([^\n;]+);?[ \t]*$/gm,
-    (whole, indent: string, name: string, expr: string) => {
-      // Declared elsewhere, so this is a reassignment and `const` would not do.
-      if (new RegExp(`(?:let|const|var)\\s+${name}\\b`).test(source)) return whole
-      // Assigned elsewhere, same reason.
-      const others = [...source.matchAll(new RegExp(`(?:^|[^\\w$.])${name}\\s*=(?!=)`, 'gm'))]
-      if (others.length > 1) return whole
-      fixed.push(name)
-      return `${indent}const ${name} = $derived(${expr.trim()});`
-    }
-  )
-
-  /*
-   * And the block form, which is a side effect rather than a value.
-   *
-   *     $: {
-   *       document.title = formatPageTitle();
-   *     }
-   *
-   * `$derived` is wrong here — there is nothing to derive — so it becomes
-   * `$effect`, which is what a Svelte 4 reactive block always meant.
-   *
-   * Measured at v203, in App.svelte, behind a duplicate `<script>` that had to
-   * be merged before anything could see it. Across the whole corpus these are
-   * the only two forms that have ever appeared: three assignments and this one
-   * block. No `$: if`, no bare statement — so the narrow pair is the complete
-   * set rather than a first instalment.
-   */
-  let withBlocks = out
-  for (let guard = 0; guard < 8; guard++) {
-    const at = /^([ \t]*)\$:\s*\{/m.exec(withBlocks)
-    if (!at) break
-    const open = withBlocks.indexOf('{', at.index)
-    let depth = 0
-    let close = -1
-    for (let i = open; i < withBlocks.length; i++) {
-      if (withBlocks[i] === '{') depth++
-      else if (withBlocks[i] === '}') {
-        depth--
-        if (depth === 0) { close = i; break }
-      }
-    }
-    if (close < 0) break
-    const indent = at[1]
-    const inner = withBlocks.slice(open + 1, close).replace(/\s+$/, '')
-    withBlocks =
-      withBlocks.slice(0, at.index) +
-      `${indent}$effect(() => {${inner}\n${indent}});` +
-      withBlocks.slice(close + 1)
-    fixed.push('$: { … }')
-  }
-  return {
-    source: withBlocks,
-    fixed: fixed.length
-      ? [
-          `$: の反応文を $derived / $effect に変換（ルーンを使うファイルでは $: はコンパイルエラーになります）: ${[
-            ...new Set(fixed),
-          ].join(', ')}`,
-        ]
-      : [],
-  }
-}
-
-/**
  * A local binding that turns a rune back into a store read.
  *
  *     const state = appStore;
@@ -2914,161 +2312,6 @@ export function fixSvelteReactiveStatement(source: string): { source: string; fi
  * with no `$state` shadows nothing — and never for a name that came out of
  * `$props()`, where the name is a contract with the parent.
  */
-/**
- * An imported value re-declared as a rune, in the same file.
- *
- *     import { setCategory, addToCart, appState } from '../lib/store.svelte';
- *     …
- *     const appState = $derived(appState());
- *
- *     Identifier 'appState' has already been declared
- *
- * A Svelte 4 habit with no Svelte 5 meaning. In runes mode a `$state` exported
- * from a `.svelte.ts` module is already reactive at every import site, so there
- * is nothing to wrap — and the wrapper collides with the import it wraps, which
- * is fatal for the whole component.
- *
- * `fixSvelteRuneCalledAsFunction` reaches this line first and turns
- * `$derived(appState())` into `$derived(appState)`, which is correct about the
- * call and leaves the declaration both duplicated and self-referential. So both
- * spellings are matched here and the order of the two repairs does not matter.
- *
- * Only when the initializer's sole reference is the name being declared. A
- * `const total = $derived(cart.items.length)` shadowing an imported `total` is a
- * different mistake with a different answer, and deleting it would silently drop
- * a computation.
- *
- * Measured on the corpus: two components in one project, both screens of it,
- * neither rendering.
- */
-export function fixSvelteRedeclaredImport(source: string): { source: string; fixed: string[] } {
-  const imported = new Set<string>()
-  for (const m of source.matchAll(/import\s*{([^}]*)}\s*from/g)) {
-    for (const part of m[1].split(',')) {
-      const name = part.trim().split(/\s+as\s+/).pop()?.trim()
-      if (name) imported.add(name)
-    }
-  }
-  if (imported.size === 0) return { source, fixed: [] }
-
-  const fixed: string[] = []
-  let out = source
-  for (const name of imported) {
-    // `$derived(name)`, `$derived(name())`, `$state(name)` — the whole statement,
-    // including its own line, so no blank declaration is left behind.
-    const re = new RegExp(
-      `^[ \\t]*(?:const|let|var)\\s+${name}\\s*(?::[^=]+)?=\\s*` +
-        `\\$(?:derived|state)(?:\\.by)?\\s*\\(\\s*${name}\\s*(?:\\(\\))?\\s*\\)\\s*;?[ \\t]*\\n?`,
-      'm'
-    )
-    if (!re.test(out)) continue
-    out = out.replace(re, '')
-    fixed.push(name)
-  }
-
-  return {
-    source: out,
-    fixed: fixed.length
-      ? [
-          `import した値を同じ名前でルーンに包み直していた宣言を削除（Identifier has already been declared）: ${fixed.join(', ')}`,
-        ]
-      : [],
-  }
-}
-
-export function fixSvelteRuneShadowLocal(source: string): { source: string; fixed: string[] } {
-  const fixed: string[] = []
-  let out = source
-
-  for (const name of RUNE_SHADOWS) {
-    if (!new RegExp(`\\$${name}\\s*[(<]`).test(out)) continue
-    const declared = new RegExp(`(?<!export\\s)(?:const|let|var)\\s+${name}\\b\\s*(?::[^=]+)?=`).test(out)
-    if (!declared) continue
-    // A prop of that name is the parent's word, not ours to change.
-    if (new RegExp(`\\{[^}]*\\b${name}\\b[^}]*\\}\\s*=\\s*\\$props\\s*\\(`).test(out)) continue
-
-    /*
-     * The new name has to be free in this file. `app${Name}` is the same shape
-     * the exported-rename uses, and on the run this was written for the module
-     * ALREADY had an `appState` — renaming into it produced two bindings of one
-     * name and a file that no longer parsed. Measured: the fix broke what it
-     * was repairing.
-     */
-    const taken = (n: string) => new RegExp(`(?<![.$\\w])${n}(?![\\w:])`).test(out)
-    const capital = `${name.charAt(0).toUpperCase()}${name.slice(1)}`
-    const to = [`app${capital}`, `local${capital}`, `${name}Value`, `${name}Ref`].find((n) => !taken(n))
-    if (!to) continue
-
-    out = out.replace(new RegExp(`(?<![.$\\w])${name}(?![\\w:])`, 'g'), to)
-    fixed.push(`${name} → ${to}`)
-  }
-
-  return {
-    source: out,
-    fixed: fixed.length
-      ? [
-          `ルーン名を覆い隠すローカル変数を改名（$state などがストア購読として解釈され e.subscribe is not a function になります）: ${[
-            ...new Set(fixed),
-          ].join(', ')}`,
-        ]
-      : [],
-  }
-}
-
-export function fixSvelteRuneInObjectLiteral(source: string): { source: string; fixed: string[] } {
-  const fixed: string[] = []
-  let out = source
-
-  for (let guard = 0; guard < 8; guard++) {
-    // The capture ends ON the rune's own opening paren, which is the one to
-    // balance from. Searching backwards for it instead found the `(` of the
-    // `()` in `() =>` and closed the expression in the wrong place, leaving
-    // `return ;` and the arrow body stranded outside the object.
-    const m = /(^[ \t]*)([A-Za-z_$][\w$]*)\s*:\s*\$derived(?:\.by)?\s*\(/m.exec(out)
-    if (!m) break
-    const indent = m[1]
-    const name = m[2]
-    const openParen = m.index + m[0].length - 1
-
-    let depth = 0
-    let end = -1
-    for (let i = openParen; i < out.length; i++) {
-      if (out[i] === '(') depth++
-      else if (out[i] === ')') {
-        depth--
-        if (depth === 0) { end = i; break }
-      }
-    }
-    if (end < 0) break
-
-    let inner = out.slice(openParen + 1, end).trim()
-    inner = inner.replace(/^\(\s*\)\s*=>\s*/, '')
-
-    let body: string
-    if (inner.startsWith('{') && inner.endsWith('}')) {
-      body = inner.slice(1, -1).replace(/^\r?\n/, '').replace(/\s+$/, '')
-    } else {
-      body = `${indent}  return ${inner};`
-    }
-
-    let after = end + 1
-    if (out[after] === ',') after++
-
-    out = `${out.slice(0, m.index)}${indent}get ${name}() {\n${body}\n${indent}},${out.slice(after)}`
-    fixed.push(name)
-  }
-
-  return {
-    source: out,
-    fixed: fixed.length
-      ? [
-          `オブジェクトのプロパティに置かれたルーンを getter に変換（ルーンは宣言の初期化子であって値ではありません）: ${[
-            ...new Set(fixed),
-          ].join(', ')}`,
-        ]
-      : [],
-  }
-}
 
 /**
  * An event handler missing its closing parenthesis.
@@ -3132,163 +2375,6 @@ export function fixVueUnclosedHandler(source: string): { source: string; fixed: 
  * are excluded by requiring a closing token after it. Nothing else in the
  * expression is touched.
  */
-/**
- * Apply an edit to the `{ … }` expressions of a piece of markup, and to nothing
- * else.
- *
- * Svelte's markup is two languages sharing a file: everything inside braces is
- * an expression, everything outside is text the page shows. A repair that reads
- * one as the other edits what the user sees — `<p>(known as HTML)</p>` is prose,
- * and a pattern looking for a type cast finds a cast in it.
- *
- * Braces are counted rather than matched by pattern, because an event handler is
- * full of them, and quoted strings are stepped over on both levels: `{'{'}` is a
- * legal expression and would otherwise end the span at the wrong place.
- */
-function editMarkupExpressions(markup: string, edit: (expr: string) => string): string {
-  let out = ''
-  let i = 0
-  while (i < markup.length) {
-    if (markup[i] !== '{') {
-      out += markup[i++]
-      continue
-    }
-    const start = i
-    let depth = 0
-    let quote = ''
-    for (; i < markup.length; i++) {
-      const c = markup[i]
-      if (quote) {
-        if (c === '\\') i++
-        else if (c === quote) quote = ''
-        continue
-      }
-      if (c === '"' || c === "'" || c === '`') { quote = c; continue }
-      if (c === '{') depth++
-      else if (c === '}') {
-        depth--
-        if (depth === 0) { i++; break }
-      }
-    }
-    // An unbalanced brace is not an expression; leave the rest of the file alone.
-    if (depth !== 0) return out + markup.slice(start)
-    const span = markup.slice(start, i)
-    /*
-     * A block tag is Svelte syntax, not an expression.
-     *
-     * `{#each rows as row (row.id)}` carries the keyword `as` as part of the
-     * language, and the first version of the cast repair below stripped it —
-     * turning three corpus projects that compiled into three that did not,
-     * with `An {#each ...} block without an as clause cannot have a key`. The
-     * repair broke what it was repairing, which is the failure this file has
-     * the most history with.
-     *
-     * `{@const}` / `{@html}` / `{@render}` are expression tags and stay in.
-     */
-    if (/^[{][ ]*[#:/]/.test(span)) {
-      out += span
-      continue
-    }
-    out += edit(span)
-  }
-  return out
-}
-
-/**
- * Run a replacement over an expression without reaching inside its strings.
- *
- * `{`known as ${x}`}` contains the word this is looking for, in the one place it
- * must not touch.
- */
-function outsideStrings(expr: string, apply: (chunk: string) => string): string {
-  const parts: string[] = []
-  let out = ''
-  let buf = ''
-  let quote = ''
-  for (let i = 0; i < expr.length; i++) {
-    const c = expr[i]
-    if (quote) {
-      buf += c
-      if (c === '\\') { buf += expr[++i] ?? '' }
-      else if (c === quote) { parts.push(buf); out += `\u0000STR${parts.length - 1}\u0000STR`; buf = ''; quote = '' }
-      continue
-    }
-    if (c === '"' || c === "'" || c === '`') { quote = c; buf = c; continue }
-    out += c
-  }
-  out += buf
-  return apply(out).replace(/\u0000STR(\d+)\u0000STR/g, (_m, n: string) => parts[Number(n)])
-}
-
-export function fixSvelteMarkupTypeAssertion(source: string): { source: string; fixed: string[] } {
-  const fixed: string[] = []
-
-  // Markup is what is left once the blocks are set aside; their contents are
-  // JavaScript and CSS and this must not reach into them.
-  const blocks: string[] = []
-  const masked = source.replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/g, (m) => {
-    blocks.push(m)
-    return `\u0000BLOCK${blocks.length - 1}\u0000`
-  })
-
-  let out = masked.replace(/([A-Za-z_$\w\]\)])!(?=\s*[),\]};])/g, (whole, before: string) => {
-    fixed.push(whole)
-    return before
-  })
-
-
-  /*
-   * `(e.target as HTMLInputElement).value`
-   *
-   * The same boundary, the other TypeScript form, and the one that lasts
-   * longer: a `!` is one character someone might notice, while a cast reads
-   * like careful code. Measured on the corpus — two of the four Svelte
-   * projects still failing after every other repair, in different files, both
-   * inside an `onchange`.
-   *
-   * Only inside `{ … }`, because outside one ` as ` is an ordinary English
-   * word and the pattern would edit the page's own text, and only outside
-   * strings for the same reason one level down. `as const` goes with them: it
-   * is equally illegal here and equally meaningless.
-   */
-  const casts: string[] = []
-  out = editMarkupExpressions(out, (expr) =>
-    outsideStrings(expr, (chunk) =>
-      chunk.replace(
-        /\s+as\s+(?:const|[A-Za-z_$][\w$.]*(?:<[^<>]*>)?(?:\[\])*)/g,
-        (m) => {
-          casts.push(m.trim())
-          return ''
-        }
-      )
-    )
-  )
-
-  const report: string[] = []
-  if (fixed.length) {
-    report.push(
-      `マークアップ式から TypeScript の非nullアサーション(!)を削除（マークアップは型を剥がされないため構文エラーになります）: ${[
-        ...new Set(fixed),
-      ]
-        .slice(0, 5)
-        .join(', ')}`
-    )
-  }
-  if (casts.length) {
-    report.push(
-      `マークアップ式から TypeScript の型アサーション(as)を削除（同上。! より長く生き残ります）: ${[
-        ...new Set(casts),
-      ]
-        .slice(0, 5)
-        .join(', ')}`
-    )
-  }
-
-  return {
-    source: out.replace(/\u0000BLOCK(\d+)\u0000/g, (_m, i: string) => blocks[Number(i)]),
-    fixed: report,
-  }
-}
 
 /**
  * `defineProps` called and thrown away, while the code reads `props`.
@@ -3332,9 +2418,9 @@ export function fixVueUnboundProps(source: string): { source: string; fixed: str
   // is correct as written, and binding it would leave an unused variable.
   if (!/(?<![\w$.])props\s*[.[]/.test(body)) return { source, fixed: [] }
 
-  const fixedBody = body.replace(call[3], `const props = ${call[3]}`)
+  const fixedBody = body.replace(call[3], () => `const props = ${call[3]}`)
   return {
-    source: source.replace(open + body + close, open + fixedBody + close),
+    source: source.replace(open + body + close, () => open + fixedBody + close),
     fixed: ['defineProps の戻り値を props に束縛（props is not defined になります）'],
   }
 }
@@ -3376,106 +2462,6 @@ export function fixImportRequireHybrid(source: string): { source: string; fixed:
 }
 
 /**
- * An effect at the top level of a module.
- *
- *     // src/lib/navigation.svelte.ts
- *     $effect(() => {
- *       window.addEventListener('hashchange', handleHashChange)
- *       return () => window.removeEventListener('hashchange', handleHashChange)
- *     })
- *
- *     https://svelte.dev/e/effect_orphan
- *
- * `$effect` needs an owner — a component, or an explicit root — and a module has
- * neither. It throws while the module is being required, which is before any
- * component renders, so the whole app is blank rather than one screen.
- *
- * Wrapping it in `$effect.root` was the obvious repair and it does not work:
- * the body calls its own handler synchronously to set the initial route, so
- * the effect writes state during its own run and Svelte stops it with
- * `state_unsafe_mutation` instead. Measured — the fix moved the failure
- * rather than removing it.
- *
- * At module scope this body is initialisation, not reaction: register a
- * listener, set the starting value. So it is lifted out of the effect and
- * runs when the module loads, which is what it was always doing.
- *
- * Measured at v180, in a router that registered its own hashchange listener.
- *
- * Only at depth zero. An effect inside a function is already owned by whatever
- * calls it, and wrapping that would change when it runs.
- */
-export function fixSvelteOrphanEffect(source: string): { source: string; fixed: string[] } {
-  let out = source
-  let count = 0
-
-  for (let guard = 0; guard < 8; guard++) {
-    // Depth-zero occurrences only, and never $effect.root / $effect.pre.
-    let depth = 0
-    let at = -1
-    for (let i = 0; i < out.length; i++) {
-      const ch = out[i]
-      if (ch === '{' || ch === '(' || ch === '[') depth++
-      else if (ch === '}' || ch === ')' || ch === ']') depth--
-      else if (depth === 0 && ch === '$' && out.startsWith('$effect', i)) {
-        if (/^\s*\(\s*\(\s*\)\s*=>\s*\{/.test(out.slice(i + 7))) { at = i; break }
-      }
-    }
-    if (at < 0) break
-
-    const open = out.indexOf('(', at)
-    let d = 0
-    let end = -1
-    for (let i = open; i < out.length; i++) {
-      if (out[i] === '(') d++
-      else if (out[i] === ')') {
-        d--
-        if (d === 0) { end = i; break }
-      }
-    }
-    if (end < 0) break
-
-    // The arrow's own braces, so the body can be lifted out of them.
-    const bodyOpen = out.indexOf('{', open)
-    if (bodyOpen < 0 || bodyOpen > end) break
-    let bd = 0
-    let bodyClose = -1
-    for (let i = bodyOpen; i < end; i++) {
-      if (out[i] === '{') bd++
-      else if (out[i] === '}') {
-        bd--
-        if (bd === 0) { bodyClose = i; break }
-      }
-    }
-    if (bodyClose < 0) break
-
-    let body = out.slice(bodyOpen + 1, bodyClose)
-    /*
-     * The teardown an effect returns has no owner once the effect is gone, and
-     * a bare `return` at module scope is a syntax error. The listener is meant
-     * to live as long as the module anyway.
-     */
-    body = body.replace(/\n\s*return\s*\(\s*\)\s*=>\s*\{[\s\S]*?\n\s*\}\s*;?/g, '')
-    body = body.replace(/\n\s*return\s+[^\n;]+;?/g, '')
-    body = body.replace(/^\n+/, '').replace(/\s+$/, '')
-    // One level of indentation comes off with the arrow that held it.
-    body = body.split('\n').map((l) => l.replace(/^ {2}/, '')).join('\n')
-
-    let stop = end + 1
-    if (out[stop] === ';') stop++
-    out = `${out.slice(0, at)}${body}\n${out.slice(stop)}`
-    count++
-  }
-
-  return {
-    source: out,
-    fixed: count
-      ? [`モジュール直下の $effect を展開（所有者がないと effect_orphan で読み込み時に落ちます）: ${count}件`]
-      : [],
-  }
-}
-
-/**
  * Props used in the script of a `<script setup>` that never captured them.
  *
  *     defineProps<{ data: MonthlySalesData[] }>()
@@ -3493,10 +2479,66 @@ export function fixSvelteOrphanEffect(source: string): { source: string; fixed: 
  * `data` and the template used it correctly throughout.
  *
  * The repair is the line the docs give: capture the return and read through it.
- * Only names the type literal actually declares, only in the script block, and
+ * Only names the props type actually declares, only in the script block, and
  * only where nothing local already binds the name — a shadowing declaration
  * means the reference resolves and this is not the defect.
+ *
+ * The type may be written inline or as a name. Reading only the inline form is
+ * what let this ship again on 2026-09-18: `defineProps<Props>()` above
+ * `interface Props { product: Product }` declared nothing this could see, so
+ * every product card in a storefront threw on click and the page looked fine
+ * until someone pressed one. See `namedTypeLiteral`.
  */
+/**
+ * A props shape with its nested levels removed, so only its own members read.
+ *
+ * `{ product: { id: string } }` declares ONE prop. Taking every `name:` in the
+ * text declares two, and the second — `id` — is a name a script is very likely
+ * to use for something else, which would rewrite a local variable into
+ * `props.id`. The members sit at depth 1 by construction here; everything
+ * deeper belongs to a member rather than being one.
+ */
+function outerMembers(shape: string): string {
+  let depth = 0
+  let out = ''
+  for (const ch of shape) {
+    if (ch === '{') { depth++; out += ch; continue }
+    if (ch === '}') { depth--; out += ch; continue }
+    if (depth <= 1) out += ch
+  }
+  return out
+}
+
+/**
+ * The body of `interface Props { … }` or `type Props = { … }`, as a literal.
+ *
+ * The repair below read the names straight out of the type argument, which
+ * works for `defineProps<{ product: Product }>()` and finds nothing at all for
+ * `defineProps<Props>()` — a type REFERENCE has no members in it. That second
+ * spelling is the one a model writes when it has already declared the interface
+ * for readability, and it is the one that shipped the defect this repair exists
+ * for: a storefront where every product card's click handler read a bare
+ * `product` and threw `ReferenceError: product is not defined`, measured
+ * 2026-09-18 on a Vue generation, with `interface Props { product: Product }`
+ * eight lines above the call.
+ *
+ * Only a declaration in the same script block, and only when its brace follows
+ * the name closely — a match far from its own `{` is a different declaration.
+ */
+function namedTypeLiteral(script: string, name: string): string | null {
+  const at = new RegExp(`(?:^|\\n)\\s*(?:export\\s+)?(?:interface\\s+${name}\\b|type\\s+${name}\\s*=)`).exec(script)
+  if (!at) return null
+  const from = at.index + at[0].length
+  const open = script.indexOf('{', from)
+  if (open === -1 || open - from > 40) return null
+  let depth = 0
+  for (let i = open; i < script.length; i++) {
+    if (script[i] === '{') depth++
+    else if (script[i] === '}' && --depth === 0) return script.slice(open, i + 1)
+  }
+  return null
+}
+
 export function fixVueUncapturedProps(source: string): { source: string; fixed: string[] } {
   const block = /(<script[^>]*\bsetup\b[^>]*>)([\s\S]*?)(<\/script>)/.exec(source)
   if (!block) return { source, fixed: [] }
@@ -3516,9 +2558,15 @@ export function fixVueUncapturedProps(source: string): { source: string; fixed: 
   const preceding = body.slice(0, call.index ?? 0).replace(/\s+$/, '')
   if (/[(=,[:]$/.test(preceding)) return { source, fixed: [] }
 
-  // The names it declares, from either the type literal or the object argument.
+  /*
+   * The names it declares, from the type literal, a named type declared beside
+   * it, or the object argument.
+   */
   const declared = new Set<string>()
-  const shape = call[3] ?? call[4] ?? ''
+  const reference = /^<\s*([A-Za-z_$][\w$]*)\s*>$/.exec((call[3] ?? '').trim())
+  const shape = outerMembers(
+    (reference ? namedTypeLiteral(body, reference[1]) : null) ?? call[3] ?? call[4] ?? ''
+  )
   for (const m of shape.matchAll(/([A-Za-z_$][\w$]*)\s*\??\s*:/g)) declared.add(m[1])
   for (const m of shape.matchAll(/['"]([A-Za-z_$][\w$]*)['"]/g)) declared.add(m[1])
   if (declared.size === 0) return { source, fixed: [] }
@@ -3532,7 +2580,7 @@ export function fixVueUncapturedProps(source: string): { source: string; fixed: 
   if (used.length === 0) return { source, fixed: [] }
 
   const holder = /(?<![\w$.])props(?![\w$])/.test(body) ? '__props' : 'props'
-  let next = body.replace(call[0], `${call[1]}${call[2]}const ${holder} = defineProps${call[3] ?? ''}(${call[4]});\n`)
+  let next = body.replace(call[0], () => `${call[1]}${call[2]}const ${holder} = defineProps${call[3] ?? ''}(${call[4]});\n`)
 
   for (const name of used) {
     next = next.replace(new RegExp(`(?<![\\w$'"])(?<!(?<!\\.)\\.)${name}(?![\\w$:])`, 'g'), `${holder}.${name}`)
@@ -3541,7 +2589,7 @@ export function fixVueUncapturedProps(source: string): { source: string; fixed: 
   next = next.replace(new RegExp(`const ${holder}\\.[\\w$]+ = defineProps`), `const ${holder} = defineProps`)
 
   return {
-    source: source.replace(whole, `${open}${next}${close}`),
+    source: source.replace(whole, () => `${open}${next}${close}`),
     fixed: [
       `defineProps の戻り値を受け取り、スクリプト内の参照を ${holder}. 経由に変更（テンプレートでは動くがスクリプトでは ReferenceError になります）: ${used.join(', ')}`,
     ],
@@ -3595,7 +2643,7 @@ export function fixDefaultImportOfNamedExport(files: Map<string, string>): {
     }
     const base = stack.join('/')
     return [...files.keys()].find(
-      (k) => k === base || k.replace(/\.(tsx|ts|jsx|js|vue|svelte)$/, '') === base
+      (k) => k === base || k.replace(/\.(tsx|ts|jsx|js|vue)$/, '') === base
     )
   }
 
@@ -3636,7 +2684,7 @@ export function fixDefaultImportOfNamedExport(files: Map<string, string>): {
       const exported = unique.includes(local) ? local : unique.length === 1 ? unique[0] : undefined
       if (!exported) continue
       const clause = exported === local ? `{ ${local} }` : `{ ${exported} as ${local} }`
-      next = next.replace(whole, `import ${clause} from ${quote}${spec}${quote};`)
+      next = next.replace(whole, () => `import ${clause} from ${quote}${spec}${quote};`)
       touched = true
       fixed.push(`${local} ← ${target}`)
     }

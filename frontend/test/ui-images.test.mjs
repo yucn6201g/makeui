@@ -166,7 +166,8 @@ check('and sent only when something was written',
     /modify\(displayHtml, rawText, [^;]*pickedForEdit\.image, effort, dataFile \?\? undefined, pickedForEdit\.images, captionsForSend\(pickedForEdit, imageNotes\)\)/.test(app), true);
   check('the approved plan builds with them, as an edit or a build',
     /pickedForBuild\.images, notesForBuild\);[\s\S]{0,200}generate\([^;]*pickedForBuild\.images, notesForBuild\)/.test(app), true);
-  check('the plan is asked with the descriptions', /proposePlan\([^;]*picked\.images, captionsForSend\(picked, imageNotes\)\)/.test(app), true);
+  // Followed by the proposal being amended, when there is one (utils/planRevision.ts).
+  check('the plan is asked with the descriptions', /proposePlan\([^;]*picked\.images, captionsForSend\(picked, imageNotes\)(?:, revision)?\)/.test(app), true);
   check('no path sends only the first picture any more', /image \?\? undefined, effort/.test(app), false);
   check('the edit request carries them', /body\.images = images/.test(read('src/hooks/useModify.ts')) && /body\.imageCaptions = imageCaptions/.test(read('src/hooks/useModify.ts')), true);
   check('and the plan request carries the descriptions', /\{ imageCaptions \}/.test(read('src/hooks/usePlan.ts')), true);

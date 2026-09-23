@@ -126,7 +126,14 @@ function withArtworkUnrendered() {
   const prompt = read('src/orchestration/prompt-contracts.ts');
   const at = prompt.indexOf('src/components/illustrations/ holds the artwork');
   check('the IMAGERY section was found', at > 0, true);
-  const section = prompt.slice(at, at + 1400);
+  /*
+   * To the end of the IMAGERY section, not a fixed 1,400 characters. The window
+   * was a character count, and adding two sentences about which token a drawing
+   * may be coloured from pushed 「content frame」 and 「nowhere to go」 out of it
+   * — a prompt that still said both, failing for having said more.
+   */
+  const section = prompt.slice(at, prompt.indexOf('${PHOTO_PLACEHOLDER_POLICY}', at));
+  check('the section has an end to read to', section.length > 400, true);
   /*
    * The section was entirely about how to draw. A model told to draw and not
    * told where to put it does the first half, which is what 47 documents did.

@@ -200,14 +200,14 @@ export function revealHiddenScreens(html: string, facts: RuntimeFacts): Determin
       const token = (t: string) => new RegExp(`(^|\\s)${escapeRe(t)}(?=\\s|$)`);
       // The project's own evidence that "mounted" means "active".
       const literal = /class(?:Name)?\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
-      const evidence = [...files].some(([p, b]) => /\.(tsx|jsx|vue|svelte)$/.test(p) &&
+      const evidence = [...files].some(([p, b]) => /\.(tsx|jsx|vue)$/.test(p) &&
         [...b.matchAll(literal)].some((x) => { const v = x[1] ?? x[2] ?? ''; return token(c).test(v) && token(active).test(v); }));
       if (!evidence) continue;
       const add = (v: string) => (token(c).test(v) && !token(active).test(v) && !/\?|&&|\|\|/.test(v)
         ? v.replace(token(c), (_w, lead) => `${lead}${c} ${active}`) : v);
       let changed = 0;
       for (const [p, body] of files) {
-        if (!/\.(tsx|jsx|vue|svelte)$/.test(p)) continue;
+        if (!/\.(tsx|jsx|vue)$/.test(p)) continue;
         const next = body
           .replace(/(class(?:Name)?\s*=\s*)"([^"]*)"/g, (_w, head, v) => { const n = add(v); if (n !== v) changed++; return `${head}"${n}"`; })
           .replace(/(class(?:Name)?\s*=\s*)'([^']*)'/g, (_w, head, v) => { const n = add(v); if (n !== v) changed++; return `${head}'${n}'`; })

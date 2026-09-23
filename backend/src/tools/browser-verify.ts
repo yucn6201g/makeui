@@ -238,7 +238,51 @@ export interface LayoutFact {
  * did anything — is only true of an actual DOM, so a unit test in Node would be
  * testing a reimplementation rather than this.
  */
-export const walkExpression = (declared: string[]) => `(async () => {
+/**
+ * How long the walk may take, as a promise the page keeps rather than a hope.
+ *
+ * The soft deadline below (20s) is checked between clicks, and it held for 551
+ * of 552 walks over thirty days. The one it did not hold for was a user's
+ * 在庫管理 run on 2026-09-20: `Runtime.evaluate` was still running when the
+ * transport gave up at 45s, verification returned nothing, and the reply told
+ * the user 「ブラウザ実行による検証は行っていません（このモードでは省略されます）」
+ * about a 仕上げ run — a mode that had asked for it. Everything already measured
+ * went with it: the screens it had reached, the console errors, the screenshot
+ * taken before the walk began, and so the visual critic as well.
+ *
+ * A check between clicks bounds the walk only while every click comes back. A
+ * step that does not — a handler whose promise never settles, a render that
+ * takes the page with it for a while — runs straight through it. So the whole
+ * walk now races a timer the page owns, and the timer answers with whatever the
+ * walk has recorded so far, marked truncated. 32s: clear of the soft deadline,
+ * and clear enough of the transport's 45s for the answer to be serialised and
+ * sent.
+ *
+ * This bounds everything except a page whose main thread is blocked outright;
+ * no timer on that page can fire, and nothing inside it can answer. That case
+ * still reaches the transport timeout, and the pipeline says so honestly — see
+ * `describeOutcome`.
+ */
+export const WALK_HARD_DEADLINE_MS = 32_000
+
+/**
+ * The prefix on the walk's announcement of each press. Distinctive so that no
+ * app's own console.debug is read as one.
+ */
+export const WALK_MARK = '[makeui-walk] '
+
+export const walkExpression = (
+  declared: string[],
+  // A test needs the cut-off in seconds rather than half a minute; nothing else
+  // should pass this.
+  hardDeadlineMs: number = WALK_HARD_DEADLINE_MS
+) => `(() => {
+  /*
+   * Replaced as soon as the walk's state exists, which is before its first
+   * await — so by the time the timer below can fire, this reads real state.
+   */
+  let partial = () => JSON.stringify({ screens: [], clicked: [], truncated: true, nav: [], hashIds: [], declared: [], cutOff: true });
+  const body = (async () => {
   const DECLARED = ${JSON.stringify(declared)};
   const vh = window.innerHeight;
   /**
@@ -524,6 +568,17 @@ export const walkExpression = (declared: string[]) => `(async () => {
         ? describe(outer) + ' { ' + (getComputedStyle(outer).display === 'none' ? 'display: none' : 'visibility: hidden') + ' }'
         : 'empty';
     }
+    /*
+     * The runtime's error panel is on screen: this screen threw while it
+     * rendered, and what the user sees is the panel the runtime put there
+     * instead of a blank page. It is measured as the failure it is — fill 0,
+     * named — so catching the throw for the user never reads to the pipeline
+     * as a screen that worked. (No backticks: this is a template literal.)
+     */
+    if (document.querySelector('[data-makeui-render-error]')) {
+      fill = 0;
+      hiddenBy = 'render-error';
+    }
 
     /*
      * Styling that never arrived, by the two symptoms it leaves on screen.
@@ -744,7 +799,31 @@ export const walkExpression = (declared: string[]) => `(async () => {
   });
   record();
   const nav = [];
+  /*
+   * What this walk would say if it were stopped here. The same shape as its
+   * own answer at the end, with cutOff set so the pipeline can tell a walk
+   * that ended from one that was ended. (No backticks in this comment: the
+   * whole walk is one template literal, and one here ends it.)
+   */
+  let clicked = null;
+  partial = () => JSON.stringify({
+    screens: [...screens.values()],
+    clicked: clicked ?? [...screens.keys()],
+    truncated: true,
+    cutOff: true,
+    nav,
+    tzOffset: new Date().getTimezoneOffset(),
+    hashIds: [...hashIds],
+    declared: [...document.querySelectorAll('[data-screen]')].map((s) => s.getAttribute('data-screen')),
+  });
   const press = async (el, kind) => {
+    /*
+     * Said out loud BEFORE the click. A click whose handler takes the page's
+     * main thread with it never comes back to say what it was, and nothing
+     * after it can run — but this has already been sent. console.debug so it
+     * is nobody's error.
+     */
+    console.debug(${JSON.stringify(WALK_MARK)} + kind + '|' + location.hash + '|' + ((el.textContent || el.value || el.getAttribute('aria-label') || '').trim()).slice(0, 60));
     const before = key();
     const sigBefore = sig();
     const hashBefore = location.hash;
@@ -765,6 +844,50 @@ export const walkExpression = (declared: string[]) => `(async () => {
       kind,
       label: (el.textContent || '').trim().slice(0, 20),
       href: el.getAttribute('href') || '',
+      /*
+       * What the control says it is. A nav item for the screen already showing
+       * carries aria-current="page" — the build contract requires it — and
+       * clicking it correctly does nothing.
+       *
+       * Read AFTER the click, which is where this whole object is built, and
+       * that is the right moment rather than a convenient one: it is only
+       * consulted for a click that did NOT respond, and a click that did not
+       * respond left the page as it was. So this is the state the control was
+       * in when it was pressed. Reading it before would say the same thing and
+       * would also mark every item that has just BECOME current, which is the
+       * opposite case.
+       *
+       * Written without backticks on purpose: this whole walk is a template
+       * literal, so a backtick in a comment ends the string and the file stops
+       * parsing halfway through a function.
+       */
+      current: el.getAttribute('aria-current') || (el.closest && el.closest('[aria-current]') ? el.closest('[aria-current]').getAttribute('aria-current') : '') || '',
+      /*
+       * Whether this control acts on fields rather than on its own.
+       *
+       * The walk fills empty fields before it presses anything, and skips any
+       * field that already holds a value — which a React form almost always
+       * does, because its inputs are bound to state with defaults. So 適用 on a
+       * price filter that already reads 0 to 30000 applies the range it already
+       * had, nothing moves, and a working button is reported dead. Measured on
+       * the storefront of 2026-09-20: the handler is there, it runs, and it has
+       * nothing to do.
+       *
+       * The same shape covers 送信, 予約する, 検索 and カートに追加 — 84 of the
+       * labels this finding reported in 30 days. A control whose effect is a
+       * function of input the walk never varied is not something this walk can
+       * judge, and saying so is more honest than reporting it and spending a
+       * repair call on a button that works.
+       *
+       * Four levels, because a filter panel is a div in a div in a section.
+       */
+      actsOnFields: (() => {
+        let node = el.parentElement;
+        for (let up = 0; up < 4 && node; up++, node = node.parentElement) {
+          if (node.querySelector('input:not([type=hidden]), select, textarea')) return true;
+        }
+        return false;
+      })(),
       hashBefore,
       before,
       after,
@@ -1101,7 +1224,7 @@ export const walkExpression = (declared: string[]) => `(async () => {
    * that anything links to it, so these are recorded apart from the clicked
    * ones and reachability keeps being decided by the walk above.
    */
-  const clicked = [...screens.keys()];
+  clicked = [...screens.keys()];
   for (const id of DECLARED) {
     if (outOfTime()) { truncated = true; break; }
     if (screens.has(id)) continue;
@@ -1125,6 +1248,9 @@ export const walkExpression = (declared: string[]) => `(async () => {
     hashIds: [...hashIds],
     declared: [...document.querySelectorAll('[data-screen]')].map((s) => s.getAttribute('data-screen')),
   });
+  })();
+  const hard = new Promise((resolve) => setTimeout(() => resolve(partial()), ${hardDeadlineMs}));
+  return Promise.race([body, hard]);
 })()`
 
 /**
@@ -1149,6 +1275,10 @@ export interface NavClick {
   href: string
   /** location.hash immediately before the click. */
   hashBefore: string
+  /** `aria-current` on the control, read as the click's record is built. */
+  current?: string
+  /** Whether the control acts on form fields the walk did not vary. */
+  actsOnFields?: boolean
   /** The set of visible screens changed. */
   changed: boolean
   /** The DOM responded at all — navigated, or opened, or swapped content. */
@@ -1218,6 +1348,30 @@ export function deadControls(nav: NavClick[]): string[] {
     const n = clicks[j]
     if (j === 0 || !n.label || n.responded) continue
     if (n.href && n.href.startsWith('#') && route(n.href) === route(n.hashBefore)) continue
+    /*
+     * A nav item for the screen already showing, whichever element it is.
+     *
+     * The line above excuses that case and can only see it on an ANCHOR, by
+     * comparing its href with the current hash. Generated navs are buttons —
+     * `<button onClick={() => navigate(item.id)} aria-current={…}>` — so they
+     * carry no href, the comparison never fires, and pressing 「商品一覧」 while
+     * the product list is showing was reported as a dead control.
+     *
+     * Replayed 2026-09-20 over the eight stored documents that shipped with a
+     * dead-control finding: six walks returned, five named exactly one dead
+     * nav item, and every one of the five was the current screen's own item —
+     * 商品一覧 on the product list, デッキ一覧 on the deck list. Not one was a
+     * control that failed to work.
+     *
+     * The repair loop has been spending calls on these: `action-dead-runtime`
+     * is fixed 5% of the time and survives 84% of runs, which is the shape of
+     * a defect that was never there to fix.
+     *
+     * `aria-current` is what the build contract already requires of the item
+     * for the current page, so this reads what is there rather than asking for
+     * anything new.
+     */
+    if (n.current === 'page' || n.current === 'true') continue
     if (!dead.includes(n.label)) dead.push(n.label)
   }
   return dead
@@ -1241,6 +1395,17 @@ export function deadActions(nav: NavClick[]): string[] {
   const dead: string[] = []
   for (const n of nav) {
     if (n.kind !== 'action' || !n.label || n.responded) continue
+    /*
+     * A control that acts on fields the walk never varied — see `actsOnFields`
+     * where the click is recorded. The walk fills EMPTY fields and a React form
+     * rarely has any, so 適用 applies the range it already had and nothing
+     * moves. Replayed over the documents that shipped with this finding, every
+     * one that returned was this or the nav case above.
+     *
+     * Not an excuse for the control: an excuse for the walk, which cannot make
+     * a precondition it does not know about.
+     */
+    if (n.actsOnFields) continue
     if (!dead.includes(n.label)) dead.push(n.label)
   }
   return dead
@@ -1425,6 +1590,15 @@ interface Cdp {
   send(method: string, params?: unknown, sessionId?: string): Promise<any>
   close(): void
   errors: string[]
+  /**
+   * The control the walk announced it was about to press, most recent last.
+   *
+   * Read from the page's console as EVENTS, which is the one channel that
+   * still has the answer after the page stops: a page whose main thread is
+   * blocked can run nothing and answer no evaluate, but every message it
+   * logged before it blocked has already crossed the socket. See WALK_MARK.
+   */
+  pressed: string[]
 }
 
 async function connect(endpoint: string, credentials: AwsCredentialIdentityProvider): Promise<Cdp> {
@@ -1457,6 +1631,7 @@ async function connect(endpoint: string, credentials: AwsCredentialIdentityProvi
   let id = 0
   const pending = new Map<number, { res: (v: any) => void; rej: (e: Error) => void }>()
   const errors: string[] = []
+  const pressed: string[] = []
 
   ws.addEventListener('message', (ev: MessageEvent) => {
     let msg: any
@@ -1474,6 +1649,15 @@ async function connect(endpoint: string, credentials: AwsCredentialIdentityProvi
       errors.push(String(d?.exception?.description ?? d?.text ?? 'exception').slice(0, 300))
     } else if (msg.method === 'Log.entryAdded' && msg.params?.entry?.level === 'error') {
       errors.push(String(msg.params.entry.text).slice(0, 300))
+    } else if (
+      msg.method === 'Runtime.consoleAPICalled' &&
+      msg.params?.type === 'debug' &&
+      typeof msg.params?.args?.[0]?.value === 'string' &&
+      msg.params.args[0].value.startsWith(WALK_MARK)
+    ) {
+      // Kept to the last few: only the final one names what froze the page.
+      pressed.push(msg.params.args[0].value.slice(WALK_MARK.length).slice(0, 120))
+      if (pressed.length > 8) pressed.shift()
     } else if (
       msg.method === 'Runtime.consoleAPICalled' &&
       (msg.params?.type === 'error' || msg.params?.type === 'assert')
@@ -1548,6 +1732,7 @@ async function connect(endpoint: string, credentials: AwsCredentialIdentityProvi
       }),
     close: () => ws.close(),
     errors,
+    pressed,
   }
 }
 
@@ -1577,6 +1762,41 @@ export interface VerifyOptions {
    * markup and needs none of this.
    */
   declaredScreens?: string[]
+  /**
+   * The run this belongs to, for the log line when it fails.
+   *
+   * The failure was logged without it, so the one walk in thirty days that did
+   * not come back could not be found by filtering the run's own log — it took
+   * reading every line in the minute around it.
+   */
+  requestId?: string
+  /** Told why nothing came back, when nothing does. See VerifyFailure. */
+  onFailure?: (failure: VerifyFailure) => void
+}
+
+/**
+ * Why verification returned nothing — which the caller needs, because "the
+ * mode skipped it" and "it was tried and the page stopped answering" are
+ * different facts to tell a user, and only one of them is a defect in the app.
+ */
+export interface VerifyFailure {
+  /**
+   * page-frozen: the walk's evaluate never came back. With the walk racing its
+   *   own timer (WALK_HARD_DEADLINE_MS) that can only mean the page's main
+   *   thread stopped — nothing in it could run, not even that timer.
+   * browser: anything else — the session, the socket, the transport.
+   */
+  reason: 'page-frozen' | 'browser'
+  /** The control being pressed when the page stopped, from WALK_MARK. */
+  frozeOn?: { kind: string; hash: string; label: string }
+  error: string
+  durationMs: number
+}
+
+/** A WALK_MARK body back into its parts: kind|hash|label. */
+export function parsePressMark(mark: string): { kind: string; hash: string; label: string } {
+  const [kind = '', hash = '', ...rest] = mark.split('|')
+  return { kind, hash, label: rest.join('|') }
 }
 
 /**
@@ -1873,10 +2093,23 @@ export async function verifyInBrowser(
     })
     return facts
   } catch (e) {
+    const error = String(e)
+    const durationMs = Date.now() - started
+    const frozen = /cdp timeout: Runtime\.evaluate/.test(error)
+    const last = cdp?.pressed[cdp.pressed.length - 1]
+    const failure: VerifyFailure = {
+      reason: frozen ? 'page-frozen' : 'browser',
+      ...(frozen && last ? { frozeOn: parsePressMark(last) } : {}),
+      error,
+      durationMs,
+    }
     logger.warn('Browser verification failed; continuing without it', {
-      error: String(e),
-      durationMs: Date.now() - started,
+      requestId: options.requestId,
+      ...failure,
+      // The last few presses, so a freeze that follows a sequence can be read.
+      pressed: cdp?.pressed.slice(-4),
     })
+    options.onFailure?.(failure)
     return null
   } finally {
     cdp?.close()

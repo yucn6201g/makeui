@@ -170,12 +170,6 @@ check('a Vue shell without its navigation is reported',
     fence('src/routes.ts', ROUTES),
   ), 'vue').map((d) => d.id), ['shell-without-nav']);
 
-check('a Svelte shell that renders it is not',
-  auditShellContract(project(
-    fence('src/App.svelte', `<script lang="ts">\n  import { NAV_ITEMS } from './routes'\n</script>\n<nav>{#each NAV_ITEMS as i (i.id)}<a href={'#/' + i.id}>{i.label}</a>{/each}</nav>`),
-    fence('src/routes.ts', ROUTES),
-  ), 'svelte').map((d) => d.id), []);
-
 // --- a document that is not a project --------------------------------------
 check('a plain document has no shell to judge',
   auditShellContract('<!DOCTYPE html><html><body><h1>hi</h1></body></html>', 'react'), []);

@@ -57,8 +57,6 @@ const newScreenScaffold = new Function(
   // becomes a space, because a heading is read by a person.
   check('vue: the heading is spaced', /<h1>Order History<\/h1>/.test(vue), true);
 
-  const svelte = newScreenScaffold('svelte', 'src/screens/ContactScreen.svelte');
-  check('svelte: markup with no script', /^<section>/.test(svelte) && !svelte.includes('<script'), true);
 
   // A path whose name is only the suffix must not produce an empty heading.
   check('a screen called Screen keeps a name',
@@ -79,7 +77,6 @@ const newScreenScaffold = new Function(
   for (const [kind, file] of [
     ['react', 'src/screens/ContactScreen.tsx'],
     ['vue', 'src/screens/ContactScreen.vue'],
-    ['svelte', 'src/screens/ContactScreen.svelte'],
   ]) {
     const out = newScreenScaffold(kind, file);
     let error = null;

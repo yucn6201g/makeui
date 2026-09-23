@@ -35,6 +35,8 @@ const row = (responded = false) => ({ kind: 'row', label: '行1', href: '', hash
 const nav = (label, o = {}) => ({
   kind: 'nav', label, href: o.href ?? '', hashBefore: o.hashBefore ?? '',
   changed: o.changed ?? false, responded: o.responded ?? o.changed ?? false,
+  // What the control said about itself when it was pressed.
+  current: o.current ?? '',
 });
 
 /**
@@ -112,8 +114,10 @@ check('a button that did nothing is dead',
 // The check closest to what this product claims to make. A mock whose nav works
 // and whose 追加 and 保存 buttons do nothing is a picture of an application, and
 // nothing pressed those buttons at all until the walk was extended.
-const act = (label, responded = false) => ({
+const act = (label, responded = false, o = {}) => ({
   kind: 'action', label, href: '', hashBefore: '#/list', changed: responded, responded,
+  // Whether the control acts on fields the walk never varied.
+  actsOnFields: o.actsOnFields ?? false,
 });
 
 check('a button that did nothing is reported',
@@ -133,6 +137,54 @@ check('several dead buttons are all reported',
   deadActions([nav('一覧', { changed: true }), act('保存'), act('申請')]), ['保存', '申請']);
 // Same liveness guard: a page that never responded is a failed walk.
 check('a frozen page reports no dead buttons', deadActions([act('保存'), act('申請')]), []);
+
+// --- what the walk cannot judge ----------------------------------------------
+/*
+ * Replayed 2026-09-20 over the eight stored documents that shipped with a
+ * dead-control finding. Six walks returned, and between them they named five
+ * controls: 商品一覧, 商品一覧, 予約確認・変更, デッキ一覧 and 適用. Every one of the
+ * five was a control that works.
+ *
+ * The four nav items were each the current screen's own item. The rule already
+ * excuses that — by comparing an ANCHOR's href with the current hash — and
+ * generated navs are buttons:
+ *
+ *     <button onClick={() => navigate(item.id)} aria-current={…}>商品一覧</button>
+ *
+ * No href, so the comparison never fired. aria-current is what the build
+ * contract already requires of the item for the current page, so the rule reads
+ * that instead.
+ */
+check('a nav item for the screen already showing is not dead',
+  deadControls([nav('ホーム', { changed: true }), nav('商品一覧', { current: 'page' })]), []);
+check('aria-current="true" counts the same way',
+  deadControls([nav('ホーム', { changed: true }), nav('商品一覧', { current: 'true' })]), []);
+check('but an item that is not the current one still is',
+  deadControls([nav('ホーム', { changed: true }), nav('カート', { current: '' })]), ['カート']);
+// The anchor form keeps working — this adds a case, it does not replace one.
+check('and the href comparison still excuses an anchor',
+  deadControls([nav('ホーム', { changed: true }), nav('一覧', { href: '#/list', hashBefore: '#/list' })]), []);
+
+/*
+ * 適用 was the fifth. The walk fills EMPTY fields before pressing anything and
+ * skips any field that already holds a value — which a React form almost always
+ * does, because its inputs are bound to state with defaults. So the button
+ * applied the price range it already had, nothing moved, and a working control
+ * was reported. Its handler is right there in the source.
+ *
+ * Not an excuse for the control: an excuse for the walk, which cannot make a
+ * precondition it does not know about. The same shape covers 送信, 予約する,
+ * 検索 and カートに追加 — 84 of the labels this finding reported in 30 days.
+ */
+check('a control that acts on fields the walk never varied is not judged',
+  deadActions([nav('一覧', { changed: true }), act('適用', false, { actsOnFields: true })]), []);
+/*
+ * And a button with nothing around it still is. This is the one finding that
+ * survived the replay: `<Button variant="secondary">編集</Button>` — no handler
+ * at all, which is exactly what this check is for.
+ */
+check('a button with no fields around it still is',
+  deadActions([nav('一覧', { changed: true }), act('編集')]), ['編集']);
 check('an unlabelled button is not reported',
   deadActions([nav('一覧', { changed: true }), act('')]), []);
 check('an empty walk reports nothing', deadActions([]), []);

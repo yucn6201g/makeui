@@ -184,5 +184,37 @@ check('the chat renders the fold', /block\.kind === 'findings'/.test(fs.readFile
 check('as a disclosure, closed by default',
   /<details className="app__findings"/.test(fs.readFileSync(path.join(root, 'src/App.tsx'), 'utf8')), true);
 
+// --- the critic's opinions, apart from the findings ------------------------------
+/*
+ * Five kinds of design critique are measured as ones no repair moves, or that
+ * the critic itself does not repeat on the same screenshot. They were listed as
+ * 未解決の指摘 with a fix button each; they are now their own fold, with no
+ * button, under a heading that says what they are.
+ */
+{
+  const blocks = formatReply([
+    '5画面すべてに到達しました。',
+    '未解決の指摘が2件あります。',
+    '・ボタンが動きません',
+    '・画像がありません',
+    'デザインについての参考意見が2件あります（自動修正の対象外）。',
+    '・余白が不揃いです',
+    '・アクセントが強すぎます',
+  ].join('\n'));
+  check('both folds are recognised in one chunk',
+    blocks.map((b) => b.kind), ['para', 'findings', 'opinions']);
+  check('the findings keep their own items', blocks[1].items, ['ボタンが動きません', '画像がありません']);
+  check('and the opinions theirs', [blocks[2].count, blocks[2].items], [2, ['余白が不揃いです', 'アクセントが強すぎます']]);
+  check('a reply with only opinions has no findings fold',
+    formatReply('デザインについての参考意見が1件あります（自動修正の対象外）。\n・余白').map((b) => b.kind), ['opinions']);
+}
+check('the backend writes the opinions heading this recognises',
+  backend.includes('lines.push(`デザインについての参考意見が${opinions.length}件あります（自動修正の対象外）。`);'), true);
+check('and decides which they are by the repair exclusion, not by a list of its own',
+  /const opinions = all\.filter\(\(d\) => isCriticFinding\(d\.id\) && !repairable\(d\.id\)\)/.test(backend), true);
+const app = fs.readFileSync(path.join(root, 'src/App.tsx'), 'utf8');
+check('the opinions fold has no fix button',
+  /block\.kind === 'opinions' \?[\s\S]*?<\/details>/.exec(app)?.[0].includes('handleFixFinding'), false);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

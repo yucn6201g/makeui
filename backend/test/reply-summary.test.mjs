@@ -174,11 +174,11 @@ export default function App(){ return null }
     'src/components/BookDetailModal.tsx', 'src/components/ConfirmReturnModal.tsx',
     'src/styles/globals.css', 'src/screens/HoldingsScreen.css', 'src/screens/CheckoutScreen.css',
     'src/screens/AlertsScreen.css', 'src/components/BookDetailModal.css', 'src/components/ConfirmReturnModal.css',
-    'src/screens/Board.vue', 'src/components/Card.svelte']
+    'src/screens/Board.vue', 'src/components/Card.tsx']
   const doc = '<!DOCTYPE html><html><body>' + files.map((p) => `\n@@@makeui:file ${p}\nx\n@@@makeui:endfile`).join('') + '\n</body></html>'
   const counts = projectFileCounts(doc)
   check('three screens with their stylesheets are three screens, plus a Vue one', counts.screens, 4)
-  check('components count their source, not their CSS, Svelte included', counts.components, 3)
+  check('components count their source, not their CSS', counts.components, 3)
   check('the file total still counts every file but the spec', counts.files, 16)
   const reply = describeOutcome({ verified: true, reached: 3, declared: 3, consoleErrors: 0,
     files: counts.files, screens: 3, components: counts.components,

@@ -37,37 +37,6 @@ const check = (name, got, want) => {
   ok ? pass++ : fail++;
 };
 
-// --- 1. the Svelte rules that were missing --------------------------------------------
-{
-  const fw = read('src/config/frameworks.ts');
-  const at = fw.indexOf('Svelte 5 with runes');
-  check('the Svelte rules were found', at > 0, true);
-  const rules = fw.slice(at, at + 6000);
-
-  /*
-   * Each of these is one compile error observed in the stored corpus. They are
-   * asserted by the rule's subject rather than its wording, so the prose can be
-   * rewritten without the coverage silently going away.
-   */
-  check('runes take no type argument', /Runes take NO type argument/.test(rules), true);
-  check('and it shows where the type goes', /let selected: string \| null = \$state\(null\)/.test(rules), true);
-  check('event modifiers are gone', /Event modifiers are gone/.test(rules), true);
-  check('naming the shape that fails the build', /onsubmit\|preventDefault/.test(rules), true);
-  check('one top-level script per component', /ONE top-level .*<script>.* per component/.test(rules), true);
-
-  /*
-   * The exported-state rule used to end 「`export const store = $state({...})` is
-   * fine — only `$derived` is refused」, which is true and incomplete: what the
-   * corpus actually hits is `export let route = $state(...)` followed by a
-   * reassignment. A rule that stops at the first half reads as permission.
-   */
-  // Whitespace-folded: the sentence is wrapped across lines in the source.
-  const flat = rules.replace(/\s+/g, ' ');
-  check('the exported-state rule names reassignment',
-    flat.includes('Cannot export state from a module if it is reassigned'), true);
-  check('and says what to do instead', /export a setter, never to the exported/.test(rules), true);
-}
-
 // --- 2. a minified React error is decoded ------------------------------------------------
 {
   const raw = 'Error: Minified React error #130; visit https://reactjs.org/docs/error-decoder.html'

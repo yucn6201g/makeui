@@ -557,32 +557,22 @@ a:active {
   color: #8a5a20;
 }
 
-.app__chat-score {
-  display: inline-block;
-  margin-top: 6px;
-  font-size: 0.75rem;
-}
-
-.app__chat-tools {
-  display: inline-block;
-  margin-top: 4px;
-  font-size: 0.6875rem;
-  color: var(--figma-text-dim);
-}
-
-.app__chat-tokens {
-  display: inline-block;
-  margin-top: 4px;
-  margin-left: 8px;
-  font-size: 0.6875rem;
-  color: var(--figma-text-dim);
-}
-
-/* Hover timestamp on messages */
-.app__chat-timestamp {
-  display: block;
-  margin-top: 4px;
-}
+/*
+ * The score, the tools, the tokens and the time used to be four things stacked
+ * under a reply, each with its own size and its own top margin. They have been
+ * one flex row for a long time — `.app__chat-meta`, further down this file —
+ * and that row sets their box.
+ *
+ * What was left here was not dead. A later rule of the same specificity only
+ * overrides the properties it declares, and the row never declared a size, so
+ * these did: the score rendered at 0.75rem, the tools and tokens at 0.6875rem
+ * and the model chip at the row's own 0.625rem. THREE text sizes and two stray
+ * top margins in one line — which is what 「LLMモデルとデザインプリセットの
+ * テキストが、Scoreとトークン数の表示位置とずれている」 is looking at.
+ *
+ * Removed rather than overridden. `test/meta-row-alignment.test.mjs` fails if
+ * any of them is declared twice again.
+ */
 
 /* Scroll to bottom button */
 .app__scroll-bottom {
@@ -1466,9 +1456,6 @@ fieldset {
   border: 1px solid var(--figma-border);
 }
 
-.app__chat-timestamp {
-  font-size: 0.625rem;
-}
 /* Chat input area */
 .app__chat-input-area {
   border-top: 1px solid var(--figma-border);
@@ -2959,20 +2946,59 @@ fieldset legend {
   flex-direction: column;
 }
 
+/*
+ * The same bar as the project screen's, so it does not move when you open a
+ * project.
+ *
+ * Reported 2026-09-20: 「プロジェクト一覧画面とプロジェクト画面で最上部のMakeUIの
+ * バーの位置が変わるのが気になります」. Measured against `.app__header` with both
+ * markups rendered under this stylesheet at 1440px:
+ *
+ *   height        44  /  54      the bar was ten pixels taller
+ *   side padding  20  /  24      the wordmark started four pixels further in
+ *   wordmark top  20.5 / 25.6    and five pixels lower
+ *   position      sticky / static
+ *
+ * Heights are set rather than padded for the same reason `.app__header` does
+ * it: 12px of padding around a line box is 44px only while the line box is
+ * 20px, and the wordmark here is a different size from that one.
+ */
 .project-list__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 24px;
-  border-bottom: 1px solid #e6e6e6;
+  height: 44px;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--figma-border);
   background: #ffffff;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+@media (max-width: 768px) {
+  .project-list__header { padding: 0 16px; }
+}
+
+@media (max-width: 480px) {
+  .project-list__header { padding: 0 8px; }
 }
 
 .project-list__logo {
   font-family: var(--font-sans, 'Inter', sans-serif);
-  font-size: 1rem;
+  /*
+   * The same as `.app__logo`, which now draws what it asks for.
+   *
+   * This said 1rem / 400 for a day, because the project bar's own wordmark
+   * rendered at 16px and weight 400 — `button.app__logo` was resetting the size
+   * and the weight along with the button chrome. That reset has been narrowed,
+   * so both bars are 14px at 600 and these four lines are the other half of
+   * that one design.
+   */
+  font-size: 0.875rem;
   font-weight: 600;
-  color: #1e1e1e;
+  letter-spacing: 0.01em;
+  color: var(--figma-text);
   margin: 0;
 }
 
@@ -3947,15 +3973,23 @@ fieldset legend {
   border-color: #999999;
 }
 
-/* Make logo clickable in editor */
+/*
+ * Make logo clickable in editor.
+ *
+ * A reset for what a <button> brings with it — its own background, border,
+ * padding and system font — and nothing else. It used to carry `font-size` and
+ * `font-weight: inherit` as well, which are more specific than `.app__logo` and
+ * so quietly cancelled the wordmark's own design: 16px at weight 400 where the
+ * rule asks for 14px at 600. It showed up as the wordmark being LARGER than the
+ * `/` beside it (14px) and the project name after it (13px), which is the one
+ * place in this bar where nothing was meant to stand out.
+ */
 button.app__logo {
   background: none;
   border: none;
   cursor: pointer;
   padding: 0;
   font-family: inherit;
-  font-size: inherit;
-  font-weight: inherit;
   color: inherit;
 }
 
@@ -4958,6 +4992,51 @@ button.app__logo:hover {
   padding: 0 10px 10px 2em;
   font-size: 0.75rem;
 }
+/* The critic's opinions: the same fold, with a sentence saying why they are
+   not counted as unresolved, and no border colour of their own — they are
+   read after the findings, not instead of them. */
+.app__findings--opinions { background: transparent; }
+.app__findings-note {
+  margin: 0 10px 6px;
+  font-size: 0.6875rem;
+  line-height: 1.5;
+  color: var(--figma-text-muted);
+}
+/*
+ * A finding and the button that acts on it, on one line where there is room.
+ *
+ * The button sits after the text rather than in a column of its own: the
+ * findings are sentences of varying length, and a right-aligned column of
+ * buttons would put the action furthest from the short ones, which are the
+ * ones most likely to be acted on.
+ */
+.app__findings-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.app__findings-text { flex: 1 1 12em; min-width: 0; }
+.app__findings-fix {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border: 1px solid var(--figma-border);
+  border-radius: 999px;
+  background: var(--figma-bg-input);
+  color: var(--figma-text);
+  font-size: 0.92em;
+  font-weight: 600;
+  cursor: pointer;
+}
+.app__findings-fix:hover:not(:disabled) {
+  border-color: var(--figma-blue-on-white-text);
+  color: var(--figma-blue-on-white-text);
+}
+.app__findings-fix:focus-visible {
+  outline: 2px solid var(--figma-blue-on-white-text);
+  outline-offset: 1px;
+}
+.app__findings-fix:disabled { opacity: 0.5; cursor: default; }
 
 .app__chat-list li + li {
   margin-top: 4px;
@@ -5055,20 +5134,45 @@ button.app__logo:hover {
 
 /* --- message metadata --------------------------------------------------- */
 
+/*
+ * One left edge and one baseline for everything in the row.
+ *
+ * The row holds a bordered pill (the model and the design system), a filled
+ * pill (the score) and three runs of plain text (tools, tokens, the time). Each
+ * had its own box, so each put its TEXT somewhere different: the pills inset
+ * their text by a padding and a border, the plain runs did not. In a 300px chat
+ * column the row wraps, and the wrapped line then started 7px to the left of
+ * the line above it — reported as 「LLMモデルとデザインプリセットのテキストが、
+ * Scoreとトークン数の表示位置とずれている」.
+ *
+ * Measured in a browser at the real column width before and after: the text of
+ * every item now starts on the same x and sits on the same baseline, wrapped or
+ * not. The pills keep their ground and their border; the plain items get the
+ * same padding and a TRANSPARENT border, which is what puts their text on the
+ * same grid without drawing anything.
+ *
+ * As a child selector rather than a list, so an item added to this row later
+ * lines up by default instead of being the next thing that does not.
+ */
 .app__chat-meta {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   flex-wrap: wrap;
   gap: 8px;
   font-size: 0.625rem;
   color: var(--figma-text-dim);
   font-variant-numeric: tabular-nums;
 }
+.app__chat-meta > * {
+  display: inline-flex;
+  align-items: baseline;
+  padding: 1px 6px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+}
 .app__chat-meta:empty { display: none; }
 
 .app__chat-score {
-  padding: 1px 6px;
-  border-radius: 999px;
   background: rgba(37, 157, 99, 0.1);
   color: #197a4b;
   font-weight: 600;
@@ -5093,17 +5197,6 @@ button.app__logo:hover {
   background: var(--figma-bg-input);
 }
 
-/* Findings the run did not get to. Amber rather than red: the output is usable
-   and the score already reflects them — this says the pipeline stopped before
-   it was finished, which is a different statement from "this is broken". */
-.app__chat-unrepaired {
-  padding: 1px 6px;
-  border-radius: 999px;
-  background: rgba(214, 145, 23, 0.12);
-  color: #8a5a00;
-  font-weight: 600;
-}
-
 .app__chat-tools,
 .app__chat-tokens { color: var(--figma-text-dim); }
 
@@ -5116,12 +5209,8 @@ button.app__logo:hover {
  * having it at all.
  */
 .app__chat-run {
-  display: inline-flex;
-  align-items: center;
   gap: 4px;
-  padding: 1px 6px;
-  border: 1px solid var(--figma-border);
-  border-radius: 999px;
+  border-color: var(--figma-border);
   color: var(--figma-text-muted);
   white-space: nowrap;
 }
@@ -5133,6 +5222,7 @@ button.app__logo:hover {
   opacity: 0;
   transition: opacity 120ms ease;
 }
+
 .app__chat-msg:hover .app__chat-timestamp,
 .app__chat-msg:focus-within .app__chat-timestamp { opacity: 1; }
 
@@ -5488,6 +5578,15 @@ button.app__logo:hover {
 }
 .rt__caret--open { transform: rotate(90deg); }
 
+/*
+ * One pane per step, and it is the thing that scrolls.
+ *
+ * Prose and code used to be bounded and self-scrolling one each, so a step that
+ * wrote both showed two scrollbars stacked inside a single card and following
+ * the run meant working out which one was moving. Reported as
+ * 「スクロールバーが2つあってややこしい」 — the bound belongs to the step, not to
+ * each half of it.
+ */
 .rt__body {
   margin: 1px 0 6px 10px;
   padding-left: 10px;
@@ -5495,7 +5594,17 @@ button.app__logo:hover {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  max-height: 240px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #d4d4d4 transparent;
 }
+
+.rt__body::-webkit-scrollbar { width: 8px; height: 8px; }
+.rt__body::-webkit-scrollbar-track { background: transparent; }
+.rt__body::-webkit-scrollbar-thumb { background: #d4d4d4; border-radius: 4px; }
+.rt__body::-webkit-scrollbar-thumb:hover { background: #bdbdbd; }
 
 /*
  * Bounded for the same reason `.rt__code` is.
@@ -5511,8 +5620,7 @@ button.app__logo:hover {
  */
 .rt__prose {
   margin: 0;
-  max-height: 190px;
-  overflow: auto;
+  /* Grows freely: the step's pane above is what bounds and scrolls it. */
   font-size: 0.75rem;
   line-height: 1.65;
   color: var(--figma-text-muted);
@@ -5521,15 +5629,8 @@ button.app__logo:hover {
   scrollbar-width: thin;
 }
 
-.rt__prose::-webkit-scrollbar { width: 8px; height: 8px; }
-.rt__prose::-webkit-scrollbar-track { background: transparent; }
-.rt__prose::-webkit-scrollbar-thumb { background: #d4d4d4; border-radius: 4px; }
-.rt__prose::-webkit-scrollbar-thumb:hover { background: #bdbdbd; }
-
 .rt__code {
   margin: 0;
-  max-height: 190px;
-  overflow: auto;
   padding: 7px 8px;
   border-radius: 6px;
   background: #fafafa;
@@ -5540,14 +5641,7 @@ button.app__logo:hover {
   color: #555;
   white-space: pre-wrap;
   word-break: break-all;
-  scrollbar-width: thin;
-  scrollbar-color: #d4d4d4 transparent;
 }
-.rt__code::-webkit-scrollbar { width: 8px; height: 8px; }
-.rt__code::-webkit-scrollbar-track { background: transparent; }
-.rt__code::-webkit-scrollbar-thumb { background: #d4d4d4; border-radius: 4px; }
-.rt__code::-webkit-scrollbar-thumb:hover { background: #bdbdbd; }
-
 /* Denser variant for the preview overlay, where the card floats over content. */
 .rt--dense .rt__code { max-height: 120px; }
 .rt--dense .rt__prose { max-height: 120px; font-size: 0.6875rem; }

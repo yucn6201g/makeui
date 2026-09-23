@@ -11,7 +11,7 @@ import { isFencedTransport, writeProjectFile } from '../tools/project-transport.
 import { firstJsonObject } from '../utils/model-json.js'
 import { changeSize } from '../utils/change-size.js'
 import { isModelUnavailable } from '../utils/failure-message.js'
-import { applyPatchReply, isPatchReply, PATCH_REPLY_RULES } from './patch-reply.js'
+import { applyPatchReply, isPatchReply, MIN_PATCH_CHARS, PATCH_REPLY_RULES } from './patch-reply.js'
 
 /**
  * Repairs a generated React project one file at a time.
@@ -80,7 +80,7 @@ Return only JSON:
 }
 
 /**
- * The defects whose repairs are small edits to an existing file.
+ * How much of a file a repair for this defect rewrites, measured per defect.
  *
  * Offering the patch form to every repair was measured, and it did not pay. On
  * the first round after it shipped (6 generations, 50 repaired files,
@@ -97,24 +97,63 @@ Return only JSON:
  * the reply to the screen, outside any block, where it is paid for and thrown
  * away (a 13-line Header repair replied with 3,717 characters).
  *
- * So the form is chosen by what is being fixed. A stylesheet is always a patch;
- * a component is a patch only when every defect on it is one of these, whose
- * repairs change a median 2-3% of a file (`repair-change-size.mjs`, by defect).
- * On the same 50 files this rule would have cut repair output by 36%.
+ * The answer to that was a list of six ids. This is the same answer with the
+ * numbers filled in, re-measured 2026-09-18 over 60 days on React and Vue files
+ * only (`scripts/repair-change-size.mjs`; 364 of the 382 repaired files were
+ * already React or Vue, so removing Svelte moved none of these medians). What
+ * the wider window adds is the SHAPE of the trade, from the 98 files that were
+ * patched in production, as reply characters against the file they rewrote:
+ *
+ *   changed <= 5%    n=53   the reply is 14% of the file
+ *   changed 5-15%    n=19   71%
+ *   changed 15-30%   n=10   173%      <- a patch now costs more than the file
+ *   changed > 30%    n=16   219%
+ *
+ * So the ceiling is a measurement rather than a taste: at a tenth of a file the
+ * form pays six times over, and by a fifth it has stopped paying at all.
+ *
+ * Six ids join the six that were listed — `preset-drift`, `palette-size`,
+ * `nav-dead-runtime`, `export-missing`, `action-dead-runtime` and
+ * `screen-hidden` — on the same evidence the six were kept for, and on the same
+ * bar the script prints at: five files or more. Everything
+ * at or above `icons` (17%) stays a whole file, which is where the volume is:
+ * those repairs create components, and this form is the wrong shape for them.
+ *
+ * An id that is not here is written as a whole file. That is the safe direction
+ * — an unmeasured repair is one whose size nobody knows — and it is why the
+ * table carries `of`, so the next re-measurement can see what each row rests on.
  */
-const LOCAL_REPAIRS = new Set([
-  'visual-typography',
-  'visual-density',
-  'visual-accent',
-  'visual-artefact',
-  'contrast-low',
-  'input-sizing',
-])
+const CHANGE_SHARE: Record<string, { median: number; of: number }> = {
+  'input-sizing': { median: 0.01, of: 7 },
+  'visual-artefact': { median: 0.02, of: 17 },
+  'contrast-low': { median: 0.02, of: 9 },
+  'preset-drift': { median: 0.02, of: 9 },
+  'visual-density': { median: 0.02, of: 61 },
+  'visual-typography': { median: 0.03, of: 77 },
+  'visual-accent': { median: 0.03, of: 29 },
+  'palette-size': { median: 0.03, of: 12 },
+  'nav-dead-runtime': { median: 0.08, of: 22 },
+  'export-missing': { median: 0.08, of: 6 },
+  'action-dead-runtime': { median: 0.09, of: 23 },
+  'screen-hidden': { median: 0.10, of: 6 },
+}
 
-export function patchWorthy(plan: FileRepairPlan): boolean {
+/** Where the bands above cross over. Below it a patch pays; above it, it does not. */
+const PATCH_CEILING = 0.1
+
+
+/**
+ * Whether this file's repair is asked for as blocks rather than as a file.
+ *
+ * `chars` is the file as the prompt will carry it — the lean body, pictures
+ * already taken out — because that is what the reply is being compared against.
+ */
+export function patchWorthy(plan: FileRepairPlan, chars: number): boolean {
   if (plan.create) return false
+  if (chars < MIN_PATCH_CHARS) return false
   if (/\.css$/i.test(plan.path)) return true
-  return plan.defects.length > 0 && plan.defects.every((d) => LOCAL_REPAIRS.has(d.id))
+  if (plan.defects.length === 0) return false
+  return plan.defects.every((d) => (CHANGE_SHARE[d.id]?.median ?? 1) <= PATCH_CEILING)
 }
 
 /**
@@ -361,9 +400,9 @@ export function parses(path: string, body: string): string | null {
    * anything, and it is the same rule the React branch below already follows:
    * where the gate and the bundler disagree, the bundler is right.
    */
-  if (path.endsWith('.vue') || path.endsWith('.svelte') || /\.svelte\.(ts|js)$/.test(path)) {
+  if (path.endsWith('.vue')) {
     try {
-      compileFile(path.endsWith('.vue') ? 'vue' : 'svelte', path, body)
+      compileFile('vue', path, body)
       return null
     } catch (e) {
       return (e instanceof Error ? e.message : String(e)).slice(0, 200)
@@ -430,7 +469,7 @@ export function parses(path: string, body: string): string | null {
  */
 export function cleanFile(text: string, path?: string): string {
   let out = text.trim()
-  const fenced = out.match(/```(?:tsx?|ts|typescript|css|jsx|vue|svelte|html|markdown|md)?\n([\s\S]*?)```/)
+  const fenced = out.match(/```(?:tsx?|ts|typescript|css|jsx|vue|html|markdown|md)?\n([\s\S]*?)```/)
   if (fenced) out = fenced[1]
   out = out.trim()
 
@@ -450,7 +489,7 @@ export function cleanFile(text: string, path?: string): string {
    * The markdown fence and the `data-file` wrapper are still removed, because
    * both are things a model puts *around* a file rather than inside one.
    */
-  if (path?.endsWith('.vue') || path?.endsWith('.svelte')) {
+  if (path?.endsWith('.vue')) {
     const wrapper = /^<(script|style)\b[^>]*data-file=["'][^"']+["'][^>]*>([\s\S]*)<\/\1>\s*$/i.exec(out)
     return (wrapper ? wrapper[2] : out).trim()
   }
@@ -723,7 +762,7 @@ export async function repairFiles(
             leaned.text,
           ].join('\n')
       try {
-        const reply = plan.create || !patchWorthy(plan) ? 'whole' : 'patch'
+        const reply = patchWorthy(plan, leaned.text.length) ? 'patch' : 'whole'
         const system = leaned.images.size > 0 ? fileSystem(kind, reply) + EMBEDDED_IMAGE_NOTE : fileSystem(kind, reply)
         const answer = await invoke(system, user)
         let raw: string

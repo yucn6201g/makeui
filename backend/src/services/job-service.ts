@@ -130,6 +130,59 @@ export async function updateJobStream(
   }));
 }
 
+/**
+ * The running token total alone, for steps that write no text.
+ *
+ * `updateJobStream` stamps the total on every text write, which covers the steps
+ * that stream. This covers the rest: it is attached to the ledger for the length
+ * of a job and writes at most once per `TOKEN_WRITE_MS`, with a trailing write so
+ * the last call of a step is never the one left out. Only `streamTokens` and
+ * `updatedAt` move — the tail and the label belong to the step's own writes.
+ */
+const TOKEN_WRITE_MS = 2000
+
+export function tokenHeartbeat(jobId: string, total: () => number): { notify: () => void; flush: () => Promise<void> } {
+  let last = 0
+  let timer: ReturnType<typeof setTimeout> | null = null
+  let written = -1
+  let inFlight: Promise<void> = Promise.resolve()
+  const write = (): Promise<void> => {
+    timer = null
+    last = Date.now()
+    inFlight = inFlight
+      .then(async () => {
+        // Read when sent, not when queued: a write that waited behind another
+        // must not land an older total over a newer one.
+        const spent = total()
+        if (spent === written) return
+        written = spent
+        await client.send(new UpdateItemCommand({
+          TableName: TABLE_NAME,
+          Key: { pk: { S: `JOB#${jobId}` }, sk: { S: 'META' } },
+          // The ttl too: an UpdateItem creates the row when it is absent, and a
+          // row without one never expires.
+          UpdateExpression: 'SET streamTokens = :t, updatedAt = :now, #ttl = :ttl',
+          ExpressionAttributeNames: { '#ttl': 'ttl' },
+          ExpressionAttributeValues: { ':t': { N: String(spent) }, ':now': { S: new Date().toISOString() }, ':ttl': { N: jobTtl() } },
+        }))
+      })
+      .catch(() => undefined)
+    return inFlight
+  }
+  return {
+    notify: () => {
+      if (timer) return
+      const wait = Math.max(0, TOKEN_WRITE_MS - (Date.now() - last))
+      timer = setTimeout(() => { void write() }, wait)
+    },
+    /** Written before the job's final status, so the last step closes on the true total. */
+    flush: () => {
+      if (timer) clearTimeout(timer)
+      return write()
+    },
+  }
+}
+
 export async function updateJobStatus(
   jobId: string,
   status: JobStatus,

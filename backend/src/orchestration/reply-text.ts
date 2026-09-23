@@ -21,6 +21,7 @@
 
 import { readProjectFiles } from '../tools/project-transport.js'
 import type { RequirementResult } from './requirements.js'
+import { isCriticFinding, repairable } from './repair-yield.js'
 
 /** A file carried inside the document, in either transport this project uses. */
 const MARKDOWN_FILE_BLOCK = /<script\b[^>]*\bdata-file\b[^>]*>[\s\S]*?<\/script>/gi;
@@ -164,6 +165,15 @@ export interface RunOutcome {
   /** Screens the browser opened, and how many the project declares. */
   reached?: number;
   declared?: number;
+  /**
+   * Of the screens the walk did not reach, the ones the project itself
+   * navigates to after something happens — checkout after 「レジへ進む」, a
+   * completion after 「注文を確定」. The walk clicks; it does not fill forms or
+   * put things in a cart, so these are closed to it by design, and a count that
+   * includes them reads as broken screens. One entry per screen: its name from
+   * the specification, or '' when the project names it nowhere.
+   */
+  afterAction?: string[];
   /** Console errors seen during the walk. */
   consoleErrors?: number;
   /** Files in the finished project, and how they divide. */
@@ -195,6 +205,18 @@ export interface RunOutcome {
   requirements?: { total: number; met: number; unmet: number; unverified: number; unmetScreens: string[] };
   /** False when nothing was rendered — 節約 and 高速 do not verify. */
   verified: boolean;
+  /**
+   * Whether this run ASKED the browser. Separate from `verified`, because
+   * "not asked" and "asked and got nothing back" are different things to tell
+   * a user — and this line used to tell a 仕上げ user the first when the second
+   * had happened: 「このモードでは省略されます」 about a mode that verifies.
+   */
+  verifyAttempted?: boolean;
+  /** What went wrong, when it was asked and nothing came back. */
+  verifyFailure?: {
+    reason: 'page-frozen' | 'browser';
+    frozeOn?: { kind: string; hash: string; label: string };
+  };
 }
 
 /**
@@ -210,7 +232,7 @@ export interface RunOutcome {
  * 「蔵書一覧・貸出登録・返却期限アラート ほか3画面を作成しました。」 — three screens
  * that do not exist, in the one line the reply says they can check.
  */
-const SOURCE_FILE = /\.(tsx|jsx|ts|js|vue|svelte)$/i
+const SOURCE_FILE = /\.(tsx|jsx|ts|js|vue)$/i
 
 export function projectFileCounts(html: string): { files: number; screens: number; components: number } {
   const paths = [...readProjectFiles(html).keys()].filter((p) => !/\.(md|markdown|txt)$/i.test(p))
@@ -249,12 +271,36 @@ export function projectFileCounts(html: string): { files: number; screens: numbe
 export function describeOutcome(out: RunOutcome): string {
   const lines: string[] = [];
 
-  if (!out.verified) {
+  if (!out.verified && out.verifyAttempted && out.verifyFailure?.reason === 'page-frozen') {
+    /*
+     * The case this branch was written for. A 仕上げ run whose item rows froze
+     * the page was told its mode had skipped verification; what happened was
+     * that verification found the worst defect a mock can have and could not
+     * say so.
+     */
+    const on = out.verifyFailure.frozeOn;
+    const where = on?.label ? `「${on.label}」を押したところで` : '';
+    lines.push(
+      `ブラウザで実際に動かして検証しましたが、${where}ページが応答しなくなり、検証を最後まで行えませんでした。` +
+        'スコアはソースの検査だけに基づいています。'
+    );
+  } else if (!out.verified && out.verifyAttempted) {
+    lines.push('ブラウザでの検証を試みましたが、完了できませんでした。スコアはソースの検査だけに基づいています。');
+  } else if (!out.verified) {
     lines.push('ブラウザ実行による検証は行っていません（このモードでは省略されます）。');
   } else if (out.declared) {
+    const after = out.afterAction ?? [];
+    const named = after.filter(Boolean);
+    const which = named.length === after.length && named.length > 0 ? `（${named.join('・')}）` : '';
+    const reached = out.reached ?? 0;
+    const missed = out.declared - reached - after.length;
     const reach = out.reached === out.declared
       ? `${out.declared}画面すべてに到達しました`
-      : `${out.declared}画面中 ${out.reached ?? 0}画面に到達しました`;
+      : after.length > 0 && missed <= 0
+        ? `操作なしで開ける${reached}画面すべてに到達しました。残る${after.length}画面${which}は、カートへの追加や入力の確定など前の操作の後に開く画面で、巡回では入力や確定をしないため開いていません`
+        : after.length > 0
+          ? `${out.declared}画面中 ${reached}画面に到達しました（ほかに、前の操作の後に開く画面が${after.length}つあります${which}）`
+          : `${out.declared}画面中 ${reached}画面に到達しました`;
     const errors = out.consoleErrors
       ? `コンソールエラー ${out.consoleErrors}件`
       : 'コンソールエラーはありません';
@@ -312,10 +358,30 @@ export function describeOutcome(out: RunOutcome): string {
    * frontend/test/format-reply.test.mjs: change its wording and that test fails
    * rather than the findings silently unfolding into the reply.
    */
-  const open = out.defects ?? [];
+  /*
+   * The critic's opinions the run does not repair, apart from the findings it
+   * does.
+   *
+   * Five kinds of design critique are never handed to a repair pass, on
+   * measurement (see repair-yield.ts): spacing, alignment and hierarchy are
+   * still there at the end of 74–95% of the runs that repaired them, and the
+   * critic raises accent and artefact again on the SAME screenshot only 38%
+   * and 24% of the time. Listed as 未解決の指摘 they came with a fix button
+   * each, and over thirty days they were about 1.5 of the 5.85 findings the
+   * average run shipped with — findings the pipeline had already decided it
+   * could not act on. They are still shown, under a heading that says what
+   * they are. The score is unchanged.
+   */
+  const all = out.defects ?? [];
+  const opinions = all.filter((d) => isCriticFinding(d.id) && !repairable(d.id));
+  const open = all.filter((d) => !opinions.includes(d));
   if (open.length > 0) {
     lines.push(`未解決の指摘が${open.length}件あります。`);
     lines.push(...open.map((d) => `・${d.note}`));
+  }
+  if (opinions.length > 0) {
+    lines.push(`デザインについての参考意見が${opinions.length}件あります（自動修正の対象外）。`);
+    lines.push(...opinions.map((d) => `・${d.note}`));
   }
 
   return lines.join('\n');

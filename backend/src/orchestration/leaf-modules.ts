@@ -175,22 +175,6 @@ export function leafModule(
     ].join('\n')
   }
 
-  if (kind === 'svelte') {
-    return [
-      '<script lang="ts">',
-      `  // ${why}`,
-      `  let { size = ${w}, color = 'currentColor' }: { size?: number | string; color?: string } = $props();`,
-      '</script>',
-      '',
-      `<svg width={size} height={${height}} viewBox="${box}"`,
-      `  fill="none" stroke={color} stroke-width="${stroke}" stroke-linecap="round"`,
-      '  stroke-linejoin="round" aria-hidden="true">',
-      `  <path d="${d}" />`,
-      '</svg>',
-      '',
-    ].join('\n')
-  }
-
   const shape = importShape(importerBody, spec)
   const lines = [
     '/**',

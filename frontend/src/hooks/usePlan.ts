@@ -4,6 +4,18 @@ import { requestErrorMessage } from '../utils/request';
 import { appendPhase, closeTranscript, type PhaseEntry } from '../utils/phaseTranscript';
 import { pollAuthToken, isAuthRefusal, AUTH_RETRY_BUDGET } from '../utils/pollAuth';
 
+/** The proposal a message answers: what it was built from and what it said. */
+export interface PlanRevision {
+  spec: string;
+  plan: string;
+  prompt: string;
+}
+
+/** The request a revised proposal answers: the original, with the change after it. */
+export function revisedPrompt(original: string, change: string): string {
+  return `${original}\n\n追加の指示: ${change}`;
+}
+
 export interface PlanResult {
   /** Readable proposal, shown in the thread for approval. */
   plan: string;
@@ -20,7 +32,12 @@ interface UsePlanReturn {
   isPlanning: boolean;
   phases: PhaseEntry[];
   error: string | null;
-  plan: (prompt: string, preset: string, model: string, outputKind: string, html?: string, image?: string, attachment?: { name: string; content: string }, images?: string[], imageCaptions?: string[]) => void;
+  /**
+   * `revision` amends the proposal the user is answering instead of planning the
+   * message as a new brief. The result's `prompt` is then the original request
+   * with the change appended, which is what approving it builds.
+   */
+  plan: (prompt: string, preset: string, model: string, outputKind: string, html?: string, image?: string, attachment?: { name: string; content: string }, images?: string[], imageCaptions?: string[], revision?: PlanRevision) => void;
   /** Re-attach to a plan already running on the server. */
   /** `priorPhases` seeds the transcript — see utils/activeJob.ts. */
   resume: (jobId: string, prompt: string, priorPhases?: PhaseEntry[]) => void;
@@ -114,11 +131,13 @@ export function usePlan(): UsePlanReturn {
         }
         return res.json();
       })
-      .then((data: { status: string; result?: { plan?: string; spec?: string; modelTier?: string; preset?: string }; error?: string; streamTail?: string; streamChars?: number; streamPhase?: string }) => {
+      .then((data: { status: string; result?: { plan?: string; spec?: string; modelTier?: string; preset?: string }; error?: string; streamTail?: string; streamChars?: number; streamTokens?: number; streamPhase?: string }) => {
         // The budget is for CONSECUTIVE refusals; one that answers clears it.
         authRetriesRef.current = 0;
         if (data.streamPhase) {
-          setPhases((prev) => appendPhase(prev, data.streamPhase!, data.streamTail ?? '', data.streamChars ?? 0));
+          // With the running total, as generate and modify pass it: without it every
+          // step of a plan — the whole design phase — showed no tokens at all.
+          setPhases((prev) => appendPhase(prev, data.streamPhase!, data.streamTail ?? '', data.streamChars ?? 0, data.streamTokens));
         }
         if (data.status === 'completed' && data.result) {
           setResult({
@@ -157,7 +176,7 @@ export function usePlan(): UsePlanReturn {
   }, []);
 
   const plan = useCallback(
-    (prompt: string, preset: string, model: string, outputKind: string, html?: string, image?: string, attachment?: { name: string; content: string }, images?: string[], imageCaptions?: string[]) => {
+    (prompt: string, preset: string, model: string, outputKind: string, html?: string, image?: string, attachment?: { name: string; content: string }, images?: string[], imageCaptions?: string[], revision?: PlanRevision) => {
       if (!token) {
         setError('ログインの有効期限が切れています。再度ログインしてください。');
         return;
@@ -167,7 +186,7 @@ export function usePlan(): UsePlanReturn {
       setPhases([]);
       setError(null);
       setIsPlanning(true);
-      promptRef.current = prompt;
+      promptRef.current = revision ? revisedPrompt(revision.prompt, prompt) : prompt;
 
       const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8080';
       const controller = new AbortController();
@@ -176,7 +195,7 @@ export function usePlan(): UsePlanReturn {
       fetch(`${apiUrl}/plan`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ prompt, preset, model, outputKind, ...(html ? { html } : {}), ...(image ? { image } : {}), ...(attachment ? { attachment } : {}), ...(images && images.length > 0 ? { images } : {}), ...(imageCaptions && imageCaptions.some((c) => c && c.trim()) ? { imageCaptions } : {}) }),
+        body: JSON.stringify({ prompt, preset, model, outputKind, ...(html ? { html } : {}), ...(image ? { image } : {}), ...(attachment ? { attachment } : {}), ...(images && images.length > 0 ? { images } : {}), ...(imageCaptions && imageCaptions.some((c) => c && c.trim()) ? { imageCaptions } : {}), ...(revision && !html ? { revision } : {}) }),
         signal: controller.signal,
       })
         .then(async (res) => {

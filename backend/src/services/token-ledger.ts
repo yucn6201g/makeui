@@ -63,6 +63,16 @@ export interface TokenLedger {
   stages: Record<string, StageUsage>;
   cacheReadTokens: number;
   cacheWriteTokens: number;
+  /**
+   * Told after every recorded call, so a job can publish its running total.
+   *
+   * The progress transcript prices each step by differencing the total at step
+   * boundaries, and the total reached the job record only when a step streamed
+   * text or opened. A step of non-streaming calls — the per-file repairs, the
+   * critic — therefore priced at nothing, and the last step of a run, which no
+   * later step closes, never did.
+   */
+  onRecord?: () => void;
 }
 
 /** Usage as Bedrock reports it, including the two cache counters. */
@@ -127,6 +137,11 @@ export function recordTokens(
   stage.outputTokens += outputTokens;
   stage.cacheReadTokens += read;
   stage.cacheWriteTokens += write;
+  try {
+    ledger.onRecord?.();
+  } catch {
+    // A progress figure is never worth failing the call it describes.
+  }
 }
 
 /**

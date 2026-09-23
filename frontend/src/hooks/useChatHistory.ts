@@ -27,7 +27,7 @@ interface StoredMessage {
    * with 「ブラウザ実行の計測を含むスコアです」. A missing chip is a gap; this was a
    * wrong claim about a number the user is asked to compare.
    */
-  runInfo?: { modelTier: string; preset: string; effort?: string; scoreVerified?: boolean; scoreParts?: ScoreParts; unrepairedDefects?: number };
+  runInfo?: { modelTier: string; preset: string; effort?: string; scoreVerified?: boolean; scoreParts?: ScoreParts };
   /**
    * A plan awaiting approval, with the specification it was derived from.
    *

@@ -21,7 +21,7 @@ export type FrameworkFilter = 'all' | OutputKind;
  * `html` for as long as the server classified with a detector that could no
  * longer match anything, so the stored value is present, wrong, and — being
  * truthy — would take priority over the fallback that gets it right. `react`,
- * `vue` and `svelte` are taken as written; those are only ever recorded from
+ * `vue` is taken as written; it is only ever recorded from
  * the files in the first place.
  */
 export function projectKind(project: Project): string | null {
@@ -147,12 +147,12 @@ export function sortProjects(projects: Project[], sort?: ListSort): Project[] {
 
 /** How many projects each framework filter would show, for the counts on the tabs. */
 export function frameworkCounts(projects: Project[], archived: boolean): Record<FrameworkFilter, number> {
-  const counts: Record<FrameworkFilter, number> = { all: 0, react: 0, vue: 0, svelte: 0 };
+  const counts: Record<FrameworkFilter, number> = { all: 0, react: 0, vue: 0 };
   for (const p of projects) {
     if (Boolean(p.archivedAt) !== archived) continue;
     counts.all++;
     const kind = projectKind(p);
-    if (kind === 'react' || kind === 'vue' || kind === 'svelte') counts[kind]++;
+    if (kind === 'react' || kind === 'vue') counts[kind]++;
   }
   return counts;
 }

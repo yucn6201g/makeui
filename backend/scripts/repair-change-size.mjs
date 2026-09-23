@@ -1,10 +1,18 @@
-// How much of a file a repair or an edit actually changes.
+// How much of a file a repair or an edit actually changes, and what the reply cost.
 //
-// Every repair and every per-file edit returns the COMPLETE file, and output is
-// most of a generation's cost. A search-and-replace output format would pay only
-// for changed lines — worth building only if repairs change a small share of the
-// files they rewrite. This reads the `change size` lines those paths log and
-// answers that, at no model cost.
+// Output is most of a generation's cost, and both paths used to return the
+// COMPLETE file. This script answered whether a search-and-replace format was
+// worth building; it was built, and the question has moved on to whether it is
+// being asked for in the right places. Both paths now log the form they asked
+// for and the characters the reply actually came to, so the saving below is
+// MEASURED wherever those fields are present and modelled only for the older
+// records that predate them.
+//
+// What the rule under test is (repair-files.ts, patch-reply.ts): blocks for a
+// file of at least MIN_PATCH_CHARS whose every defect changes a measured tenth
+// of a file or less, and for any stylesheet above that floor; a whole file for
+// everything else. The two tables it rests on are the change share by defect,
+// printed at the bottom, and the reply cost by change band, printed per path.
 //
 //   node scripts/repair-change-size.mjs [days]      (from backend/, default 7)
 //
@@ -89,6 +97,32 @@ function verdict(rows) {
   return `PER DEFECT only: ${Math.round(kept * 100)}% overall — use it for the ids below whose median is under 20%`;
 }
 
+/*
+ * The bands the rule is drawn on, and the floor it is drawn at.
+ *
+ * Measured 2026-09-18 over 60 days on the 98 files production had patched: at a
+ * twentieth of a file the reply is 14% of it, at a fifth it is 173% — a patch
+ * carries the lines it replaces as well as the lines replacing them, so past
+ * roughly half the change it is longer than the file it changes.
+ */
+const BANDS = [
+  ['changed <= 5%', (s) => s <= 0.05],
+  ['changed 5-15%', (s) => s > 0.05 && s <= 0.15],
+  ['changed 15-30%', (s) => s > 0.15 && s <= 0.3],
+  ['changed > 30%', (s) => s > 0.3],
+];
+const MIN_PATCH_CHARS = 2000;
+
+/** Reply characters against the file they rewrote — the measurement, not the model. */
+function cost(rows) {
+  const have = rows.filter((r) => Number.isFinite(r.replyChars) && r.outChars > 0);
+  if (have.length === 0) return null;
+  return {
+    n: have.length,
+    share: have.reduce((a, r) => a + r.replyChars, 0) / have.reduce((a, r) => a + r.outChars, 0),
+  };
+}
+
 function report(label, rows) {
   if (rows.length === 0) {
     console.log(`${label}: no records yet`);
@@ -103,6 +137,34 @@ function report(label, rows) {
   console.log(`  output a patch format would still emit: ~${Math.round((kept / Math.max(outChars, 1)) * 100)}% of today's`);
   console.log(`  (estimated counts: ${rows.filter((r) => r.estimated).length}, which over-state the change)`);
   console.log(`  verdict: ${verdict(rows)}`);
+
+  /*
+   * What the replies actually cost, which is the only number that can say
+   * whether the rule is asking for the right form. A share above 100% is a
+   * patch that cost more than sending the file would have.
+   */
+  const byFormat = new Map();
+  for (const r of rows) {
+    const f = r.format ?? 'unrecorded';
+    byFormat.set(f, [...(byFormat.get(f) ?? []), r]);
+  }
+  const overall = cost(rows);
+  if (overall) {
+    console.log(`  measured reply cost: ${Math.round(overall.share * 100)}% of the files rewritten (${overall.n} replies)`);
+    for (const [f, rs] of [...byFormat].sort()) {
+      const c = cost(rs);
+      if (c) console.log(`    ${f.padEnd(11)} n=${String(c.n).padStart(3)}  ${Math.round(c.share * 100)}%`);
+    }
+    for (const [name, inBand] of BANDS) {
+      const c = cost(rows.filter((r) => r.format === 'patch' && inBand(r.changedShare ?? 0)));
+      if (c) console.log(`    patch, ${name.padEnd(15)} n=${String(c.n).padStart(3)}  ${Math.round(c.share * 100)}%`);
+    }
+    const under = rows.filter((r) => r.format === 'patch' && (r.outChars ?? 0) < MIN_PATCH_CHARS);
+    if (under.length > 0) {
+      const c = cost(under);
+      console.log(`    patched under the ${MIN_PATCH_CHARS}-character floor: ${under.length} files at ${Math.round(c.share * 100)}% — these should not be patched`);
+    }
+  }
 }
 
 const repairs = fetchAll('File repair change size');
@@ -121,6 +183,19 @@ for (const r of repairs) for (const id of r.defects ?? []) {
 }
 const rows = [...byDefect].filter(([, l]) => l.length >= 5).sort((a, b) => pct(a[1], 0.5) - pct(b[1], 0.5));
 if (rows.length > 0) {
+  /*
+   * This is the table CHANGE_SHARE in repair-files.ts is built from. A row at or
+   * under the ceiling is asked for as blocks; everything else is asked for whole.
+   * Re-running this is how that table is re-derived — the medians move as the
+   * pipeline changes, and `visual-typography` has already been 85% and 3%.
+   */
+  const CEILING = 0.1;
   console.log('\nrepair change share by defect (files carrying it, n>=5):');
-  for (const [id, l] of rows) console.log(`  ${id.padEnd(26)} n=${String(l.length).padStart(3)}  median ${fmt(pct(l, 0.5))}`);
+  for (const [id, l] of rows) {
+    const m = pct(l, 0.5);
+    console.log(`  ${id.padEnd(26)} n=${String(l.length).padStart(3)}  median ${fmt(m)}  ${m <= CEILING ? 'patch' : 'whole'}`);
+  }
+  console.log(`\n  Paste the rows marked "patch" into CHANGE_SHARE in src/orchestration/repair-files.ts:`);
+  for (const [id, l] of rows.filter(([, l]) => pct(l, 0.5) <= CEILING))
+    console.log(`    '${id}': { median: ${pct(l, 0.5).toFixed(2)}, of: ${l.length} },`);
 }

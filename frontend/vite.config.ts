@@ -48,28 +48,6 @@ function frameworkRuntimes(): Plugin {
         `window.ReactDOM = Object.assign({}, ReactDOM, { createRoot, hydrateRoot });`,
       global: '__react_runtime',
     },
-    'virtual:svelte-runtime': {
-      /**
-       * The legacy flag is imported for its side effect, not its exports.
-       *
-       * Svelte's compiler emits `import 'svelte/internal/flags/legacy'` for any
-       * component that does not use runes — which includes a shell component
-       * that only composes other components and holds no state of its own.
-       * Measured: without it the preview died with
-       * `Module not found: svelte/internal/flags/legacy`. Importing it here sets
-       * the flag once for the whole bundle, so the module map can answer that
-       * specifier with an empty object.
-       */
-      entry:
-        `import 'svelte/internal/flags/legacy';` +
-        // Two namespaces, because they are two different modules: the compiler's
-        // output imports 'svelte/internal/client', while `mount` — what an entry
-        // module calls — is only on the public 'svelte' entry. Exposing just the
-        // internal one left `mount` undefined and the app died on its first line.
-        `export * from 'svelte/internal/client';` +
-        `export * as __public from 'svelte';`,
-      global: '__svelte_internal',
-    },
   };
   return {
     name: 'framework-runtimes',

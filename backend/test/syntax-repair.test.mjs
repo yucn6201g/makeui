@@ -188,9 +188,6 @@ const fenceDoc = (kind, path, body) => {
     kind === 'vue'
       ? [fence('src/main.ts', "import { createApp } from 'vue'\nimport App from './App.vue'\ncreateApp(App).mount('#app')"),
          fence('src/App.vue', '<template><div /></template>')]
-      : kind === 'svelte'
-      ? [fence('src/main.ts', "import { mount } from 'svelte'\nimport App from './App.svelte'\nmount(App, { target: document.body })"),
-         fence('src/App.svelte', '<div></div>')]
       : [fence('src/main.tsx', "import { createRoot } from 'react-dom/client'\nimport App from './App'\ncreateRoot(document.getElementById('root')).render(<App />)"),
          fence('src/App.tsx', 'export default function A() { return <div /> }')];
   return `<!DOCTYPE html><html><body>\n<div id="root"></div><div id="app"></div>\n${parts.join('')}${fence(path, body)}</body></html>`;
@@ -202,8 +199,6 @@ const fenceDoc = (kind, path, body) => {
 const BROKEN = [
   ['vue', 'src/store/index.ts',
     "import { reactive } from 'vue'\nexport const s = reactive({ mode: 'list })\nexport const other = 1\n"],
-  ['svelte', 'src/lib/store.svelte.ts',
-    "export const s = $state({ mode: 'list })\nexport const other = 1\n"],
   ['react', 'src/store/types.ts',
     "export type A = { k: 'UPDATE_CART_QTY }\nexport const x = 1\n"],
 ];
@@ -225,7 +220,7 @@ for (const [kind, filePath, body] of BROKEN) {
 
 // A project that already parses is returned as it came in — this runs on every
 // generation now, so doing nothing has to be genuinely nothing.
-for (const kind of ['react', 'vue', 'svelte']) {
+for (const kind of ['react', 'vue']) {
   const good = fenceDoc(kind, 'src/lib/format.ts', "export const yen = (v: number) => `¥${v}`\n");
   const out = repairSyntax(good);
   check(`${kind}: a sound project is not touched`, out.repairs, []);

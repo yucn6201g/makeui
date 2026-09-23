@@ -42,6 +42,9 @@ const SEVERE = new Set([
   'action-dead-runtime',
   'action-throws',
   'form-inert',
+  // Worse than dead: pressing it takes the whole page with it, and a reviewer
+  // has to reload to get anything back. See runtime-audit.ts pageFrozenDefect.
+  'page-frozen',
   // Throws, or cannot load.
   'console-error',
   'syntax-error',

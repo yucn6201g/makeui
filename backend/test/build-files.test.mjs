@@ -130,10 +130,6 @@ m = await planProjectFiles(ctx('vue'), stub());
 check('the same manifest becomes .vue paths in a Vue project',
   m.screens.map((f) => f.path),
   ['src/screens/InventoryScreen.vue', 'src/screens/RequestScreen.vue']);
-m = await planProjectFiles(ctx('svelte'), stub());
-check('and .svelte paths in a Svelte project',
-  m.screens.map((f) => f.path),
-  ['src/screens/InventoryScreen.svelte', 'src/screens/RequestScreen.svelte']);
 
 // A name the model wrote badly is still turned into a valid identifier rather
 // than a path the bundler cannot resolve.

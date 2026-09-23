@@ -90,6 +90,46 @@ async function resolveJobHtml(input: Record<string, unknown>): Promise<string> {
 }
 
 /**
+ * The specification a plan revision amends, which can outgrow an async payload
+ * the way a document can — so it travels the same way.
+ */
+export async function uploadSpecIfNeeded(jobId: string, spec: string): Promise<{ revisionSpec?: string; revisionSpecS3Key?: string }> {
+  if (payloadBytes(spec) <= HTML_S3_THRESHOLD) return { revisionSpec: spec };
+  const key = `temp/${jobId}.spec.txt`;
+  await s3Client.send(new PutObjectCommand({ Bucket: OUTPUT_BUCKET_NAME, Key: key, Body: spec, ContentType: 'text/plain; charset=utf-8' }));
+  return { revisionSpecS3Key: key };
+}
+
+/**
+ * An approved plan, for /generate — the same specification, the same ceiling
+ * (120,000 characters, up to ~360KB of UTF-8 when it is mostly Japanese), and
+ * the same 256KB async-invoke limit on the worker-Lambda fallback. It was sent
+ * inline, so a long approved plan failed exactly when the Runtime was down.
+ */
+export async function uploadPlanIfNeeded(jobId: string, plan: string): Promise<{ approvedPlan?: string; approvedPlanS3Key?: string }> {
+  if (payloadBytes(plan) <= HTML_S3_THRESHOLD) return { approvedPlan: plan };
+  const key = `temp/${jobId}.plan.txt`;
+  await s3Client.send(new PutObjectCommand({ Bucket: OUTPUT_BUCKET_NAME, Key: key, Body: plan, ContentType: 'text/plain; charset=utf-8' }));
+  logger.info('Large approved plan stored in S3 for async payload', { jobId, bytes: payloadBytes(plan) });
+  return { approvedPlanS3Key: key };
+}
+
+async function resolveJobPlan(input: Record<string, unknown>): Promise<string | undefined> {
+  const plan = typeof input.approvedPlanS3Key === 'string'
+    ? await fetchAndDelete(input.approvedPlanS3Key)
+    : typeof input.approvedPlan === 'string' ? input.approvedPlan : '';
+  return plan.trim() ? plan : undefined;
+}
+
+async function resolveJobRevision(input: Record<string, unknown>): Promise<{ spec: string; plan: string; prompt: string } | undefined> {
+  if (typeof input.revisionPrompt !== 'string' || typeof input.revisionPlan !== 'string') return undefined;
+  const spec = typeof input.revisionSpecS3Key === 'string'
+    ? await fetchAndDelete(input.revisionSpecS3Key)
+    : typeof input.revisionSpec === 'string' ? input.revisionSpec : '';
+  return spec ? { spec, plan: input.revisionPlan, prompt: input.revisionPrompt } : undefined;
+}
+
+/**
  * The reference image, wherever it travelled.
  *
  * An attached image is up to 5MB of base64 — twenty times the 256KB ceiling on an
@@ -214,6 +254,7 @@ export async function runJob(job: JobRequest): Promise<void> {
           ? input.imageCaptions.filter((x: unknown): x is string => typeof x === 'string')
           : undefined,
         attachment: jobAttachment(input),
+        revision: await resolveJobRevision(input),
       });
       // Planning runs the design phase, which is most of a generation's cost —
       // and the figure now comes from the models rather than from the length of
@@ -341,7 +382,7 @@ export async function runJob(job: JobRequest): Promise<void> {
         // only one of those paths went through that validation.
         jobId,
         outputKind: normalizeKind(input.outputKind),
-        approvedPlan: typeof input.approvedPlan === 'string' && input.approvedPlan.trim() ? input.approvedPlan : undefined,
+        approvedPlan: await resolveJobPlan(input),
         // Validated at the API edge; re-checked here because the worker fallback
         // and the Runtime both enter through this function, and only one of them
         // came through that validation.

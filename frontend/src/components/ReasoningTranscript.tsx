@@ -112,10 +112,20 @@ export function ReasoningTranscript({ phases, isActive, dense = false }: Reasoni
               )}
             </button>
             {hasBody && open && (
-              <div className="rt__body">
-                {prose && <Tail className="rt__prose" text={prose} live={running} />}
-                {code && <Tail className="rt__code" text={code} live={running} />}
-              </div>
+              /*
+                One scroller for the step, not one per half.
+
+                Prose and code were each a bounded, self-scrolling pane, so a step
+                that emitted both — reasoning, then the file it decided to write —
+                showed two scrollbars stacked inside one card, and following the
+                output meant knowing which of them was moving. Reported as
+                「スクロールバーが2つあってややこしい」. They are now two blocks inside
+                a single pane that scrolls once.
+              */
+              <Tail className="rt__body" live={running} watch={`${prose.length}:${code.length}`}>
+                {prose && <div className="rt__prose">{prose}</div>}
+                {code && <div className="rt__code">{code}</div>}
+              </Tail>
             )}
           </li>
         );
@@ -142,7 +152,18 @@ export function ReasoningTranscript({ phases, isActive, dense = false }: Reasoni
  * `pre-wrap` that a `<pre>` would have brought, so the element carried no
  * meaning the class was not already carrying.
  */
-function Tail({ className, text, live }: { className: string; text: string; live: boolean }) {
+function Tail({
+  className,
+  live,
+  watch,
+  children,
+}: {
+  className: string;
+  live: boolean;
+  /** Changes whenever the content does, which is when the pane has to catch up. */
+  watch: string;
+  children: React.ReactNode;
+}) {
   const ref = useRef<HTMLDivElement>(null);
   const followRef = useRef(true);
 
@@ -157,11 +178,11 @@ function Tail({ className, text, live }: { className: string; text: string; live
   useLayoutEffect(() => {
     const el = ref.current;
     if (el && live && followRef.current) el.scrollTop = el.scrollHeight;
-  }, [text, live]);
+  }, [watch, live]);
 
   return (
     <div className={className} ref={ref} onScroll={onScroll} data-testid={className.replace('rt__', 'rt-')}>
-      {text}
+      {children}
     </div>
   );
 }

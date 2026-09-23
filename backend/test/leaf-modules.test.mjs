@@ -141,12 +141,6 @@ check('and props declared the way the project declares them', vue.includes('defi
 check('a .tsx path is not written on a Vue project',
   leafModule('src/components/icons/BackIcon.tsx', 'vue', importer('./x'), './x'), null);
 
-const sv = leafModule('src/components/icons/BackIcon.svelte', 'svelte', importer('../icons/BackIcon'), '../icons/BackIcon');
-check('Svelte gets a component', sv.includes('<svg'), true);
-// `export let` in a file the compiler reads as runes is a compile error, and
-// the project is Svelte 5 throughout.
-check('with runes, not export let', sv.includes('$props()') && !sv.includes('export let'), true);
-check('and stroke-width, not strokeWidth', sv.includes('stroke-width=') && !sv.includes('strokeWidth'), true);
 check('React uses strokeWidth', icon.includes('strokeWidth='), true);
 
 // --- every one of them parses --------------------------------------------
@@ -167,11 +161,11 @@ const CORPUS = [
   'ChevronDownIcon', 'ErrorIllustration', 'BudgetIcon', 'ImageIcon', 'CalendarIllustration',
   'PackageIcon', 'HomeEmptyIcon', 'EmptyStateIcon',
 ];
-const EXT = { react: '.tsx', vue: '.vue', svelte: '.svelte' };
+const EXT = { react: '.tsx', vue: '.vue' };
 const unwritten = [];
 const broken = [];
 const rejected = [];
-for (const kind of ['react', 'vue', 'svelte']) {
+for (const kind of ['react', 'vue']) {
   for (const name of CORPUS) {
     const p = `src/components/illustrations/${name}${EXT[kind]}`;
     const spec = `../components/illustrations/${name}`;

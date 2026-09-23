@@ -93,6 +93,17 @@ for (const b of bodies) {
   const block = b.prompt.slice(b.prompt.indexOf('画面:')).split('\n\n')[0];
   const screens = (block.match(/^- /gm) ?? []).length;
   check(`${b.id}: names at least five screens`, screens >= 5, true);
+  /*
+   * Which screens the menu holds (2026-09-23). A storefront built from this
+   * brief listed 商品詳細・チェックアウト・注文完了 in its menu and took payment
+   * for an empty cart. A brief with a detail, checkout, completion or form reached
+   * from something else says so; settings, all sections, has nothing to say.
+   */
+  if (/詳細|完了|会計|チェックアウト|申込|問い合わせ|受講画面/.test(block)) {
+    check(`${b.id}: says which screens the navigation holds`, /\nナビゲーション(?:（[^）]*）)?: /.test(b.prompt), true);
+  }
+  // Static data loads at once: a loading state is a fake delay the walk photographs.
+  check(`${b.id}: asks for no loading state`, /読み込み中/.test(b.prompt), false);
 }
 /*
  * And no brief specifies colours, fonts or radii. The design phase owns those

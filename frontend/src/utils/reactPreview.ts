@@ -1,6 +1,6 @@
 import type { VFile } from './virtualFs';
 import { RUNTIMES, compileFile, detectKind, type OutputKind } from './frameworkCompile';
-import { anchorJsx, anchorVue, anchorSvelte } from './sourceAnchors';
+import { anchorJsx, anchorVue } from './sourceAnchors';
 
 /**
  * How each kind of file gets its elements traced back.
@@ -14,7 +14,6 @@ import { anchorJsx, anchorVue, anchorSvelte } from './sourceAnchors';
 const ANCHOR_BY_EXT: { test: RegExp; anchor: (path: string, source: string) => string }[] = [
   { test: /\.[jt]sx$/, anchor: anchorJsx },
   { test: /\.vue$/, anchor: anchorVue },
-  { test: /\.svelte$/, anchor: anchorSvelte },
 ];
 
 /**
@@ -35,7 +34,7 @@ const ANCHOR_BY_EXT: { test: RegExp; anchor: (path: string, source: string) => s
  * so the extra candidates simply never match, and a single list means a `.vue`
  * imported without its extension resolves by the same rule a `.tsx` does.
  */
-const SOURCE_EXT = ['.vue', '.svelte', '.jsx', '.tsx', '.js', '.ts', '.mjs'];
+const SOURCE_EXT = ['.vue', '.jsx', '.tsx', '.js', '.ts', '.mjs'];
 
 /**
  * Every `@import` in the joined stylesheets, moved to the front.
@@ -156,7 +155,6 @@ export function findEntry(files: VFile[], kind: OutputKind = 'react'): string | 
   return boot?.path ?? null;
 }
 
-
 /**
  * Every source extension at the end of a path, including a compound one.
  *
@@ -168,7 +166,7 @@ export function findEntry(files: VFile[], kind: OutputKind = 'react'): string | 
  * components importing "../lib/store.svelte", every one of them present in the
  * project, every one reported unresolved, and the application rendered nothing.
  */
-const SOURCE_EXT_SUFFIX = /(?:\.(?:vue|svelte|tsx|ts|jsx|js|mjs))+$/
+const SOURCE_EXT_SUFFIX = /(?:\.(?:vue|tsx|ts|jsx|js|mjs))+$/
 
 function normalize(path: string): string {
   const out: string[] = [];

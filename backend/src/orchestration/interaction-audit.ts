@@ -15,6 +15,9 @@
 import { readProjectFiles } from '../tools/project-transport.js';
 import { detectKind } from '../tools/framework-compile.js';
 import { FRAMEWORKS, type OutputKind } from '../config/frameworks.js';
+import { formControlRules, smallControlFonts, textEntryControlTags } from '../tools/form-controls.js';
+import { renderedFrom } from '../tools/artwork.js';
+import { unguardedCheckouts } from '../tools/shell-fixes.js';
 
 export interface InteractionDefect {
   /** Stable id, so logs can be grouped. */
@@ -206,188 +209,20 @@ function hasNavWiring(html: string, js: string): boolean {
  * defaults, which are far too small), and a font-size resolvably below 16px — the
  * threshold at which iOS zooms the page when the field takes focus.
  */
-const TYPEABLE_INPUT_TYPES = new Set([
-  'text', 'email', 'tel', 'url', 'search', 'password', 'number', 'date', 'time', 'datetime-local',
-]);
-
-/** The opening tags of the controls a user actually types into. */
-function textEntryControlTags(html: string): string[] {
-  const tags = (html.match(/<textarea\b[^>]*>/gi) ?? []).slice();
-  for (const m of html.matchAll(/<input\b[^>]*>/gi)) {
-    const type = /\btype\s*=\s*["']([^"']+)["']/i.exec(m[0])?.[1]?.toLowerCase() ?? 'text';
-    if (TYPEABLE_INPUT_TYPES.has(type)) tags.push(m[0]);
-  }
-  return tags;
-}
-
-/**
- * The classes the document's own form controls carry.
- *
- * Without this the check only saw element selectors, and a React project styling
- * `.checkout-form__input` was read as having no sizing rule at all — reported as
- * broken while being sized correctly. The classes are taken off the actual control
- * tags, so the rules found are the rules that really apply to them, rather than
- * whatever a class-name heuristic would have guessed.
+/*
+ * `renderedFrom` — which components in a directory something else actually
+ * renders — now lives in tools/artwork.ts, with the fixup that draws what a
+ * project left undrawn. Three callers ask this question (this audit, the score
+ * and that fixup) and a second copy of it would let them disagree about the
+ * same file list.
  */
-function textEntryClasses(tags: string[]): Set<string> {
-  const classes = new Set<string>();
-  for (const tag of tags) {
-    for (const c of tag.matchAll(/\b(?:class|className)\s*=\s*["'{`]([^"'}`]*)/gi)) {
-      for (const name of c[1].split(/[\s${}]+/)) {
-        if (/^[A-Za-z_][\w-]*$/.test(name)) classes.add(name);
-      }
-    }
-  }
-  return classes;
-}
 
-/**
- * Rules that style the text-entry controls, and nothing else.
- *
- * Scoped this tightly on purpose. A first version matched any rule naming any form
- * control, and then reported a document if ANY of them set a small font — so a page
- * whose text fields were a correct 16px was flagged over its 12px language <select>
- * and its checkbox label. Checkboxes, radios and selects are not what the user types
- * into and are legitimately small; widening the net past them turned a real finding
- * into noise.
+/*
+ * The rules that style what the user types into, and which of them are too
+ * small, now live in tools/form-controls.ts — unchanged, and shared with the
+ * fixup that raises them. Two copies of "which rule styles an input" would let
+ * the report and the repair disagree about the same stylesheet.
  */
-interface ControlRule {
-  /** The file the rule was written in, for an instruction that can name it. */
-  path: string;
-  /** The selector, trimmed — what the repair has to find in that file. */
-  selector: string;
-  /** The declarations. */
-  body: string;
-}
-
-function formControlRules(doc: string, tags: string[]): ControlRule[] {
-  const classes = textEntryClasses(tags);
-  const bodies: ControlRule[] = [];
-  /*
-   * Read per file, so a finding can say where.
-   *
-   * The same text as before — each file's whole body, not just its `<style>`
-   * blocks — so the set of rules found is unchanged and no measurement moves.
-   * What is added is which file each one came from. `入力欄の font-size が
-   * 14px になっています` names the value and leaves the repair to find the rule;
-   * across the corpus that is 190 documents searching a stylesheet by hand.
-   */
-  // Prose files are dropped for the same reason `withoutProse` exists: the
-  // specification and the design guidelines carry CSS examples, and a rule the
-  // document is being told about is not a rule the document has.
-  const sources: [string, string][] = [...readProjectFiles(doc).entries()].filter(
-    ([path]) => !/\.(md|markdown|txt)$/i.test(path)
-  );
-  for (const [path, text] of sources.length > 0 ? sources : [['', doc] as [string, string]]) {
-  for (const m of text.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
-    const selector = m[1].replace(/\/\*[\s\S]*?\*\//g, '');
-    /*
-     * Comma-separated selectors are separate selectors.
-     *
-     * The exclusion ran over the whole selector text, so one rule styling both
-     * a select and a text input was discarded entirely:
-     *
-     *     .form-group select, .form-group input[type="number"] {
-     *       padding: var(--space-md); font-size: 16px;
-     *     }
-     *
-     * The `input[type="number"]` half went out with the `select`, the document
-     * read as having no sizing for its text fields at all, and it was told to
-     * add the padding it had already written. Splitting first keeps the
-     * exclusion doing what it was for — a 12px language <select> is not what
-     * the user types into — without taking a text input with it.
-     */
-    const parts = selector.split(',').filter((part) => !/checkbox|radio|\bselect\b/i.test(part));
-    if (parts.length === 0) continue;
-    const byElement = parts.some((part) => /(?:^|[\s,>+~])(?:input|textarea)\b/i.test(part));
-    const byClass = parts.some((part) =>
-      [...classes].some((c) => new RegExp(`\\.${c}(?![\\w-])`).test(part))
-    );
-    if (byElement || byClass) bodies.push({ path, selector: parts.join(',').trim(), body: m[2] });
-  }
-  }
-  return bodies;
-}
-
-/**
- * Components in `dir`, and the ones something else actually puts on screen.
- *
- * `icons` and `imagery-missing` asked whether the folder existed. Their own
- * instructions say 「ファイルを作るだけでは不十分です」 and then nothing checked
- * it, so a repair could create three files, satisfy the finding, and leave the
- * reviewer looking at a screen with no artwork on it. Measured across the
- * corpus: 127 documents have an illustrations/ folder and render none of it,
- * 106 the same for icons/, and 1,356 art files in total that nothing uses.
- *
- * Used means rendered as a tag, or named on a line that is not an import — an
- * icon can legitimately be handed around as a value:
- *
- *     icon: item.id === 'cart' ? CartIcon : undefined
- *
- * A bare `import CartIcon from …` with no other mention is not use; that is
- * exactly the shape 76 of these files have.
- */
-/**
- * Which components in a directory something else actually renders.
- *
- * Exported because the SCORE has to ask the same question. It awarded up to 6
- * points for three files existing under `src/components/illustrations/`, and the
- * audit then reported those same files for not being drawn anywhere — measured
- * on 75 stored documents, 47 of the 56 that had the directory rendered none of
- * it, and all 47 had an empty state elsewhere that drew something else instead.
- * The cheap half of the requirement paid, the expensive half did not, and a
- * repair call was spent afterwards closing the gap at a 41% success rate.
- *
- * One definition, so the two cannot drift into rewarding what the other reports.
- */
-export function renderedFrom(
-  files: Map<string, string>,
-  dir: string,
-  ext: string
-): { all: string[]; used: string[] } {
-  const all = [...files.keys()].filter((p) => p.startsWith(dir) && p.endsWith(ext));
-  const used = all.filter((path) => {
-    const name = path.split('/').pop()?.replace(/\.[^.]+$/, '') ?? '';
-    if (!name) return false;
-    const tag = new RegExp(`<${name}(?![\\w$])`);
-    const word = new RegExp(`(?<![\\w$])${name}(?![\\w$])`);
-    for (const [other, body] of files) {
-      if (other === path) continue;
-      if (tag.test(body)) return true;
-      for (const line of body.split('\n')) {
-        if (/^\s*(?:import|export)\b/.test(line)) continue;
-        if (word.test(line)) return true;
-      }
-    }
-    return false;
-  });
-  return { all, used };
-}
-
-/** Resolves `var(--x)` against the custom properties the document defines. */
-function makeValueResolver(doc: string): (value: string) => string {
-  const props = new Map<string, string>();
-  for (const m of doc.matchAll(/(--[\w-]+)\s*:\s*([^;{}]+)/g)) {
-    if (!props.has(m[1])) props.set(m[1], m[2].trim());
-  }
-  const resolve = (value: string, depth = 0): string => {
-    const v = value.trim();
-    if (depth > 4) return v;
-    const m = /^var\(\s*(--[\w-]+)\s*(?:,\s*([^()]+))?\)$/.exec(v);
-    if (!m) return v;
-    return resolve(props.get(m[1]) ?? m[2] ?? '', depth + 1);
-  };
-  return resolve;
-}
-
-/** px for a literal length, null when it is not one (a token miss, a calc, a %). */
-function toPx(value: string): number | null {
-  const m = /^(-?[\d.]+)(px|rem|em)$/.exec(value.trim());
-  if (!m) return null;
-  const n = Number(m[1]);
-  if (!Number.isFinite(n)) return null;
-  return m[2] === 'px' ? n : n * 16;
-}
 
 /**
  * Two different faults share this id, so they must not share an instruction.
@@ -420,25 +255,13 @@ function auditFormControlSizing(doc: string): InteractionDefect | null {
     };
   }
 
-  const resolve = makeValueResolver(doc);
-  const small = new Set<string>();
-  const sites: string[] = [];
-  const tokens = new Set<string>();
-  for (const r of rules) {
-    const raw = /(?:^|;)\s*font-size\s*:\s*([^;]+)/i.exec(r.body)?.[1];
-    if (!raw) continue;
-    const px = toPx(resolve(raw));
-    if (px === null || px >= 16) continue;
-    const value = raw.trim();
-    small.add(value);
-    // The token, and what it resolves to — `var(--font-size-sm)` says nothing
-    // about whether it is under the threshold, and the repair has to choose
-    // between changing the token and using a different one.
-    const token = /^var\(\s*(--[\w-]+)/.exec(value)?.[1];
-    if (token) tokens.add(`${token} = ${px}px`);
-    const where = `${r.path ? `${r.path} の ` : ''}\`${r.selector.replace(/\s+/g, ' ')}\``;
-    if (!sites.includes(where)) sites.push(where);
-  }
+  const found = smallControlFonts(doc);
+  const small = new Set(found.map((f) => f.value));
+  const sites = [...new Set(found.map((f) => `${f.path ? `${f.path} の ` : ''}\`${f.selector.replace(/\s+/g, ' ')}\``))];
+  // The token, and what it resolves to — `var(--font-size-sm)` says nothing
+  // about whether it is under the threshold, and the repair has to choose
+  // between changing the token and using a different one.
+  const tokens = new Set(found.filter((f) => f.token).map((f) => `${f.token} = ${f.px}px`));
   if (small.size > 0) {
     return {
       id: 'input-sizing',
@@ -823,6 +646,24 @@ export function reactFiles(html: string): Map<string, string> {
  * limitation: a screen reached from a list rather than from the nav has no
  * label, and printing its id would be reporting an internal name as a feature.
  */
+/**
+ * What the project's own specification calls a screen that has no menu label.
+ *
+ * A screen reached after an action — checkout, a completion — is not in
+ * NAV_ITEMS, so `screenLabels` cannot name it, and its id (`checkout-confirm`)
+ * is an internal name. SPECIFICATION.md carries a table with the id and the
+ * name side by side (「| checkout-confirm | 注文確認 | …」) in nearly every
+ * project; the name is the cell after the id. Null when there is no such row.
+ */
+export function specScreenTitle(html: string, id: string): string | null {
+  const spec = [...reactFiles(html)].find(([p]) => /(?:^|\/)SPECIFICATION\.md$/i.test(p))?.[1];
+  if (!spec) return null;
+  const q = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const row = new RegExp(`\\|\\s*\`?${q}\`?\\s*\\|\\s*([^|\\n]+?)\\s*\\|`).exec(spec);
+  const name = row?.[1].trim();
+  return name && !/^[-:]+$/.test(name) && !/^[\w-]+$/.test(name) ? name : null;
+}
+
 export function screenLabels(html: string): string[] {
   const files = reactFiles(html);
   for (const [path, content] of files) {
@@ -1408,7 +1249,7 @@ function auditProject(html: string, outputKind: OutputKind): InteractionDefect[]
         note: 'グラフが固定値で描かれていて、実際のデータを反映していません。',
         instruction:
           `${path} が固定値で描かれたグラフになっています。props で数値の配列を受け取り、` +
-          `${outputKind === 'vue' ? 'v-for' : outputKind === 'svelte' ? '{#each}' : '.map()'}` +
+          `${outputKind === 'vue' ? 'v-for' : '.map()'}` +
           ' で棒や点を描画し、軸ラベルと値を実データから出してください。' +
           '呼び出し側はストアの実際の数値を渡してください。',
       });
@@ -1428,7 +1269,15 @@ function auditProject(html: string, outputKind: OutputKind): InteractionDefect[]
           ? 'src/components/illustrations/ がありません。**新しいファイルを3つ以上作成してください** — ' +
             `例: src/components/illustrations/EmptyState${fw.componentExt}、` +
             `ContentFrame${fw.componentExt}、Wordmark${fw.componentExt}。` +
-            '空状態の線画は 120〜180px の stroke のみで var(--border) と var(--text-muted) を使い、' +
+            // Not `var(--border)` / `var(--text-muted)` by name: this instruction
+            // used to dictate those two, and 22 of 34 shipped projects drew
+            // artwork in custom properties their own stylesheet never defines —
+            // an undefined property on `stroke` computes to none, so the drawing
+            // is there and invisible. See fixUndefinedTokens.
+            '空状態の線画は 120〜180px の stroke のみ、色はこのプロジェクトの' +
+            'スタイルシートが実際に定義しているボーダー色と淡いテキスト色のトークンで' +
+            '（定義されていないカスタムプロパティを stroke に指定すると none になり、' +
+            '描いても見えません）、' +
             'アイコンを拡大したものにしないでください。\n' +
             '**そのうえで、空状態や画像枠のある画面ファイルを編集して import し、使用してください。**'
           : `src/components/illustrations/ に ${artFiles.length} 個のイラストがありますが、` +
@@ -1729,6 +1578,22 @@ export function auditShellContract(html: string, outputKind: OutputKind): Intera
             : '画面の切り替えは、各画面が既に使っているのと同じ仕組みで item.id を渡して行ってください。'),
       });
     }
+  }
+
+  // A checkout that renders its form over an empty cart — see tools/shell-fixes.ts.
+  const unguarded = unguardedCheckouts(files);
+  if (unguarded.length > 0) {
+    defects.push({
+      id: 'flow-unguarded',
+      note: 'カートが空でも、チェックアウトの画面が入力フォームのまま開けます。',
+      instruction:
+        `${unguarded.join('、')} は、カートが空のまま開かれても入力フォームや注文確定ボタンを表示します。` +
+        'ナビゲーションから外していても、URL を直接開けばこの状態になります。' +
+        'カートが空のときは、フォームの代わりに「カートに商品がありません」のような短い説明と、' +
+        '商品一覧へ戻るボタンだけを表示する分岐を、この画面の先頭に追加してください。' +
+        'カートに商品があるときの表示と動作は変えないでください。',
+      paths: unguarded,
+    });
   }
 
   return defects;

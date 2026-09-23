@@ -253,26 +253,3 @@ export function anchorVue(path: string, source: string): string {
     source.slice(end)
   );
 }
-
-/**
- * Anchors a `.svelte` component.
- *
- * The markup is everything that is not a `<script>` or `<style>` block, so the
- * regions are found by cutting those out rather than by naming one container.
- */
-export function anchorSvelte(path: string, source: string): string {
-  const blocks: { start: number; end: number }[] = [];
-  const re = /<(script|style)[^>]*>[\s\S]*?<\/\1>/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(source)) !== null) blocks.push({ start: m.index, end: m.index + m[0].length });
-
-  let out = '';
-  let cursor = 0;
-  for (const b of blocks) {
-    out += anchorMarkup(path, source, cursor, b.start, lineOf(source, cursor));
-    out += source.slice(b.start, b.end);
-    cursor = b.end;
-  }
-  out += anchorMarkup(path, source, cursor, source.length, lineOf(source, cursor));
-  return out;
-}

@@ -29,7 +29,6 @@ import { activeJobProjectIds } from '../utils/activeJob';
 const KIND_LABELS: Record<string, string> = {
   react: 'React',
   vue: 'Vue',
-  svelte: 'Svelte',
 };
 
 interface ProjectListProps {
@@ -49,7 +48,6 @@ const FRAMEWORK_TABS: { value: FrameworkFilter; label: string }[] = [
   { value: 'all', label: 'すべて' },
   { value: 'react', label: 'React' },
   { value: 'vue', label: 'Vue' },
-  { value: 'svelte', label: 'Svelte' },
 ];
 
 export function ProjectList({ onOpenProject, onNewProject }: ProjectListProps) {

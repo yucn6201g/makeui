@@ -185,6 +185,12 @@ export interface DesignPhaseInput {
   onDelta?: (fullText: string) => void
   /** Announces which specialist currently holds the brief. */
   onAgent?: (agentId: string, phase: 'started' | 'completed') => void
+  /**
+   * The specialist whose text `onDelta` now carries changed without one starting
+   * — the shown one finished while others were still writing. The caller should
+   * relabel the step. See `focusedStream`.
+   */
+  onFocus?: (agentId: string) => void
 }
 
 /** Chat-facing names; the agent ids are internal. */
@@ -198,6 +204,107 @@ const AGENT_LABELS: Record<string, string> = {
 
 export function agentLabel(id: string): string {
   return AGENT_LABELS[id] ?? id
+}
+
+/**
+ * A model that stopped writing and started repeating, cut back to where it did.
+ *
+ * Measured 2026-09-18 on a Vue storefront: `layout-architect` wrote its screens
+ * and then emitted 「 ← 」 several thousand times until it hit the model's token
+ * ceiling, at which point the SDK failed the node — 「Model reached maximum token
+ * limit. This is an unrecoverable state that requires intervention.」 The user
+ * saw a progress transcript of nothing but arrows, and the 34,349 characters
+ * that reached the build carried hundreds of them.
+ *
+ * A repetition is not content and must not be treated as either. It is spotted
+ * on the TAIL, because that is where a degenerate loop lives: everything before
+ * it is the specialist's real work and is kept.
+ *
+ * Two steps, because this runs on every delta. The cheap test is how many
+ * distinct characters the last 200 hold — prose in any language holds dozens, a
+ * loop holds two or three — and only when that fires does the precise one run.
+ */
+const RUNAWAY_UNIT = 12
+const RUNAWAY_REPEATS = 30
+const RUNAWAY_WINDOW = 4000
+/**
+ * How long a run has to be before it is a loop rather than decoration.
+ *
+ * A rule under a heading, a markdown table divider and a dotted leader are all
+ * one short unit repeated, and all of them fit on a line. A model that has
+ * stopped writing does not stop at a line: the measured one ran to the token
+ * ceiling. Two hundred characters is past every legitimate case in the corpus
+ * and far short of the failure.
+ */
+const RUNAWAY_MIN_CHARS = 200
+
+/** Whether the tail looks like a loop rather than like writing. */
+function tailIsMonotonous(text: string): boolean {
+  const tail = text.slice(-400).replace(/\s+/g, '').slice(-100)
+  return tail.length >= 40 && new Set(tail).size <= 3
+}
+
+/** `text` with a trailing run of one short repeated unit removed. */
+export function withoutRunaway(text: string): { text: string; cut: number } {
+  if (!tailIsMonotonous(text)) return { text, cut: 0 }
+  const tail = text.slice(-RUNAWAY_WINDOW).replace(/\s+$/, '')
+  const m = new RegExp(`(.{1,${RUNAWAY_UNIT}}?)\\1{${RUNAWAY_REPEATS - 1},}$`, 's').exec(tail)
+  if (!m) return { text, cut: 0 }
+  const at = text.length - text.slice(-RUNAWAY_WINDOW).length + m.index
+  const kept = text.slice(0, at).replace(/\s+$/, '')
+  const cut = text.length - kept.length
+  return cut >= RUNAWAY_MIN_CHARS ? { text: kept, cut } : { text, cut: 0 }
+}
+
+/**
+ * The live stream of a graph whose specialists run at the same time, as one
+ * specialist's text at a time.
+ *
+ * The transcript shows one running step under one label. The graph's deltas used
+ * to be appended to a single string in arrival order, and once layout, visual
+ * language and content ran in parallel that string was their tokens interleaved:
+ * 「severity: 15 + 12 = 39px → 44px に統一 ### カラーコントラスト検 'warning',」
+ * under 「コンテンツを作成中」, read back from a saved transcript. Reported as the
+ * progress text being garbled.
+ *
+ * So only the FOCUSED node's own text is forwarded — the one that started most
+ * recently, which is also the one whose label the caller put up. When it finishes
+ * while others are still writing, focus moves to the latest of those and
+ * `onFocus` says so, so the label changes with the text rather than after it.
+ */
+export function focusedStream(
+  byNode: Map<string, string>,
+  onDelta?: (fullText: string) => void,
+  onFocus?: (agentId: string) => void
+) {
+  const running: string[] = []
+  let focus: string | null = null
+  return {
+    started(id: string) {
+      if (!running.includes(id)) running.push(id)
+      focus = id
+    },
+    delta(id: string, text: string) {
+      byNode.set(id, (byNode.get(id) ?? '') + text)
+      if (focus === null) {
+        focus = id
+        onFocus?.(id)
+      }
+      // A loop is not progress: the transcript keeps the last thing the
+      // specialist actually wrote rather than filling with its repetition.
+      if (id === focus) onDelta?.(withoutRunaway(byNode.get(id)!).text)
+    },
+    completed(id: string) {
+      const at = running.indexOf(id)
+      if (at !== -1) running.splice(at, 1)
+      if (id !== focus) return
+      focus = running[running.length - 1] ?? null
+      if (focus === null) return
+      onFocus?.(focus)
+      const text = byNode.get(focus)
+      if (text) onDelta?.(text)
+    },
+  }
 }
 
 /**
@@ -256,7 +363,7 @@ function logSpecOverlap(byNode: Map<string, string>): void {
 }
 
 export async function runDesignSwarm(input: DesignPhaseInput): Promise<string> {
-  const { prompt, userId, presetName, presetSpec, outputKind, modelId, image, imageCaption, contentImages, stockImages, dataContext, requirements, specialists, onDelta, onAgent } = input
+  const { prompt, userId, presetName, presetSpec, outputKind, modelId, image, imageCaption, contentImages, stockImages, dataContext, requirements, specialists, onDelta, onAgent, onFocus } = input
 
   /**
    * `auto` puts a cache point after the tool definitions and after the last user
@@ -348,6 +455,9 @@ Your job: decide the SCREENS and the INFORMATION ARCHITECTURE.
 Name each screen, what it is for, what it shows, and how the user moves between
 them (including list -> detail with an id). Decide what state the app holds and
 which actions mutate it. Name the screen shown when no route is set.
+Say which screens the top navigation lists: only those that make sense with
+nothing selected and nothing done yet. A detail, a checkout, a confirmation or a
+完了 screen is reached from the action that makes it meaningful, not from the menu.
 
 ${presetSpec
       ? `The design system above has a COMPOSITION section describing how screens are
@@ -389,6 +499,10 @@ Rules you are enforcing:
 - No control may be decorative. If it cannot be given real behaviour, cut it.
 - Confirmation is a modal in the UI, never window.confirm.
 - An unrecognised or empty route falls back to the first screen.
+- A screen that needs something first (a selection, a cart with items, a placed
+  order) is not a nav item. The control that leads there is disabled while that
+  is false, and the screen, opened without it, shows one line of explanation and
+  a link back — never an empty form, never a blank page.
 Call lookup_interaction_patterns before deciding how a pattern should behave.
 Your output is passed to the visual designer and then the content designer.`,
     model,
@@ -684,7 +798,6 @@ specific, not larger.`,
         { text: briefText },
       ]
     : briefText
-  let streamed = ''
   let result: Awaited<ReturnType<typeof graph.invoke>> | null = null
 
   /**
@@ -702,6 +815,9 @@ specific, not larger.`,
    * assembly can proceed from whatever arrived.
    */
   const streamedByNode = new Map<string, string>()
+  /** Usage already recorded per node from the stream's metadata events. */
+  const streamedUsage = new Map<string, { input: number; output: number; read: number; write: number }>()
+  const live = focusedStream(streamedByNode, onDelta, onFocus)
   let timedOut = false
 
   if (onDelta || onAgent) {
@@ -711,29 +827,18 @@ specific, not larger.`,
       while (!step.done) {
         const ev: any = step.value
         if (ev?.type === 'beforeNodeCallEvent') {
+          live.started(ev.nodeId)
           onAgent?.(ev.nodeId, 'started')
         } else if (ev?.type === 'afterNodeCallEvent') {
-          /**
-           * Charge this specialist for its own work, if the event says what it
-           * cost.
-           *
-           * Without this the graph reports one figure when it returns, and the
-           * progress transcript — which attributes spend by differencing the
-           * running total at step boundaries — shows nothing for every design
-           * step and then the whole design cost against whichever step happened
-           * to be current when the graph finished.
-           *
-           * The sum is tracked so the graph's own total can be reconciled
-           * against it below rather than added to it. The graph total stays
-           * authoritative; this only decides WHEN it lands.
-           */
+          // The specialist's spend is already in the ledger: it is recorded from
+          // the stream's metadata events as each call ends (below).
           onAgent?.(ev.nodeId, 'completed')
+          live.completed(ev.nodeId)
         } else if (ev?.type === 'nodeStreamUpdateEvent' && ev.inner?.source === 'agent') {
           const inner = ev.inner.event
           if (inner?.type === 'modelStreamUpdateEvent' && inner.event?.type === 'modelContentBlockDeltaEvent') {
             const delta = inner.event.delta
             if (delta?.type === 'textDelta' && typeof delta.text === 'string') {
-              streamed += delta.text
               /**
                * Filed under the node the event names, not under whichever node
                * started most recently.
@@ -744,10 +849,27 @@ specific, not larger.`,
                * nothing looks broken, and the visual language ends up filed as
                * content because the content strategist happened to start last.
                */
-              const id = ev.nodeId
-              if (id) streamedByNode.set(id, (streamedByNode.get(id) ?? '') + delta.text)
-              onDelta?.(streamed)
+              if (ev.nodeId) live.delta(ev.nodeId, delta.text)
             }
+          } else if (inner?.type === 'modelStreamUpdateEvent' && inner.event?.type === 'modelMetadataEvent' && inner.event.usage && ev.nodeId) {
+            /*
+             * Each model call's usage, as it ends — see the reconciliation
+             * after the graph returns, which records only what this missed.
+             */
+            const u = inner.event.usage
+            const id = String(ev.nodeId)
+            const was = streamedUsage.get(id) ?? { input: 0, output: 0, read: 0, write: 0 }
+            const now = {
+              input: was.input + (u.inputTokens ?? 0),
+              output: was.output + (u.outputTokens ?? 0),
+              read: was.read + (u.cacheReadInputTokens ?? 0),
+              write: was.write + (u.cacheWriteInputTokens ?? 0),
+            }
+            streamedUsage.set(id, now)
+            recordTokens(u.inputTokens ?? 0, u.outputTokens ?? 0, `design:${id}`, {
+              read: u.cacheReadInputTokens ?? 0,
+              write: u.cacheWriteInputTokens ?? 0,
+            })
           }
         }
         step = await iterator.next()
@@ -820,16 +942,42 @@ specific, not larger.`,
     .map((r: any) => ({ id: String(r.nodeId ?? 'unknown'), usage: r.usage }))
     .filter((n: any) => n.usage && typeof n.usage.inputTokens === 'number')
 
+  /*
+   * Recorded as it was spent where the stream said so, reconciled here.
+   *
+   * Each model call's usage arrives in the stream as it ends and was recorded
+   * then (above), so the progress transcript can price each specialist's step.
+   * What is left for this point is only what the stream did not carry: per node,
+   * the node's own figure less what was already recorded for it; overall, the
+   * graph's figure less both. The totals are the ones the SDK reports, as before
+   * — the stream moves WHEN they land, not how much.
+   */
+  const streamedIn = [...streamedUsage.values()].reduce((n, u) => n + u.input, 0)
+  const streamedOut = [...streamedUsage.values()].reduce((n, u) => n + u.output, 0)
   if (nodeUsages.length > 0) {
     let attributedIn = 0
     let attributedOut = 0
+    const seen = new Set<string>()
     for (const { id, usage } of nodeUsages) {
-      attributedIn += usage.inputTokens
-      attributedOut += usage.outputTokens ?? 0
-      recordTokens(usage.inputTokens, usage.outputTokens ?? 0, `design:${id}`, {
-        read: usage.cacheReadInputTokens ?? 0,
-        write: usage.cacheWriteInputTokens ?? 0,
-      })
+      const s = streamedUsage.get(id) ?? { input: 0, output: 0, read: 0, write: 0 }
+      seen.add(id)
+      attributedIn += Math.max(usage.inputTokens, s.input)
+      attributedOut += Math.max(usage.outputTokens ?? 0, s.output)
+      const restIn = Math.max(0, usage.inputTokens - s.input)
+      const restOut = Math.max(0, (usage.outputTokens ?? 0) - s.output)
+      if (restIn > 0 || restOut > 0) {
+        recordTokens(restIn, restOut, `design:${id}`, {
+          read: Math.max(0, (usage.cacheReadInputTokens ?? 0) - s.read),
+          write: Math.max(0, (usage.cacheWriteInputTokens ?? 0) - s.write),
+        })
+      }
+    }
+    // A node the stream charged and the result does not list (it failed) is
+    // still spent, and already recorded.
+    for (const [id, s] of streamedUsage) {
+      if (seen.has(id)) continue
+      attributedIn += s.input
+      attributedOut += s.output
     }
     const restIn = Math.max(0, (graphUsage?.inputTokens ?? 0) - attributedIn)
     const restOut = Math.max(0, (graphUsage?.outputTokens ?? 0) - attributedOut)
@@ -857,32 +1005,28 @@ specific, not larger.`,
       })),
     })
   } else if (graphUsage) {
-    recordTokens(graphUsage.inputTokens, graphUsage.outputTokens, 'design:graph')
-  } else {
+    const restIn = Math.max(0, graphUsage.inputTokens - streamedIn)
+    const restOut = Math.max(0, graphUsage.outputTokens - streamedOut)
+    if (restIn > 0 || restOut > 0) recordTokens(restIn, restOut, 'design:graph')
+  } else if (streamedUsage.size === 0) {
     recordUnreportedCall('design-graph')
   }
 
-  /**
-   * Why this is one figure and not five.
+  /*
+   * Why the stream, and not the node events.
    *
-   * The progress transcript attributes spend per step by differencing the run's
-   * running total at step boundaries, which works wherever the ledger is told
-   * about a call as it finishes. It does not work here: the SDK reports this
-   * graph's usage only when the whole graph returns, so the five specialists'
-   * steps each show nothing and the entire design cost lands on whichever step
-   * is current at that moment.
+   * The progress transcript prices each step by differencing the run's total at
+   * step boundaries, so a specialist's spend has to reach the ledger while its
+   * step is current. The SDK's result reports usage only when the whole graph
+   * returns, and two routes into per-node usage during the run failed on
+   * measurement: `AfterNodeCallEvent.result` does not exist, and
+   * `AfterNodeCallEvent.state.usage` read 0 through every node (0 / 0 / 0 across
+   * the design steps, then 95,887 landing on the code step).
    *
-   * Two ways in were tried and measured, both failing:
-   *   - `AfterNodeCallEvent.result` — the event has no such field. It carries
-   *     `orchestrator`, `state`, `nodeId`, `invocationState`, `error`.
-   *   - `AfterNodeCallEvent.state.usage` — documented as "aggregated token usage
-   *     across all node results", but observed as 0 through every node and
-   *     populated only in the returned result. Two consecutive runs measured
-   *     0 / 0 / 0 across the design steps, then 95,887 landing on the code step.
-   *
-   * So the coarse figure is what is honest today. Fixing it properly means
-   * either per-node usage from the SDK or running the specialists as separate
-   * calls, and neither is worth doing behind a progress label.
+   * The model's own stream does carry it: Bedrock ends every call with a
+   * metadata event holding that call's usage, and it arrives inside the node's
+   * stream update, named with the node. That is recorded as it comes, and the
+   * figures above only settle what it missed.
    */
 
 
@@ -899,7 +1043,85 @@ specific, not larger.`,
   // the only record of what the specialists wrote. It also backfills any node
   // the result object happened not to carry.
   for (const [id, text] of streamedByNode) {
-    if (!byNode.has(id) && text.trim().length > 100) byNode.set(id, text.trim())
+    if (byNode.has(id)) continue
+    /*
+     * The streamed text is what a FAILED node leaves behind, and a node that
+     * failed on the token ceiling failed because it was repeating itself. Kept
+     * only for what it wrote before that.
+     */
+    const { text: usable, cut } = withoutRunaway(text.trim())
+    if (cut > 0) {
+      logger.warn('A specialist repeated itself until it ran out of tokens', {
+        node: id, kept: usable.length, cut,
+      })
+    }
+    if (usable.length > 100) byNode.set(id, usable)
+  }
+
+  /**
+   * A specialist that produced nothing is asked again, once, on its own.
+   *
+   * The graph's other three nodes hang off the layout architect, so when a node
+   * fails the run does not lose one section — it loses every section downstream
+   * of it, and the assembly below simply omits them. Nothing said so: `partial`
+   * reported the wall-clock budget and nothing else, so an incomplete
+   * specification was logged, built from, and reported to the user as a finished
+   * design phase.
+   *
+   * Measured over 60 days, 353 design phases: 313 produced all four sections and
+   * 39 did not — 11%. Eighteen of those 39 carried the architect's section
+   * ALONE. The failures are the ordinary ones a shared account meets — 「Too many
+   * requests」, 「Too many tokens per day」 — plus the token ceiling a repeating
+   * model hits, and all of them are per-node rather than per-run. The build then
+   * has no INTERACTION INVENTORY, which is the section that says what every
+   * control does, and the result is the complaint this pipeline exists to
+   * prevent: a mock whose buttons do nothing.
+   *
+   * Asking again is cheap and specific. These agents are ordinary Agents — the
+   * critic is already invoked directly a few lines below for its own reasons —
+   * and what the graph would have handed a downstream node is the source node's
+   * output, which is in hand. One attempt each, in parallel, and only for what
+   * is missing: a run where everything succeeded does not reach this at all.
+   *
+   * The pause is for the commonest cause. A throttle clears in seconds; a daily
+   * quota does not, and that attempt is lost rather than retried further.
+   */
+  const source = chain[0]
+  const sourceText = (byNode.get(source) ?? '').trim()
+  const absent = chain.filter((id) => id !== source && !(byNode.get(id) ?? '').trim())
+  if (absent.length > 0 && sourceText.length > 200) {
+    logger.warn('Specialists produced nothing; asking them directly', {
+      missing: absent.join(','),
+      from: source,
+      sourceChars: sourceText.length,
+    })
+    await new Promise((resolve) => setTimeout(resolve, 5_000))
+    await Promise.all(
+      absent.map(async (id) => {
+        onAgent?.(id, 'started')
+        onFocus?.(id)
+        const retryStarted = Date.now()
+        try {
+          const solo = await byId[id].invoke(
+            `${briefText}\n\n══ ${SECTION_TITLE[source]} ══\n${sourceText}`
+          )
+          const usage = usageFromStrandsResult(solo)
+          if (usage) recordTokens(usage.inputTokens, usage.outputTokens, `design:${id}`)
+          else recordUnreportedCall(`design:${id}`)
+          const { text: body } = withoutRunaway(textOf(solo.lastMessage?.content).trim())
+          if (body.length > 100) {
+            byNode.set(id, body)
+            logger.info('A specialist recovered on its own', { node: id, chars: body.length, durationMs: Date.now() - retryStarted })
+          } else {
+            logger.warn('A specialist asked again still produced nothing', { node: id, chars: body.length })
+          }
+        } catch (e) {
+          recordUnreportedCall(`design:${id}`)
+          logger.warn('A specialist asked again failed', { node: id, error: String(e), durationMs: Date.now() - retryStarted })
+        }
+        onAgent?.(id, 'completed')
+      })
+    )
   }
 
   /*
@@ -1004,6 +1226,12 @@ specific, not larger.`,
     )
   }
 
+  /*
+   * Partial means the specification is short of a section, not merely that the
+   * clock ran out. Reporting only the timeout is what let 39 runs in 60 days
+   * record `partial: false` while carrying one section of four.
+   */
+  const stillMissing = chain.filter((id) => !sections.has(SECTION_TITLE[id]))
   logger.info('Design graph completed', {
     durationMs: Date.now() - started,
     specChars: text.length,
@@ -1011,7 +1239,8 @@ specific, not larger.`,
     sections: [...sections.keys()].join(','),
     corrections: corrections.join(',') || 'none',
     nodes: result?.results?.map((r) => `${r.nodeId}:${r.status}`).join(',') ?? 'partial',
-    partial: timedOut,
+    partial: timedOut || stillMissing.length > 0,
+    missing: stillMissing.join(',') || 'none',
   })
   return text
 }
@@ -1188,6 +1417,15 @@ export interface ChangeSpecInput {
    * or a screen that now needs search and paging.
    */
   dataContext?: string
+  /**
+   * What the project says about itself — see change-diagnosis.ts.
+   *
+   * This designer was handed the screen NAMES and the instruction and nothing
+   * of the project it was specifying a change to. Asked 「画像が出てないんだけど
+   * どうすべき？」, it could only ask four questions back, every one of them
+   * answerable from the source.
+   */
+  facts?: string
   onDelta?: (fullText: string) => void
 }
 
@@ -1203,7 +1441,7 @@ export interface ChangeSpecInput {
  * work is bounded by the instruction.
  */
 export async function specifyChange(input: ChangeSpecInput): Promise<string> {
-  const { instruction, html, presetName, presetSpec, modelId, image, dataContext, onDelta } = input
+  const { instruction, html, presetName, presetSpec, modelId, image, dataContext, facts, onDelta } = input
 
   const model = new BedrockModel({
     modelId,
@@ -1238,10 +1476,19 @@ ${image ? '\nAn image is attached. It is the reference for this change: read the
 
 The build is checked against your specification, so be exact and be complete.
 
+You are given PROJECT FACTS measured from the current source when they are
+available. A request that describes a problem or asks what to do is a request to
+find the cause and fix it: name the cause from the facts, then specify the fix.
+Never answer with questions for the user. Where something is genuinely
+ambiguous, choose the most reasonable reading and state it as an assumption
+(「〜と判断しました」).
+
 Produce, for this change only:
 1. SCREENS — any screen added or altered. For a new one: its id, where it is
-   reached from, and what it shows. It must be added to the navigation and to the
-   route table, and an unknown route must still fall back to the first screen.
+   reached from, and what it shows. It must be added to the route table — and to
+   the navigation only when it makes sense with nothing selected (a detail,
+   checkout or 完了 screen is reached from its action) — and an unknown route must
+   still fall back to the first screen.
 2. CONTROLS — every control involved, one line each: where it lives, what the
    user does, and exactly what changes as a result (which state key is written,
    which screens re-render).
@@ -1267,7 +1514,7 @@ state keys, CSS property names, hex values.`,
 
   const briefText = `Existing UI: ${isReact ? 'TypeScript React project' : 'single HTML document'}, screens: ${screens.join(', ') || '(none detected)'}
 
-Edit request: "${instruction}"${dataContext ?? ''}
+Edit request: "${instruction}"${dataContext ?? ''}${facts ?? ''}
 
 Specify this change.`
   const brief = image

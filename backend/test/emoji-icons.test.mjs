@@ -46,10 +46,9 @@ const trash = replaceEmoji('src/screens/CartScreen.tsx', '<button aria-label={`$
 const gear = replaceEmoji('src/components/ui/Header.tsx', '<span className="logo-icon">⚙</span>', 'react');
 check('the drawing follows what the glyph depicts', trash.body.includes('M4 7h16') && gear.body.includes('M12 15a3 3'), true);
 check('a glyph nothing matches still gets a drawing, not a hole', replaceEmoji('src/App.tsx', '<i>🦄</i>', 'react').body.includes('<svg'), true);
-check('a variation selector travels with its glyph', replaceEmoji('src/App.svelte', '<span>🗑️</span>', 'svelte').body.includes('M4 7h16'), true);
 
 // --- a glyph in front of a label is removed -------------------------------------------------
-const label = replaceEmoji('src/screens/DashboardScreen.svelte', '<button aria-label="CSVでダウンロード"> 📥 CSVエクスポート </button>', 'svelte');
+const label = replaceEmoji('src/screens/DashboardScreen.tsx', '<button aria-label="CSVでダウンロード"> 📥 CSVエクスポート </button>', 'svelte');
 check('a glyph before a label is removed with its space', label.body, '<button aria-label="CSVでダウンロード"> CSVエクスポート </button>');
 check('counted as removed', [label.replaced, label.removed], [0, 1]);
 check('in a heading too', replaceEmoji('src/App.vue', '<h1 class="logo">📊 売上分析</h1>', 'vue').body, '<h1 class="logo">売上分析</h1>');
@@ -63,7 +62,7 @@ check('a stylesheet is not the UI', replaceEmoji('src/styles/globals.css', '.x::
 check('nor is prose', replaceEmoji('docs/design-guidelines.md', '❌ Emoji as icons', 'react').body, '❌ Emoji as icons');
 check('a file with none is returned unchanged', replaceEmoji('src/App.tsx', '<main>在庫</main>', 'react'), { body: '<main>在庫</main>', replaced: 0, removed: 0 });
 
-const mixed = replaceEmoji('src/screens/DealScreen.svelte', '<div class="toast"> ✅ 株式会社ソルテックの金額を更新しました</div>\n<div class="icon">📭</div>', 'svelte');
+const mixed = replaceEmoji('src/screens/DealScreen.tsx', '<div class="toast"> ✅ 株式会社ソルテックの金額を更新しました</div>\n<div class="icon">📭</div>', 'svelte');
 check('no emoji survive a mixed file', EMOJI.test(mixed.body), false);
 
 // --- wiring ---------------------------------------------------------------------------------

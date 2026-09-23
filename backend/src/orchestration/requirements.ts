@@ -5,6 +5,8 @@ import { firstJsonObject } from '../utils/model-json.js';
 import { logger } from '../utils/logger.js';
 import { recordTokens, recordUnreportedCall } from '../services/token-ledger.js';
 import { reactFiles, declaredScreenIds, type InteractionDefect } from './interaction-audit.js';
+import { unreachableControls } from '../tools/keyboard-reach.js';
+import type { OutputKind } from '../config/frameworks.js';
 
 /**
  * What the user asked for, as a list the finished project can be checked against.
@@ -88,8 +90,8 @@ export interface RequirementResult {
 }
 
 /** Where every screen is mounted, and what a place-less shared element lives in. */
-const APP_FILE = /^src\/App\.(tsx|jsx|vue|svelte)$/;
-const SCREEN_FILE = /^src\/(screens|pages|views)\/[\w-]+\.(tsx|jsx|vue|svelte)$/;
+const APP_FILE = /^src\/App\.(tsx|jsx|vue)$/;
+const SCREEN_FILE = /^src\/(screens|pages|views)\/[\w-]+\.(tsx|jsx|vue)$/;
 /** The value of `where` that means "on every screen" rather than a screen's name. */
 export const SHARED = 'shared';
 
@@ -294,6 +296,40 @@ function contains(body: string, value: string): boolean {
 }
 
 /**
+ * Tab is not a key an application handles — it is one it must not.
+ *
+ * 「商品カードはTabキーで辿れる」 was checked by looking for the string `'Tab'` in
+ * an onKeyDown, found none, and reported the requirement unmet. The build had in
+ * fact done nothing wrong by not writing one: Tab traversal is a property of the
+ * DOM, provided by using a focusable element or by putting a `tabindex` on one
+ * that is not. Code that branches on `e.key === 'Tab'` is code that has taken
+ * the browser's focus order away from the user, which is the opposite of what
+ * the requirement asks for — and it is what the instruction this check produced
+ * told the build and the repair pass to write, in those words.
+ *
+ * So Tab is checked as what it is: whether every element that responds to a
+ * click can be reached without a mouse. `tools/keyboard-reach.ts` decides that,
+ * and the same module supplies the deterministic repair, so a requirement that
+ * used to cost a model call now usually never appears.
+ *
+ * The two shapes it deliberately allows — a modal backdrop and a panel that only
+ * stops the backdrop's handler — are documented there.
+ */
+function tabTraversable(files: [string, string][]): boolean {
+  for (const [path, body] of files) {
+    const kind: OutputKind | null = /\.vue$/.test(path)
+      ? 'vue'
+      : /\.(tsx|jsx)$/.test(path) || /\.html?$/.test(path)
+        ? 'react'
+        : null;
+    if (!kind) continue;
+    const source = kind === 'vue' ? (/<template>([\s\S]*)<\/template>/.exec(body)?.[1] ?? '') : body;
+    if (unreachableControls(source, kind).length > 0) return false;
+  }
+  return true;
+}
+
+/**
  * A key name as the code would compare it — quoted — so `Enter` does not match
  * `onMouseEnter` and `Escape` does not match a comment about escaping HTML.
  */
@@ -375,10 +411,14 @@ export function checkRequirements(html: string, requirements: Requirement[]): Re
         const paths = files.filter(([, b]) => contains(b, c.value)).map(([p]) => p);
         return paths.length === 0 ? { requirement, status: 'met' } : { requirement, status: 'unmet', paths };
       }
-      case 'key':
+      case 'key': {
         // At least one: the failure this exists for was no arrow handling at all,
         // and a grid that moves left and right but not up is a design choice.
-        return { requirement, status: files.some(([, b]) => c.keys.some((k) => handlesKey(b, k))) ? 'met' : 'unmet' };
+        // Tab is asked of the DOM rather than of the source — see `tabTraversable`.
+        const handled = c.keys.some((k) => k !== 'Tab' && files.some(([, b]) => handlesKey(b, k)));
+        const tabbed = c.keys.includes('Tab') && tabTraversable(files);
+        return { requirement, status: handled || tabbed ? 'met' : 'unmet' };
+      }
       case 'screen': {
         const core = c.name.replace(/(画面|ページ)$/, '');
         return { requirement, status: files.some(([, b]) => b.includes(c.name) || (core.length >= 2 && b.includes(core))) ? 'met' : 'unmet' };
@@ -471,13 +511,22 @@ export function requirementDefects(results: RequirementResult[]): InteractionDef
         paths: r.paths,
       });
     } else if (c.kind === 'key') {
+      // Tab has its own instruction, because writing a Tab handler is the
+      // defect — see `tabTraversable`.
+      const others = c.keys.filter((k) => k !== 'Tab');
       out.push({
         id: 'requirement-unmet',
         note,
-        instruction:
-          `依頼ではキーボード操作（${c.keys.map((k) => (k === ' ' ? 'Space' : k)).join('・')}）が求められていますが、` +
-          `ソースにそのキーを処理するコードがありません（要件: ${r.requirement.text}）。` +
-          '該当するウィジェットのコンテナに onKeyDown を付け、e.key で分岐して実装してください。',
+        instruction: others.length === 0
+          ? 'クリックで反応する要素の一部が、キーボードで辿れません' +
+            `（要件: ${r.requirement.text}）。` +
+            'div や tr にクリック処理を書いている箇所に tabindex="0" を付け、' +
+            'Enter と Space で同じ動作をする onKeyDown を足してください。' +
+            '**Tab キー自体を処理しないでください** — Tab の移動はブラウザの仕事で、' +
+            '横取りすると要件と逆の結果になります。'
+          : `依頼ではキーボード操作（${others.map((k) => (k === ' ' ? 'Space' : k)).join('・')}）が求められていますが、` +
+            `ソースにそのキーを処理するコードがありません（要件: ${r.requirement.text}）。` +
+            '該当するウィジェットのコンテナに onKeyDown を付け、e.key で分岐して実装してください。',
       });
     }
   }
@@ -534,10 +583,20 @@ function checkableLines(requirements: Requirement[], audience: 'build' | 'design
     }
     else if (c.kind === 'absent') lines.push(`- Never show the text 「${c.value}」. (${r.text})`);
     else if (c.kind === 'key') {
-      const keys = c.keys.map((k) => (k === ' ' ? 'Space' : k)).join(', ');
-      lines.push(audience === 'build'
-        ? `- Handle the key(s) ${keys} in onKeyDown. (${r.text})`
-        : `- Name the control that handles the key(s) ${keys}, and what each key does. (${r.text})`);
+      // Tab is stated as what is checked: focus order, not a handler. Telling a
+      // build to "handle Tab in onKeyDown" is telling it to break Tab.
+      const others = c.keys.filter((k) => k !== 'Tab');
+      if (c.keys.includes('Tab')) {
+        lines.push(audience === 'build'
+          ? `- Make every element that responds to a click reachable by Tab: use a button or an anchor, or put tabindex="0" and an Enter/Space onKeyDown on it. Do NOT handle the Tab key itself. (${r.text})`
+          : `- Say which elements the keyboard reaches in order, and what Enter does on each. (${r.text})`);
+      }
+      if (others.length > 0) {
+        const keys = others.map((k) => (k === ' ' ? 'Space' : k)).join(', ');
+        lines.push(audience === 'build'
+          ? `- Handle the key(s) ${keys} in onKeyDown. (${r.text})`
+          : `- Name the control that handles the key(s) ${keys}, and what each key does. (${r.text})`);
+      }
     }
     /*
      * A screen, by the user's name for it. The checker finds a screen by that

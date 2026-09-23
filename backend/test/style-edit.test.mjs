@@ -69,7 +69,7 @@ const docFor = (kind) => project(
   fence('src/styles/globals.css', SHEET)
 );
 
-for (const kind of ['react', 'vue', 'svelte']) {
+for (const kind of ['react', 'vue']) {
   const doc = docFor(kind);
   check(`${kind}: the project compiles to begin with`, toRunnableDocument(doc, kind).error, null);
 

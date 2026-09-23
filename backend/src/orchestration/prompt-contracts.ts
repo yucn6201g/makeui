@@ -59,7 +59,18 @@ FORM CONTROLS — size them to be typed into. These are minimums, not suggestion
     box floating in a 1200px page is the single most common thing to get wrong here.
   checkbox / radio: 18-20px box, inside a label row with a 44px hit area.
   Label above the control, helper and error text below it, tied with aria-describedby.
-  Never rely on the placeholder as the label — it disappears the moment typing starts.`
+  Never rely on the placeholder as the label — it disappears the moment typing starts.
+
+TYPE HIERARCHY — the page has to say what is the page and what is beside it:
+  The screen's own title is the largest text on that screen, and visibly so: at
+  least 1.5x the body size and heavier, with every panel heading beside it —
+  a sidebar's 「フィルタ」, a card's caption — a clear step smaller. A title set
+  at the same size as the filter label next to it reads as two labels rather
+  than a page and its controls; a user reported exactly that
+  (「ページ見出し『商品一覧』が小さく、左サイドバーの『フィルタ』と同じ大きさで
+  階層感がありません」). Of 34 shipped projects, 6 set h1 no larger than h2 and
+  one set it SMALLER, so this is worth checking your own stylesheet for.
+  Use one scale for the whole project and take every heading from it.`
 
 /**
  * What goes where a photograph would.
@@ -354,17 +365,16 @@ export function stylesheetContract(kind: OutputKind): string {
 ══════════════════════════════════════════════
 A SCOPED <style> BLOCK IS NOT WHERE THE DESIGN LIVES
 ══════════════════════════════════════════════
-${kind === 'vue' ? 'Vue' : 'Svelte'} scopes a component's <style> to that component, which makes it the
+Vue scopes a component's <style> to that component, which makes it the
 natural place to put styling and the wrong place to put the design. Measured
 across real runs of one brief:
 
   React   globals.css 21–27k, 116–160 rules, scoped blocks  0
   Vue     globals.css  6–12k,  13– 77 rules, scoped 17–23k over  6–12 blocks
-  Svelte  globals.css  0–10k,   0– 53 rules, scoped 16–31k over  9–16 blocks
 
-Vue and Svelte were not writing less CSS. They were writing MORE of it, once per
-component — so every component defined its own card, its own button, its own
-spacing, and no two screens agreed. One Svelte run shipped no globals.css at all.
+Vue was not writing less CSS. It was writing MORE of it, once per component — so
+every component defined its own card, its own button, its own spacing, and no two
+screens agreed.
 
 So: every shape that appears on more than one screen, or in more than one
 component, belongs in src/styles/globals.css as a class. A scoped <style> is
@@ -484,17 +494,6 @@ export function projectContract(kind: OutputKind): string {
     <script setup lang="ts">
     withDefaults(defineProps<{ size?: number }>(), { size: 20 })
     </script>`
-      : kind === 'svelte'
-      ? `    <!-- src/components/icons/CalendarIcon.svelte -->
-    <script lang="ts">
-      let { size = 20 }: { size?: number } = $props()
-    </script>
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-         stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
-         stroke-linejoin="round" aria-hidden="true">
-      <rect x="3" y="4" width="18" height="18" rx="2" />
-      <path d="M16 2v4M8 2v4M3 10h18" />
-    </svg>`
       : `    interface IconProps { size?: number; className?: string }
     export function CalendarIcon({ size = 20, className }: IconProps) {
       return (
@@ -510,7 +509,8 @@ export function projectContract(kind: OutputKind): string {
   return `
   THE SHELL CARRIES THE NAVIGATION. NAV_ITEMS is not a type exercise: the shell
   renders it as a real navigation (sidebar or top bar), marks the active entry
-  with aria-current="page", and every screen is reachable from it. Measured on a
+  with aria-current="page", and every screen is reachable — from it, or from the
+  action that makes the screen meaningful. Measured on a
   real nine-screen build, routes.ts declared NAV_ITEMS and ${shell} rendered
   "<header><h1>title</h1></header><main>{screen}</main>" — so nothing could be
   reached from anything, and the app was one screen with eight dead files
@@ -543,6 +543,18 @@ NAVIGATION — this is the heart of the output. Build it first.
     export type Route = { screen: ScreenId; params?: Record<string, string> }
     export interface NavItem { id: ScreenId; label: string }
     export const NAV_ITEMS: NavItem[] = [...]     // only top-level screens
+  NAV_ITEMS holds the screens that make sense with nothing selected and nothing
+  done yet: a list, a cart, a dashboard, settings. A screen that needs something
+  first is NOT in it — a detail needs a selection, checkout needs a cart with
+  something in it, a confirmation or 完了 screen needs the action it confirms.
+  Those are reached from that action (a card click, 「レジに進む」, 「注文を確定」).
+  Measured on two storefronts: a menu listing 商品詳細・チェックアウト・注文完了
+  opened a blank detail, took payment for an empty cart and thanked the user for
+  an order never placed.
+  And each such screen still guards itself, because a hash can be typed: with no
+  selection, an empty cart or no order, it shows a short explanation and a link
+  back (「カートは空です」＋「商品一覧へ」), never the form, never a blank page. The
+  button that leads there is disabled while its precondition is false.
   src/hooks/useNavigation.ts exports useNavigation(): { route, navigate, back, canGoBack }
     - Serialises Route to the hash: '#/list', '#/detail/42'
     - Subscribes to 'hashchange' so browser back/forward genuinely work
@@ -680,8 +692,14 @@ IMAGERY — draw it, do not leave holes:
 
   src/components/illustrations/ holds the artwork, one component per piece:
     - Empty states: a simple line drawing of the thing that is missing (an empty
-      shelf, an empty calendar), 120-180px, stroke-only, using var(--border) and
-      var(--text-muted). Never an icon scaled up.
+      shelf, an empty calendar), 120-180px, stroke-only, in the border colour and
+      the muted text colour FROM THIS PROJECT'S OWN TOKENS — write the names your
+      stylesheet actually defines. An undefined custom property on \`stroke\`
+      computes to \`none\`, so a drawing in a token the stylesheet does not have
+      is a drawing nobody can see. This instruction used to name --border and
+      --text-muted; 22 of 34 shipped projects then drew invisible artwork,
+      because the presets call those colours something else. Never an icon
+      scaled up.
 
   EVERY PIECE YOU DRAW MUST BE RENDERED BY A SCREEN. A file in this folder that
   no screen imports and renders is worth nothing — it is not a mock of anything,
@@ -798,8 +816,20 @@ ${iconExample}
   So name the place first, and draw the glyphs THIS product's screens use:
     - every nav item takes one;
     - a button whose label is an action takes the glyph for that action;
-    - the empty state, the status badges and the icon-only controls take theirs.
+    - the status badges and the icon-only controls take theirs.
   If a glyph has nowhere to go, do not draw it.
+
+  AND TWO PLACES A GLYPH NEVER GOES, both reported by a user on one storefront
+  whose project held exactly one icon:
+    - ON A PHOTOGRAPH. A magnifier centred on a product image means nothing and
+      covers the thing it is centred on. If the picture is meant to zoom, that
+      is a control with a handler, not a decoration.
+    - AS AN EMPTY STATE'S PICTURE. That is the illustration's job — see IMAGERY
+      — and an icon enlarged to fill the space is the exact thing that section
+      forbids. Measured across 28 stored documents whose empty states drew
+      something: every one of them drew an icon there, and none an illustration.
+  A project with one glyph and four places that want a graphic needs three more
+  glyphs, not the same one four times.
 
 QUALITY:
 - Components stay small and single-purpose; no file over ~150 lines.

@@ -11,15 +11,17 @@ import { applyPresetFoundation } from './preset-foundation.js'
 import { repairable } from './repair-yield.js'
 import { moduleDefects } from '../tools/react-bundle.js'
 import { readProjectFiles, writeProjectFile } from '../tools/project-transport.js'
-import { appendJobEvent, updateJobStream } from '../services/job-service.js'
+import { appendJobEvent, tokenHeartbeat, updateJobStream } from '../services/job-service.js'
 import { allowedModelsForRun } from '../services/token-usage.js'
 import { auditAiTells } from './design-audit.js'
 import { planModifyWorkflow, summariseDocument } from './workflow-router.js'
 import { stripFences, getPresetSpec, presetConformance, resolveUserDesignSystem, FORM_CONTROL_SIZING } from './graph.js'
 import { describeEditReply } from './reply-text.js'
+import { diagnoseForChange } from './change-diagnosis.js'
 import { extractRequirements, checkRequirements, requirementDefects, summarizeRequirements, type RequirementResult } from './requirements.js'
 import { pickStockImages, stockImageInstructions, repairStockUrls } from '../tools/stock-images.js'
 import { assignItemImages } from '../tools/assign-images.js'
+import { resolveSubjects } from '../tools/subject-resolve.js'
 import { logger } from '../utils/logger.js'
 import { lean, restore, EMBEDDED_IMAGE_NOTE } from '../utils/embedded-images.js'
 import {
@@ -350,8 +352,8 @@ ${isProject
   }
 
   // Inject before </head>, or before </body>, or at end
-  if (/<\/head>/i.test(html)) return html.replace(/<\/head>/i, `${styleBlock}\n</head>`)
-  if (/<\/body>/i.test(html)) return html.replace(/<\/body>/i, `${styleBlock}\n</body>`)
+  if (/<\/head>/i.test(html)) return html.replace(/<\/head>/i, () => `${styleBlock}\n</head>`)
+  if (/<\/body>/i.test(html)) return html.replace(/<\/body>/i, () => `${styleBlock}\n</body>`)
   return html + '\n' + styleBlock
 }
 
@@ -907,9 +909,13 @@ export async function modifyUI(options: {
   // Same split as generateUI: the wrapper owns the ledger's lifetime so every
   // model call below reports into it without being handed anything.
   return withTokenLedger(async (ledger) => {
+    // The running total for the progress transcript — see tokenHeartbeat.
+    const heartbeat = options.jobId ? tokenHeartbeat(options.jobId, () => ledger.inputTokens + ledger.outputTokens) : null
+    if (heartbeat) ledger.onRecord = heartbeat.notify
     try {
       return await runModify(options, ledger)
     } finally {
+      if (heartbeat) await heartbeat.flush()
       // Written in `finally` so a failed run still says what it spent. A run
       // that dies after the design phase is exactly the one worth costing.
       logLedger(ledger, { run: 'runModify' })
@@ -1066,6 +1072,35 @@ async function runModify(
    * by an edit is held to the same contract as one built at generation time:
    * every control enumerated, every state write named, reverse paths included.
    */
+  /*
+   * What the project says about itself, for the requests that need it — see
+   * change-diagnosis.ts.
+   *
+   * Asked 「画像が出てないんだけどどうすべき？」, this path's designer returned
+   * questions and its file planner decided "a question, not a change", named no
+   * files, and the run fell back to rewriting the whole document — the stage
+   * that is 35% of all edit tokens over thirty days, at about 58k each time it
+   * fires. Measured only for a problem report or a request about pictures, so
+   * an ordinary edit pays nothing for it.
+   *
+   * Kept out of `dataContext` on purpose: that string being empty is what keeps
+   * a pure style edit on the stylesheet-only path, and facts in it would take
+   * every edit off that path and cost more than they save.
+   */
+  const diagnosis = diagnoseForChange(html, instruction)
+  // And an element picked on screen, which the planner could not map to a file
+  // either: 2 of the 6 declines in thirty days were 「Target element: header. …」.
+  const facts = diagnosis.problemReport || diagnosis.aboutImages || diagnosis.targeted ? diagnosis.text : ''
+  if (facts) {
+    logger.info('Change diagnosed from the source', {
+      userId,
+      chars: facts.length,
+      problemReport: diagnosis.problemReport,
+      aboutImages: diagnosis.aboutImages,
+      targeted: diagnosis.targeted,
+    })
+  }
+
   let changeSpec = ''
   if (routePlan.needsDesignPass) {
     emit('change-design', 'started')
@@ -1080,6 +1115,7 @@ async function runModify(
         modelId: selectedModel.modelId,
         image: imageInput,
         dataContext,
+        facts,
         onDelta: (full) => { if (jobId) updateJobStream(jobId, full, full.length, '変更の設計中').catch(() => {}) },
       })
       logger.info('Change specification produced', { userId, chars: changeSpec.length })
@@ -1146,7 +1182,10 @@ async function runModify(
       : undefined
 
     let plan = ''
-    let modifiedHtml = await directModify(html, instruction, selectedModel.modelId, modifyMaxTokens, dataContext, routePlan.parts, preset, onDelta, (p) => { plan = p }, changeSpec || undefined, routePlan.needsDesignPass, imageInput, stockBlock || undefined)
+    // The facts go ahead of the spec: the file planner reads the first 12,000
+    // characters of it, and a diagnosis cut off at the end is no diagnosis.
+    const specWithFacts = `${facts}${changeSpec ? `\n\n${changeSpec}` : ''}`.trim()
+    let modifiedHtml = await directModify(html, instruction, selectedModel.modelId, modifyMaxTokens, dataContext, routePlan.parts, preset, onDelta, (p) => { plan = p }, specWithFacts || undefined, routePlan.needsDesignPass, imageInput, stockBlock || undefined)
     if (jobId) await updateJobStream(jobId, modifiedHtml, modifiedHtml.length, '変更を適用中').catch(() => {})
     emit('modifying', 'completed')
 
@@ -1503,7 +1542,10 @@ async function runModify(
      * adds a product to a catalogue is exactly as likely to put an office desk
      * on it as the original build was.
      */
-    const assigned = await assignItemImages(modifiedHtml)
+    const assigned = await assignItemImages(modifiedHtml, {
+      brief: instruction,
+      resolveNames: resolveSubjects,
+    })
     if (assigned.assignments.length > 0) {
       modifiedHtml = assigned.html
       logger.info('Photographs matched to their subjects in edit', {

@@ -106,9 +106,98 @@ const RUN = {
   check('and the errors are counted', /コンソールエラー 2件/.test(text), true);
 }
 
+// --- a screen closed to the walk by design is not a screen that failed ----------------
+/*
+ * The 2026-09-23 storefronts would not open checkout over an empty cart — the
+ * behaviour asked for — and the reply said 「5画面中 3画面に到達しました」,
+ * which reads as two broken screens. The walk clicks; it fills no form and puts
+ * nothing in a cart, so screens the project reaches only after an action are
+ * named as that instead.
+ */
+{
+  const all = describeOutcome({ ...RUN, reached: 3, afterAction: ['チェックアウト', '注文完了'] });
+  check('when every miss is behind an action, the reachable ones are all reached',
+    all.includes('操作なしで開ける3画面すべてに到達しました。残る2画面（チェックアウト・注文完了）は、'), true);
+  check('and it says why the walk did not open the rest', /巡回では入力や確定をしないため開いていません/.test(all), true);
+  check('with no shortfall stated', /5画面中/.test(all), false);
+
+  const mixed = describeOutcome({ ...RUN, reached: 2, afterAction: ['注文完了'] });
+  check('a real miss beside one behind an action is still a shortfall',
+    mixed.includes('5画面中 2画面に到達しました（ほかに、前の操作の後に開く画面が1つあります（注文完了））'), true);
+
+  const unnamed = describeOutcome({ ...RUN, reached: 4, afterAction: [''] });
+  check('an unnamed screen is counted, not named by its id',
+    unnamed.includes('残る1画面は、'), true);
+  check('no afterAction, the old sentence', /5画面中 3画面に到達しました/.test(describeOutcome({ ...RUN, reached: 3 })), true);
+
+  const graph = fs.readFileSync(path.join(root, 'src/orchestration/graph.ts'), 'utf8');
+  check('the run fills it from the screens the project navigates to',
+    /afterAction: scoredFacts[\s\S]{0,200}navigatedToInCode\(finalHtml, id\)[\s\S]{0,80}specScreenTitle\(finalHtml, id\)/.test(graph), true);
+}
+
 // Nothing to say is nothing added, rather than an empty heading.
 check('a run with no facts adds nothing', describeOutcome({ verified: false, files: 0 }),
   'ブラウザ実行による検証は行っていません（このモードでは省略されます）。');
+
+// --- asked is not the same as answered -----------------------------------------------
+/*
+ * A 仕上げ run of 2026-09-20 was told 「ブラウザ実行による検証は行っていません
+ * （このモードでは省略されます）」. 仕上げ verifies. What happened was that the
+ * generated app froze the page on its first item click, the walk went down with
+ * it, and a null result was read as "the mode skipped it" — a false statement
+ * about the product, made in the one place the user reads.
+ */
+check('a mode that does not verify says so', describeOutcome({ verified: false, verifyAttempted: false, files: 0 }),
+  'ブラウザ実行による検証は行っていません（このモードでは省略されます）。');
+{
+  const frozen = describeOutcome({
+    verified: false,
+    verifyAttempted: true,
+    verifyFailure: { reason: 'page-frozen', frozeOn: { kind: 'row', hash: '#/items', label: 'カッターナイフ' } },
+    files: 0,
+  });
+  check('a run that asked is never told its mode skipped it', /このモードでは省略/.test(frozen), false);
+  check('it says the page stopped answering', /ページが応答しなくなり/.test(frozen), true);
+  check('and names the control that did it', /「カッターナイフ」を押したところで/.test(frozen), true);
+  check('and that the score is source-only', /ソースの検査だけに基づいています/.test(frozen), true);
+}
+{
+  const other = describeOutcome({ verified: false, verifyAttempted: true, verifyFailure: { reason: 'browser' }, files: 0 });
+  check('any other failure is still a failure, not a skip', /試みましたが、完了できませんでした/.test(other), true);
+  check('and still not blamed on the mode', /このモードでは省略/.test(other), false);
+}
+// Asked, and nothing came back, and nothing said why: still not the mode.
+check('asked with no reason is a failure too',
+  /試みましたが/.test(describeOutcome({ verified: false, verifyAttempted: true, files: 0 })), true);
+// --- the critic's opinions the run does not repair -----------------------------
+/*
+ * spacing, alignment and hierarchy survive 74–95% of the runs that repair them;
+ * the critic repeats accent and artefact on the SAME screenshot 38% and 24% of
+ * the time. Listed as unresolved with a fix button, they were ~1.5 of the 5.85
+ * findings the average run shipped with. Still shown, under their own heading.
+ */
+{
+  const text = describeOutcome({
+    verified: true, verifyAttempted: true, declared: 2, reached: 2, consoleErrors: 0, files: 5,
+    defects: [
+      { id: 'action-dead-runtime', note: 'ボタンが動きません' },
+      { id: 'visual-typography', note: '見出しが小さい' },
+      { id: 'visual-spacing', note: '余白が不揃い' },
+      { id: 'visual-accent', note: 'アクセントが強い' },
+    ],
+  });
+  check('the findings a repair acts on are the unresolved ones', /未解決の指摘が2件あります。\n・ボタンが動きません\n・見出しが小さい/.test(text), true);
+  check('the opinions it does not are listed apart',
+    /デザインについての参考意見が2件あります（自動修正の対象外）。\n・余白が不揃い\n・アクセントが強い/.test(text), true);
+  // typography and density ARE repaired — measured, repairs move them — so they stay findings.
+  check('a critic finding the loop repairs stays a finding', /参考意見[\s\S]*見出しが小さい/.test(text), false);
+  check('no opinions, no heading',
+    /参考意見/.test(describeOutcome({ verified: true, declared: 1, reached: 1, files: 1, defects: [{ id: 'icons', note: 'x' }] })), false);
+}
+
+// A run that verified says nothing of any of this.
+check('a verified run carries no failure line',
+  /試みましたが|応答しなくなり|省略/.test(describeOutcome({ verified: true, verifyAttempted: true, declared: 2, reached: 2, consoleErrors: 0, files: 5 })), false);
 
 // --- and the model's own words are kept ------------------------------------------------
 //

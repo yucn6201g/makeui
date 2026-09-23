@@ -3,10 +3,11 @@ import {
   stockUrl,
   usablePhotographs,
   PHOTO_SLOT,
-  NO_IMAGE,
   type StockImage,
 } from './stock-images.js'
-import { matchSubject, SUBJECT_CATEGORY } from './subject-terms.js'
+import { matchSubject, matchSubjects, matchCategories, SUBJECT_CATEGORY } from './subject-terms.js'
+import { artworkFor, dominantHue } from './placeholder-art.js'
+import type { SubjectResolver } from './subject-resolve.js'
 import { logger } from '../utils/logger.js'
 
 /**
@@ -38,7 +39,31 @@ import { logger } from '../utils/logger.js'
 export interface Assignment {
   label: string
   subject: string | null
-  outcome: 'subject' | 'category' | 'placeholder' | 'kept'
+  /**
+   * `subject` — a photograph of the thing itself.
+   * `category` — a photograph of the right KIND of thing.
+   * `context` — the page's own domain decided it, because the name said nothing.
+   * `artwork` — a drawn panel: nothing in the library is of this, or it is not a
+   *   thing that can be photographed at all (a headline, an article).
+   * `kept` — a picture that was already there and has no item to be wrong about.
+   */
+  outcome: 'subject' | 'category' | 'context' | 'artwork' | 'kept'
+}
+
+/** What the page is about, and how to ask about names the term list cannot place. */
+export interface AssignContext {
+  /**
+   * The user's brief. Used only as the last resort before drawing: a bookshop's
+   * items are books even when every name on the page is a title.
+   */
+  brief?: string
+  /**
+   * Reads unresolved item names once per run. Injected rather than imported so
+   * the tests stay hermetic — without it, nothing here makes a model call.
+   */
+  resolveNames?: SubjectResolver
+  /** The design's own hue, so drawn panels sit beside the palette rather than across it. */
+  hue?: number
 }
 
 export interface AssignResult {
@@ -58,8 +83,20 @@ export interface AssignResult {
  * because the whole point of it is that a page shows the *same* honest gap
  * wherever a picture could not be chosen.
  */
-function placeholder(_label: string): string {
-  return NO_IMAGE
+function placeholder(label: string, hue?: number): string {
+  /**
+   * Drawn rather than announced, since 2026-09-18.
+   *
+   * The neutral block was right while a gap was rare. It is not what a page of
+   * twelve gaps needs, and half of all slots were gaps: a listing of grey boxes
+   * saying 「画像なし」 twelve times is the complaint this changed for. The panel
+   * is still not a picture of anything — see placeholder-art.ts — so the rule
+   * that a T-shirt is never illustrated with an office desk is untouched.
+   *
+   * NO_IMAGE stays exported and is still what the invented-URL repair falls back
+   * to before this pass has run.
+   */
+  return artworkFor(label, hue === undefined ? {} : { hue })
 }
 
 /** The item label nearest to an offset: the `name`/`title` of the object it sits in. */
@@ -150,10 +187,43 @@ function picker(rawLibrary: StockImage[]) {
       const near = take(byCategory.get(category), `c:${category}`)
       return near ? { url: near, tier: 'category' } : null
     },
+    /**
+     * Any photograph of this kind of thing.
+     *
+     * For the case where the item's own name settles nothing and the page's
+     * domain is all there is: 「アパレルのECサイト」 names `apparel`, so a garment
+     * is the right kind of picture even though which garment is unknown.
+     */
+    forCategory(category: string): string | null {
+      return take(byCategory.get(category), `c:${category}`)
+    },
   }
 }
 
 const HOST = process.env.CLOUDFRONT_DOMAIN || ''
+
+/**
+ * Categories whose photographs are of a THING somebody lists, sells or books.
+ *
+ * Only these may be inferred from the brief. The others — `scene`, `place`,
+ * `people`, `abstract` — are pictures of a setting, and a setting is never what
+ * an item on a list IS: 「社内の承認ワークフローを管理する画面」 mentions an office,
+ * and the first version of this fallback put a photograph of an office desk on a
+ * card called 「商品A」. That is the exact failure the per-item assignment was
+ * built to end, arriving through a new door. A drawn panel is the better answer
+ * whenever all we know is the room the product is in.
+ */
+const GOODS = new Set(['food', 'drink', 'apparel', 'electronics', 'home', 'beauty', 'leisure', 'stationery'])
+
+/**
+ * The hue drawn panels take when the document declares no colour of its own.
+ *
+ * Something rather than nothing, because "nothing" means each panel derives its
+ * own hue from its own name, and a catalogue of those came out pink, then green,
+ * then purple down a single row. A slate blue is the least opinionated thing to
+ * put next to a palette nobody described.
+ */
+const NEUTRAL_HUE = 215
 
 /**
  * Reassigns every stock photograph in the document to match what it illustrates.
@@ -200,9 +270,43 @@ const FOREIGN_IMAGE_HOSTS =
  * Runs before the assignment pass, so everything downstream sees one kind of
  * "a picture goes here" rather than two.
  */
-export function slotForeignImages(html: string): { html: string; replaced: number } {
+/**
+ * A raster photograph on ANY host — the allow-list half.
+ *
+ * The list above names the hosts a model reaches for, and a licence guarantee
+ * cannot rest on a list of offenders: `m.media-amazon.com`, `cdn.shopify.com`,
+ * `upload.wikimedia.org` (whose licences vary picture by picture) and every
+ * host nobody has thought of would ship untouched. Measured 2026-09-23 over 131
+ * stored documents the only image host in any of them was our own CDN, so this
+ * changes nothing that has happened — it makes 「必ず商用利用可能な画像」 a rule
+ * rather than an observation.
+ *
+ * Raster only. An external .svg is an icon or a logo far more often than a
+ * photograph, and a photo slot in its place would put a picture where a glyph
+ * was. Our own CDN and data: URIs (which is what a user's own upload becomes)
+ * never match.
+ */
+const ANY_RASTER = /https?:\/\/([\w.-]+)\/[^"'`\s)]*?\.(?:jpe?g|png|webp|gif|avif)(?:\?[^"'`\s)]*)?(?=["'`\s)])/gi
+
+export function slotForeignImages(
+  html: string,
+  /**
+   * The user's own words. A URL the user typed into the request is a picture
+   * they chose and are answerable for, and replacing it would be overruling
+   * them — so it is left exactly where it is.
+   */
+  userText = ''
+): { html: string; replaced: number } {
   let replaced = 0
-  const out = html.replace(FOREIGN_IMAGE_HOSTS, () => {
+  const keep = (url: string) => userText.includes(url)
+  let out = html.replace(FOREIGN_IMAGE_HOSTS, (url) => {
+    if (keep(url)) return url
+    replaced++
+    return PHOTO_SLOT
+  })
+  out = out.replace(ANY_RASTER, (url, host: string) => {
+    if (HOST && host.toLowerCase() === HOST.toLowerCase()) return url
+    if (keep(url)) return url
     replaced++
     return PHOTO_SLOT
   })
@@ -215,11 +319,74 @@ export function slotForeignImages(html: string): { html: string; replaced: numbe
   return { html: out, replaced }
 }
 
-export async function assignItemImages(html: string): Promise<AssignResult> {
+/**
+ * Every label a picture in this document hangs off, in the order the passes
+ * below will meet them.
+ *
+ * Collected before anything is rewritten, because the names have to be resolved
+ * TOGETHER: asking a model once per item would be twelve calls on a catalogue
+ * page, and asking it after the first rewrite would be asking about a document
+ * that had already given up on half of them.
+ */
+function labelsInDocument(html: string, urlPattern: RegExp): string[] {
+  const labels: string[] = []
+  const add = (label: string) => {
+    if (label && !labels.includes(label)) labels.push(label)
+  }
+  for (const m of html.matchAll(/<img\b[^>]*>/gi)) {
+    if (!m[0].match(urlPattern)) continue
+    add(labelForImgTag(html, m.index ?? 0, m[0]))
+  }
+  for (const m of html.matchAll(urlPattern)) add(labelForDataField(html, m.index ?? 0))
+  return labels
+}
+
+/**
+ * An item's picture written as a name somebody made up.
+ *
+ * Measured on a real apparel storefront (2026-09-18): every product carried
+ * `image: 'women-clothes-1'`, `image: 'wool-sweater'` — twelve of them, none a
+ * URL, none the slot, none a file in the project. The model was told to write
+ * `__PHOTO__` and wrote a plausible-looking identifier instead, which is the
+ * same reflex that made it invent Unsplash URLs before `slotForeignImages`.
+ *
+ * To every check in the pipeline these are just strings; to a browser they are a
+ * broken image, and in that storefront they were not even rendered — so the page
+ * shipped with no photographs and nothing reported anything.
+ *
+ * Turning them into the slot puts them back on the path that was built for them:
+ * the item's own name then chooses the photograph. Deliberately narrow — an
+ * image-shaped FIELD whose value is a bare identifier. A path, a URL, a data
+ * URI, an import or anything with spaces or punctuation is somebody's real
+ * intention and is left exactly as it is.
+ */
+const INVENTED_IMAGE_VALUE = /\b(image|imageUrl|imageSrc|thumbnail|thumb|photo|picture|img)\s*:\s*(['"])([A-Za-z0-9][\w-]{2,60})\2/g
+
+export function slotInventedImageValues(html: string): { html: string; replaced: number } {
+  let replaced = 0
+  const out = html.replace(INVENTED_IMAGE_VALUE, (whole, key: string, quote: string, value: string) => {
+    // A file in the project (`hero.png`) or a known token is a real reference.
+    if (/\.(png|jpe?g|webp|gif|svg|avif)$/i.test(value)) return whole
+    if (value === PHOTO_SLOT) return whole
+    replaced++
+    return `${key}: ${quote}${PHOTO_SLOT}${quote}`
+  })
+  if (replaced > 0) {
+    logger.info('Replaced invented image identifiers with photo slots', {
+      replaced,
+      why: 'a name nobody can resolve is a broken image; the slot lets the item name choose the photograph',
+    })
+  }
+  return { html: out, replaced }
+}
+
+export async function assignItemImages(html: string, context: AssignContext = {}): Promise<AssignResult> {
   // Invented external URLs become slots first, so everything below sees one
   // kind of "a picture goes here".
-  const foreign = slotForeignImages(html)
+  const foreign = slotForeignImages(html, context.brief ?? '')
   html = foreign.html
+  const invented = slotInventedImageValues(html)
+  html = invented.html
   const hasSlot = html.includes(PHOTO_SLOT)
   const hasStock = Boolean(HOST) && html.includes(`${HOST}/stock/`)
   if (!hasSlot && !hasStock) return { html, assignments: [], matched: 0, cleared: 0 }
@@ -239,13 +406,16 @@ export async function assignItemImages(html: string): Promise<AssignResult> {
     let n = 0
     const stripped = html.replace(new RegExp(PHOTO_SLOT, 'g'), (_m, offset: number) => {
       n++
-      return placeholder(labelForDataField(html, offset))
+      return placeholder(labelForDataField(html, offset), context.hue)
     })
     logger.info('No photograph library available; slots left as placeholders', { slots: n })
     return { html: stripped, assignments: [], matched: 0, cleared: n }
   }
 
   const pick = picker(library)
+  // The document's own accent, so a drawn panel belongs to this design rather
+  // than to a hue of its own. Computed once; the source does not change under us.
+  const hue = context.hue ?? dominantHue(html) ?? NEUTRAL_HUE
   const assignments: Assignment[] = []
   let matched = 0
   let cleared = 0
@@ -260,24 +430,79 @@ export async function assignItemImages(html: string): Promise<AssignResult> {
     'g'
   )
 
+  /**
+   * What each name is a picture of.
+   *
+   * Three sources, cheapest first, and each only asked what the one before it
+   * could not answer:
+   *
+   *   1. the term list, which is a substring test and free;
+   *   2. a model, once, for the names left over — 「カプチーノ」 is coffee and
+   *      「騎士団長殺し」 is a book, and no list of terms was ever going to say so;
+   *   3. the page's own domain, for names that settle nothing either way.
+   *
+   * Whatever remains is drawn rather than photographed.
+   */
+  const subjects = new Map<string, string | null>()
+  const unresolved: string[] = []
+  for (const label of labelsInDocument(html, urlPattern)) {
+    const direct = matchSubject(label)
+    subjects.set(label, direct)
+    if (!direct) unresolved.push(label)
+  }
+  if (unresolved.length > 0 && context.resolveNames) {
+    const named = await context.resolveNames(unresolved, context.brief)
+    for (const [label, subject] of named) if (subject) subjects.set(label, subject)
+  }
+
+  /**
+   * The page's domain, as a subject and as a category.
+   *
+   * Used only when a name resolved to nothing at all, and only when the brief
+   * names ONE thing — a brief mentioning three subjects tells us nothing about
+   * which of them a particular card is, and guessing there is how a page gets an
+   * illustration that contradicts its own label.
+   */
+  const briefSubjects = matchSubjects(context.brief ?? '').filter((s) => GOODS.has(SUBJECT_CATEGORY[s]))
+  const briefCategory = matchCategories(context.brief ?? '').find((c) => GOODS.has(c))
+    ?? (briefSubjects.length === 1 ? SUBJECT_CATEGORY[briefSubjects[0]] : undefined)
+  const contextSubject = briefSubjects.length === 1 ? briefSubjects[0] : undefined
+
+  /**
+   * A picture for this name, and how it was arrived at. Returns null when the
+   * answer is a drawn panel.
+   */
+  const choose = (label: string): { url: string; subject: string | null; tier: 'subject' | 'category' | 'context' } | null => {
+    const subject = subjects.get(label) ?? matchSubject(label)
+    if (subject) {
+      const chosen = pick.forSubject(subject)
+      if (chosen) return { url: chosen.url, subject, tier: chosen.tier }
+      return null
+    }
+    if (!label) return null
+    if (contextSubject) {
+      const chosen = pick.forSubject(contextSubject)
+      if (chosen) return { url: chosen.url, subject: contextSubject, tier: 'context' }
+    }
+    if (briefCategory) {
+      const url = pick.forCategory(briefCategory)
+      if (url) return { url, subject: null, tier: 'context' }
+    }
+    return null
+  }
+
   // Pass 1: <img> tags, where the label is the alt text or the heading above it.
   let out = html.replace(/<img\b[^>]*>/gi, (tag, offset: number) => {
     const url = tag.match(urlPattern)
     if (!url) return tag
     const label = labelForImgTag(html, offset, tag)
-    const subject = matchSubject(label)
-    if (!subject) {
-      assignments.push({ label, subject: null, outcome: 'placeholder' })
-      cleared++
-      return tag.replace(urlPattern, placeholder(label))
-    }
-    const chosen = pick.forSubject(subject)
+    const chosen = choose(label)
     if (!chosen) {
-      assignments.push({ label, subject, outcome: 'placeholder' })
+      assignments.push({ label, subject: subjects.get(label) ?? null, outcome: 'artwork' })
       cleared++
-      return tag.replace(urlPattern, placeholder(label))
+      return tag.replace(urlPattern, placeholder(label, hue))
     }
-    assignments.push({ label, subject, outcome: chosen.tier })
+    assignments.push({ label, subject: chosen.subject, outcome: chosen.tier })
     matched++
     return tag.replace(urlPattern, chosen.url)
   })
@@ -287,8 +512,8 @@ export async function assignItemImages(html: string): Promise<AssignResult> {
   // a literal URL is not reconsidered here.
   out = out.replace(urlPattern, (url, offset: number) => {
     const label = labelForDataField(out, offset)
-    const subject = matchSubject(label)
-    if (!subject) {
+    const chosen = choose(label)
+    if (!chosen) {
       /**
        * No label to go on is a different case from a label that matched
        * nothing: a hero band or a background has no item name and never had
@@ -302,17 +527,11 @@ export async function assignItemImages(html: string): Promise<AssignResult> {
         assignments.push({ label: '', subject: null, outcome: 'kept' })
         return url
       }
-      assignments.push({ label, subject: null, outcome: 'placeholder' })
+      assignments.push({ label, subject: subjects.get(label) ?? null, outcome: 'artwork' })
       cleared++
-      return placeholder(label)
+      return placeholder(label, hue)
     }
-    const chosen = pick.forSubject(subject)
-    if (!chosen) {
-      assignments.push({ label, subject, outcome: 'placeholder' })
-      cleared++
-      return placeholder(label)
-    }
-    assignments.push({ label, subject, outcome: chosen.tier })
+    assignments.push({ label, subject: chosen.subject, outcome: chosen.tier })
     matched++
     return chosen.url
   })
@@ -327,7 +546,7 @@ export async function assignItemImages(html: string): Promise<AssignResult> {
    */
   if (out.includes(PHOTO_SLOT)) {
     let n = 0
-    out = out.replace(new RegExp(PHOTO_SLOT, 'g'), () => { n++; return placeholder('') })
+    out = out.replace(new RegExp(PHOTO_SLOT, 'g'), () => { n++; return placeholder('', hue) })
     cleared += n
     logger.warn('Photo slots survived both passes and were blanked', { count: n })
   }

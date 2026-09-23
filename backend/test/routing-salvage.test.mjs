@@ -29,16 +29,6 @@ const check = (name, got, want) => {
   if (!ok) console.log(`      got  ${JSON.stringify(got)}\n      want ${JSON.stringify(want)}`);
   ok ? pass++ : fail++;
 };
-
-// --- which files decide what renders and where you can get to ------------------
-for (const [kind, ext] of [['react', '.tsx'], ['vue', '.vue'], ['svelte', '.svelte']]) {
-  check(`${kind}: the shell routes`, isRoutingFile(`src/App${ext}`, kind), true);
-  check(`${kind}: a screen routes`, isRoutingFile(`src/screens/HomeScreen${ext}`, kind), true);
-  check(`${kind}: the route table routes`, isRoutingFile('src/routes.ts', kind), true);
-  check(`${kind}: an icon does not`, isRoutingFile(`src/components/icons/Chevron${ext}`, kind), false);
-  check(`${kind}: the stylesheet does not`, isRoutingFile('src/styles/globals.css', kind), false);
-  check(`${kind}: a ui component does not`, isRoutingFile(`src/components/ui/Card${ext}`, kind), false);
-}
 check('the entry routes', isRoutingFile('src/main.tsx', 'react'), true);
 check('a store does not', isRoutingFile('src/store/index.ts', 'react'), false);
 

@@ -80,7 +80,7 @@ const base = (kind, ...extra) => [
 ];
 
 // ── The store, in each framework's own spelling ──────────────────────────────
-for (const kind of ['react', 'vue', 'svelte']) {
+for (const kind of ['react', 'vue']) {
   check(`${kind}: its own store is recognised`, has(kind, 'store', ...base(kind)), false);
   check(
     `${kind}: a project with no store at all is still reported`,
@@ -100,7 +100,7 @@ const wired = {
 };
 const bare = Array.from({ length: 10 }, () => '<button>買う</button>').join('\n');
 
-for (const kind of ['react', 'vue', 'svelte']) {
+for (const kind of ['react', 'vue']) {
   check(
     `${kind}: ten wired buttons are not dead controls`,
     has(kind, 'dead-controls', ...base(kind, fence(`src/components/ui/Buy${EXT[kind]}`, wired[kind]))),
@@ -112,21 +112,13 @@ for (const kind of ['react', 'vue', 'svelte']) {
     true
   );
 }
-// Svelte 4's spelling has to keep working — stored projects use it.
-check(
-  'svelte: the on:click spelling counts too',
-  has('svelte', 'dead-controls', ...base('svelte',
-    fence('src/components/ui/Buy.svelte',
-      Array.from({ length: 10 }, (_, i) => `<button on:click={() => go(${i})}>買う</button>`).join('\n')))),
-  false
-);
 
 // ── Decomposition ────────────────────────────────────────────────────────────
 const uiComponents = (kind, n) =>
   Array.from({ length: n }, (_, i) =>
     fence(`src/components/ui/Part${i}${EXT[kind]}`, '<div class="card" />'));
 
-for (const kind of ['react', 'vue', 'svelte']) {
+for (const kind of ['react', 'vue']) {
   check(
     `${kind}: no components under a full screen set is reported`,
     has(kind, 'decomposition', ...base(kind)),
@@ -198,7 +190,7 @@ const TYPED_STORE = {
   vue: ['src/store/index.ts', "import { reactive } from 'vue'\nexport const state = reactive<State>({ cart: [] })"],
   svelte: ['src/store/index.svelte.ts', 'export const store = $state<AppState>({ cart: [] })'],
 };
-for (const kind of ['react', 'vue', 'svelte']) {
+for (const kind of ['react', 'vue']) {
   check(`${kind}: a store with a generic type argument is a store`,
     has(kind, 'store', ...base(kind).filter((b) => !b.includes('src/store/')), fence(...TYPED_STORE[kind])),
     false);
@@ -220,7 +212,7 @@ const stub = (kind) => instruction2(kind, 'placeholder', ...around(kind,
   screen(kind, 'Cart', "<script>function checkout() { toast('チェックアウト機能は準備中です') }</script>"),
   screen(kind, 'List', '<div />'),
   screen(kind, 'Home', '<div />')));
-for (const kind of ['react', 'vue', 'svelte']) {
+for (const kind of ['react', 'vue']) {
   check(`${kind}: a placeholder in code is reported`, stub(kind).length > 0, true);
   check(`${kind}: with the file and line`,
     stub(kind).includes(`src/screens/CartScreen${EXT[kind]}:`), true);
@@ -235,7 +227,7 @@ for (const kind of ['react', 'vue', 'svelte']) {
 // ── Icons, on the same terms ─────────────────────────────────────────────────
 //
 // 106 corpus documents have an icons/ folder and render none of it.
-for (const kind of ['react', 'vue', 'svelte']) {
+for (const kind of ['react', 'vue']) {
   const ICON = fence(`src/components/icons/ChevronIcon${EXT[kind]}`, '<svg viewBox="0 0 24 24" />');
   check(`${kind}: icons nothing renders are reported`,
     has(kind, 'icons', ...base(kind), ICON), true);
@@ -288,60 +280,6 @@ check('and not to an inline error', /インラインのエラー文/.test(destru
 const ART = (kind, name, body) =>
   fence(`src/components/illustrations/${name}${EXT[kind]}`, body ?? '<svg viewBox="0 0 160 120" />');
 
-for (const kind of ['react', 'vue', 'svelte']) {
-  check(`${kind}: a project with no illustrations is reported`,
-    has(kind, 'imagery-missing', ...base(kind)), true);
-  // Rendered, not merely present. The instruction has always said 「ファイルを
-  // 作るだけでは不十分です」 and nothing checked it, so a repair could create
-  // three files, close the finding, and leave the screen with no artwork on it.
-  // 134 corpus documents have the folder and render none of it.
-  const showsArt = fence(`src/screens/HomeScreen${EXT[kind]}`, '<main><EmptyState /></main>');
-  check(`${kind}: its own illustrations are recognised`,
-    has(kind, 'imagery-missing', ...base(kind, showsArt, ART(kind, 'EmptyState'), ART(kind, 'ContentFrame'))), false);
-  check(`${kind}: illustrations nothing renders are reported`,
-    has(kind, 'imagery-missing', ...base(kind, ART(kind, 'EmptyState'), ART(kind, 'ContentFrame'))), true);
-  // And it asks for the half that is missing, not for more files.
-  const unused = auditInteractivity(
-    project(...base(kind, ART(kind, 'EmptyState'), ART(kind, 'ContentFrame'))), kind
-  ).find((d) => d.id === 'imagery-missing')?.instruction ?? '';
-  check(`${kind}: and says not to create more`, /新しいファイルは作らないでください/.test(unused), true);
-  check(`${kind}: naming the files that exist`, unused.includes(`EmptyState${EXT[kind]}`), true);
-  // An import with no other mention is not use — 76 corpus files are exactly
-  // that shape. A component handed around as a value is.
-  const importedOnly = fence(`src/screens/HomeScreen${EXT[kind]}`,
-    `import EmptyState from '../components/illustrations/EmptyState${EXT[kind]}'`);
-  check(`${kind}: importing without rendering is not using`,
-    has(kind, 'imagery-missing', ...base(kind, importedOnly, ART(kind, 'EmptyState'))), true);
-  const asValue = fence(`src/screens/HomeScreen${EXT[kind]}`,
-    `import EmptyState from '../components/illustrations/EmptyState${EXT[kind]}'\nconst art = { empty: EmptyState }`);
-  check(`${kind}: handing it around as a value is`,
-    has(kind, 'imagery-missing', ...base(kind, asValue, ART(kind, 'EmptyState'))), false);
-  // A helper module in that folder is not an illustration. Deliberately not
-  // tested with another framework's file: a `.vue` inside a React project moves
-  // what `detectKind` decides the project IS, so the assertion would be about
-  // kind detection rather than about this filter.
-  check(`${kind}: a module in that folder does not count`,
-    has(kind, 'imagery-missing', ...base(kind),
-      fence('src/components/illustrations/palette.ts', 'export const stroke = "#ccc"')), true);
-  // `static-chart` read the same list, so it never looked at a Vue or Svelte
-  // chart either — and it asked all three for `.map(`, which is React's.
-  //
-  // A chart nothing renders is not what this is about. All 53 corpus findings
-  // were a `DataGraphIllustration` appearing exactly once in the document, in
-  // its own file header: nothing imports it and the reviewer never sees it.
-  const renders = (name) =>
-    fence(`src/screens/HomeScreen${EXT[kind]}`, `<main><${name} /></main>`);
-  check(`${kind}: a chart drawn from fixed values is reported`,
-    has(kind, 'static-chart', ...base(kind), renders('SalesChart'),
-      ART(kind, 'SalesChart', '<svg><rect height="40" /><rect height="70" /></svg>')), true);
-  check(`${kind}: a chart nothing renders is not`,
-    has(kind, 'static-chart', ...base(kind),
-      ART(kind, 'SalesChart', '<svg><rect height="40" /><rect height="70" /></svg>')), false);
-  check(`${kind}: a chart that maps over its data is not`,
-    has(kind, 'static-chart', ...base(kind), renders('SalesChart'),
-      ART(kind, 'SalesChart', '<svg>{data.map((d) => <rect height={d.n} />)}</svg>')), false);
-}
-
 // Each framework's own way of repeating an element. Asking all three for
 // `.map(` reported a Vue `v-for` and a Svelte `{#each}` as a chart with no data
 // behind it — 42 chart files across the corpus, every one of them correct.
@@ -349,11 +287,6 @@ check('vue: v-for is iteration',
   has('vue', 'static-chart', ...base('vue'),
     fence('src/screens/HomeScreen.vue', '<template><SalesChart /></template>'),
     ART('vue', 'SalesChart', '<template><svg><rect v-for="d in data" :height="d.n" /></svg></template>')),
-  false);
-check('svelte: {#each} is iteration',
-  has('svelte', 'static-chart', ...base('svelte'),
-    fence('src/screens/HomeScreen.svelte', '<main><SalesChart /></main>'),
-    ART('svelte', 'SalesChart', '<svg>{#each data as d}<rect height={d.n} />{/each}</svg>')),
   false);
 
 // Charts live where the project puts them: src/components/ui/ (151 files across

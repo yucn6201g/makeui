@@ -35,7 +35,19 @@ export type ReplyBlock =
    * reload keeps them (see `replyWithOutcome`). `test/format-reply.test.mjs`
    * reads the backend's heading so the two cannot drift.
    */
-  | { kind: 'findings'; count: number; items: string[] };
+  | { kind: 'findings'; count: number; items: string[] }
+  /**
+   * The critic's opinions that the run does not repair, held apart from the
+   * findings it does.
+   *
+   * Five kinds of design critique — spacing, alignment, hierarchy, accent,
+   * artefact — are measured as ones no repair moves (74–95% still there at the
+   * end of a run) or that the critic itself does not repeat on the SAME
+   * screenshot (38%, 24%). They were listed as 未解決の指摘 with a fix button on
+   * each, which offered the user an edit the measurements say will not change
+   * them. They still show; they are labelled for what they are.
+   */
+  | { kind: 'opinions'; count: number; items: string[] };
 
 /**
  * The line that opens the findings, as `describeOutcome` writes it.
@@ -45,6 +57,9 @@ export type ReplyBlock =
  * still fold, and still show what they have.
  */
 const FINDINGS_HEADING = /^未解決の指摘が(\d+)件あります。(?:主なもの:)?$/;
+
+/** The line that opens the critic's opinions, as `describeOutcome` writes it. */
+const OPINIONS_HEADING = /^デザインについての参考意見が(\d+)件あります（自動修正の対象外）。$/;
 
 /**
  * Below this a sentence is a fragment, and joins the next one.
@@ -101,19 +116,28 @@ export function formatReply(content: string): ReplyBlock[] {
      * heading and its bullets become one foldable block, and anything after —
      * there is nothing today — would go back to prose.
      */
-    const at = lines.findIndex((l) => FINDINGS_HEADING.test(l.trim()));
-    if (at >= 0) {
-      const before = lines.slice(0, at);
-      let end = at + 1;
-      while (end < lines.length && isItemLine(lines[end])) end += 1;
-      if (before.length > 0) blocks.push({ kind: 'para', lines: before });
-      blocks.push({
-        kind: 'findings',
-        count: Number(FINDINGS_HEADING.exec(lines[at].trim())?.[1] ?? 0),
-        items: lines.slice(at + 1, end).map(stripMarker),
-      });
-      const after = lines.slice(end);
-      if (after.length > 0) blocks.push({ kind: 'para', lines: after });
+    /*
+     * Either heading, as many as the chunk holds — the findings and the
+     * opinions are written one after the other in the same block.
+     */
+    const heading = (l: string) => FINDINGS_HEADING.test(l.trim()) || OPINIONS_HEADING.test(l.trim());
+    if (lines.some(heading)) {
+      let prose: string[] = [];
+      let i = 0;
+      while (i < lines.length) {
+        if (!heading(lines[i])) { prose.push(lines[i]); i += 1; continue; }
+        if (prose.length > 0) { blocks.push({ kind: 'para', lines: prose }); prose = []; }
+        const line = lines[i].trim();
+        let end = i + 1;
+        while (end < lines.length && isItemLine(lines[end])) end += 1;
+        const items = lines.slice(i + 1, end).map(stripMarker);
+        const findings = FINDINGS_HEADING.exec(line);
+        blocks.push(findings
+          ? { kind: 'findings', count: Number(findings[1]), items }
+          : { kind: 'opinions', count: Number(OPINIONS_HEADING.exec(line)?.[1] ?? 0), items });
+        i = end;
+      }
+      if (prose.length > 0) blocks.push({ kind: 'para', lines: prose });
       continue;
     }
     if (lines.every(isItemLine)) {

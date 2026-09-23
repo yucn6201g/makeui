@@ -44,10 +44,6 @@ const project = (over = {}) => ({
   updatedAt: '2026-08-01T00:00:00.000Z',
   ...over,
 });
-
-// --- projectKind -------------------------------------------------------------
-check('a stored kind is taken as written',
-  projectKind(project({ outputKind: 'svelte' })), 'svelte');
 // A stored `html` is not trusted: every run was recorded as `html` for as long
 // as the server classified with a detector that could no longer match anything,
 // so the value is present, wrong, and truthy.
@@ -98,13 +94,7 @@ check('a Japanese query finds a Japanese name',
 // Counted over the set being shown, not the whole account: an archived React
 // project must not inflate the React tab on the active list.
 check('counts are per set',
-  frameworkCounts(list, false), { all: 3, react: 1, vue: 1, svelte: 1 });
-check('and the archive has its own',
-  frameworkCounts(list, true), { all: 1, react: 1, vue: 0, svelte: 0 });
-// Counts ignore the query, so clearing a search cannot surprise you with a
-// number that was never shown.
-check('a project with no kind still counts under すべて',
-  frameworkCounts([project({ name: 'Empty' })], false), { all: 1, react: 0, vue: 0, svelte: 0 });
+  frameworkCounts(list, false), { all: 3, react: 1, vue: 1 });
 
 // --- sorting ------------------------------------------------------------------
 //

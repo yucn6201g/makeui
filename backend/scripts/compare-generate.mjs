@@ -2,6 +2,10 @@
 //
 //   node scripts/compare-generate.mjs --label before [--briefs 0,1,2] [--repeat 1]
 //                                     [--no-briefing] [--preset digital-agency] [--user probe-compare] [--yes]
+//                                     [--kind react|vue] [--prompt-file brief.txt]
+//
+// --prompt-file replaces the fixed briefs with one read from a file (run as brief 0),
+// for checking a template or a user's report as it was written.
 //
 // COSTS MONEY. Each generation is a full Haiku `checked` run: about 17-20万
 // tokens, roughly 0.5 USD (measured 2026-09-14: 6 runs 3.2 USD, 3 runs 1.4 USD).
@@ -63,7 +67,14 @@ if (!label || !/^[a-z0-9-]+$/.test(label)) {
   console.error('--label is required (lowercase letters, digits and hyphens): it prefixes the job ids compare-report.mjs groups by');
   process.exit(2);
 }
-const briefs = arg('briefs', '0,1,2').split(',').map(Number);
+const promptFile = arg('prompt-file');
+if (promptFile) BRIEFS.splice(0, BRIEFS.length, (await import('node:fs')).readFileSync(promptFile, 'utf8').trim());
+const kind = arg('kind', 'react');
+if (!['react', 'vue'].includes(kind)) {
+  console.error('--kind takes react or vue');
+  process.exit(2);
+}
+const briefs = arg('briefs', promptFile ? '0' : '0,1,2').split(',').map(Number);
 if (briefs.some((b) => !(b in BRIEFS))) {
   console.error(`--briefs takes indices 0-${BRIEFS.length - 1}`);
   process.exit(2);
@@ -76,7 +87,7 @@ const preset = arg('preset');
 const outDir = arg('out', path.join(os.tmpdir(), 'makeui-compare'));
 const runs = briefs.length * repeat;
 
-console.log(`label ${label}: briefs ${briefs.join(',')} x ${repeat} = ${runs} Haiku checked generation(s), user ${user}${preset ? `, preset ${preset}` : ''}${flag('no-briefing') ? ', requirement briefing withheld' : ''}`);
+console.log(`label ${label}: briefs ${briefs.join(',')} x ${repeat} = ${runs} Haiku checked ${kind} generation(s), user ${user}${preset ? `, preset ${preset}` : ''}${flag('no-briefing') ? ', requirement briefing withheld' : ''}`);
 console.log(`estimated cost: about ${(runs * USD_PER_RUN).toFixed(1)} USD. Results: ${outDir}`);
 if (!flag('yes')) {
   console.log('Not run. Add --yes to spend it.');
@@ -112,7 +123,7 @@ async function runOne(i) {
     createdAt: { S: now }, updatedAt: { S: now }, ttl: { N: String(Math.floor(Date.now() / 1000) + 3600) },
   } }));
   const payload = { jobId, userId: user, jobType: 'generate', input: {
-    prompt: BRIEFS[i], model: 'haiku', effort: 'checked', outputKind: 'react',
+    prompt: BRIEFS[i], model: 'haiku', effort: 'checked', outputKind: kind,
     ...(preset ? { preset } : {}),
     ...(flag('no-briefing') ? { experiment: { requirementBriefing: false } } : {}),
   } };

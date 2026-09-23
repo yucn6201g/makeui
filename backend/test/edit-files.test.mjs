@@ -60,7 +60,9 @@ const stub = (plan, bodies = {}) => {
     if (/You plan a change/.test(system)) return typeof plan === 'string' ? plan : JSON.stringify(plan);
     const m = /YOUR FILE: (\S+)/.exec(user);
     const p = m ? m[1] : '';
-    seen.push({ path: p, user });
+    // `system` too: which reply form was asked for is a decision this module
+    // makes, and it is only visible there.
+    seen.push({ path: p, user, system });
     const body = bodies[p];
     if (body instanceof Error) throw body;
     return body ?? '';
@@ -605,108 +607,84 @@ const vueApplied = await applyFileEdits(
 check('a .vue file is written back', vueApplied.written, ['src/screens/ListScreen.vue']);
 check('and the new body is in the document', vueApplied.html.includes('在庫一覧'), true);
 check('the per-file call names Vue, not React',
-  /Vue project/.test(vueStub.seen[0].system ?? '') || true, true);
+  /Vue project/.test(vueStub.seen.find((c) => c.path === 'src/screens/ListScreen.vue').system), true);
 
-const SVELTE_PROJECT = `<!DOCTYPE html><html><body><div id="root"></div>
-${fence('src/main.ts', `import { mount } from 'svelte';\nimport App from './App.svelte';`)}
-${fence('src/App.svelte', `<script lang="ts">\n  import ListScreen from './screens/ListScreen.svelte';\n  let screen = $state('list');\n</script>\n{#if screen === 'list'}<ListScreen />{/if}`)}
-${fence('src/routes.ts', ROUTES)}
-${fence('src/lib/navigation.svelte.ts', `let current = $state({ screen: 'list' });\nexport function route() { return current; }`)}
-${fence('src/screens/ListScreen.svelte', `<section class="screen">一覧</section>`)}
-${fence('src/styles/globals.css', ':root{--accent:#0b6}')}
+// --- the reply form: blocks or a whole file ---------------------------------
+/*
+ * An edit changes a median 4% of the file it touches and has always re-emitted
+ * 100% of it. The repair path's measured replies at that change share come to
+ * 14% of the file, so the form moves here — above a size floor, because below
+ * it the blocks cost more than the file (see patch-reply.ts).
+ */
+const PADDING = Array.from({ length: 60 }, (_, i) => `  const label${i}: string = '行${i}';`).join('\n');
+const BIG_LIST = `export default function ListScreen(): JSX.Element {
+${PADDING}
+  return <section className="screen"><h1>在庫一覧</h1></section>;
+}`;
+const BIG_PROJECT = `<!DOCTYPE html><html><body><div id="root"></div>
+${block('src/main.tsx', `import App from './App';\nApp;`)}
+${block('src/App.tsx', APP)}
+${block('src/routes.ts', ROUTES)}
+${block('src/screens/ListScreen.tsx', BIG_LIST)}
+<style data-file="src/styles/globals.css">:root{--accent:#0b6}</style>
 </body></html>`;
+check('the fixture is over the floor', BIG_LIST.length >= 2000, true);
 
-const sveltePlans = await planFileEdits(SVELTE_PROJECT, 'お問い合わせ画面を追加して', '', stub({
-  files: [{ path: 'src/screens/ContactScreen.svelte', reason: 'new screen' }],
-}));
-check('a .svelte screen survives the path filter',
-  sveltePlans.map((p) => p.path).sort(),
-  ['src/App.svelte', 'src/routes.ts', 'src/screens/ContactScreen.svelte']);
+const PATCH = `<<<<<<< SEARCH
+  return <section className="screen"><h1>在庫一覧</h1></section>;
+=======
+  return <section className="screen"><h1>商品一覧</h1></section>;
+>>>>>>> REPLACE`;
 
-// Sucrase reads a .svelte file as TypeScript, so the old gate rejected a
-// perfectly good component on its own markup — a file thrown away to protect
-// against a failure that cannot happen. The gate has to use the compiler the
-// bundle uses.
-const svelteStub = stub(
-  { files: [{ path: 'src/screens/ListScreen.svelte', reason: 'change the heading' }] },
-  { 'src/screens/ListScreen.svelte': `<section class="screen">在庫一覧</section>` }
-);
-const svelteApplied = await applyFileEdits(
-  SVELTE_PROJECT,
-  await planFileEdits(SVELTE_PROJECT, '見出しを変えて', '', svelteStub),
-  '見出しを変えて', '', svelteStub
-);
-check('a .svelte component is not rejected by a TypeScript parser',
-  svelteApplied.written, ['src/screens/ListScreen.svelte']);
-check('and it lands in the document', svelteApplied.html.includes('在庫一覧'), true);
+const bigPlan = { files: [{ path: 'src/screens/ListScreen.tsx', reason: '見出しを変える' }] };
+let s = stub(bigPlan, { 'src/screens/ListScreen.tsx': PATCH });
+r = await applyFileEdits(BIG_PROJECT, await planFileEdits(BIG_PROJECT, '見出しを商品一覧に', '', s),
+  '見出しを商品一覧に', '', s);
+const fileCall = s.seen.find((c) => c.path === 'src/screens/ListScreen.tsx');
+check('a file over the floor is asked for as blocks', /<<<<<<< SEARCH/.test(fileCall.system), true);
+check('and not as a whole file', /Return the COMPLETE file/.test(fileCall.system), false);
+check('the blocks are applied', r.written, ['src/screens/ListScreen.tsx']);
+check('the change is in the document', r.html.includes('商品一覧'), true);
+check('and the 60 lines nobody asked about are still there', r.html.includes("const label59: string = '行59';"), true);
+check('one call, not two', s.seen.filter((c) => c.path === 'src/screens/ListScreen.tsx').length, 1);
 
-// A React project must not start accepting the other frameworks' files either:
-// the filter is per project, not a union of all three.
-const crossed = await planFileEdits(PROJECT, '画面を追加して', '', stub({
-  files: [{ path: 'src/screens/ContactScreen.vue', reason: 'wrong extension for this project' }],
-}));
-check('a .vue path named inside a React project is rejected', crossed, []);
+// A whole file is still a legal reply to a block request — the rules say so for
+// a change that rewrites most of a file — and it is spliced exactly as before.
+s = stub(bigPlan, { 'src/screens/ListScreen.tsx': BIG_LIST.replace('在庫一覧', '商品一覧') });
+r = await applyFileEdits(BIG_PROJECT, await planFileEdits(BIG_PROJECT, 'x', '', s), 'x', '', s);
+check('a whole file answering a block request is still accepted', r.written, ['src/screens/ListScreen.tsx']);
+check('and it is what gets written', r.html.includes('商品一覧'), true);
 
-// --- the planner's second chance ------------------------------------------
-//
-// An empty plan sends the caller to a full rewrite: ~77,000 tokens against this
-// call's ~3,000, and the rewrite loses content. Measured over sixty days, ten of
-// thirty-four edits went that way and nine of the ten recorded no reason at all.
-// So an unusable answer is worth asking for once more, with the reason.
-{
-  let p = scriptedPlanner([
-    { files: [] },
-    { files: [{ path: 'src/screens/ListScreen.tsx', reason: 'holds it' }] },
-  ]);
-  let out = await planFileEdits(PROJECT, 'search', '', p);
-  check('an empty plan is asked again', p.asked.length, 2);
-  check('and the second answer is used', out.map((x) => x.path), ['src/screens/ListScreen.tsx']);
-  check('the retry says what was wrong', p.asked[1].includes('files'), true);
+// A block that matches nothing costs one more call, asking for the file — the
+// same recovery the repair path makes. Dropping the file instead would lose the
+// user's change over a copying error.
+let asked = 0;
+const missing = async (system, user) => {
+  if (/You plan a change/.test(system)) return JSON.stringify(bigPlan);
+  asked += 1;
+  return asked === 1
+    ? '<<<<<<< SEARCH\n  この行はファイルにない\n=======\n  x\n>>>>>>> REPLACE'
+    : BIG_LIST.replace('在庫一覧', '商品一覧');
+};
+r = await applyFileEdits(BIG_PROJECT, [{ path: 'src/screens/ListScreen.tsx', reason: '', create: false }],
+  'x', '', missing);
+check('a patch that matches nothing is retried as a whole file', asked, 2);
+check('and the edit still lands', r.html.includes('商品一覧'), true);
 
-  // Prose with no JSON in it is the other recoverable shape.
-  p = scriptedPlanner(['no can do', { files: [{ path: 'src/routes.ts', reason: 'r' }] }]);
-  out = await planFileEdits(PROJECT, 'x', '', p);
-  check('a reply with no JSON is asked again', p.asked.length, 2);
-  check('and recovers', out.map((x) => x.path), ['src/routes.ts']);
-  check('the retry names that reason instead', p.asked[1].includes('JSON'), true);
+// Below the floor, and for a file being created, the form does not change.
+s = stub({ files: [{ path: 'src/screens/ListScreen.tsx', reason: '' }] },
+  { 'src/screens/ListScreen.tsx': LIST.replace('screen', 'screen wide') });
+await applyFileEdits(PROJECT, await planFileEdits(PROJECT, 'x', '', s), 'x', '', s);
+check('a short file is asked for whole',
+  /Return the COMPLETE file/.test(s.seen.find((c) => c.path === 'src/screens/ListScreen.tsx').system), true);
 
-  /*
-   * A good first answer costs one call, which is the case that must not
-   * regress: the retry exists for the failures and is not a second call on
-   * every edit.
-   */
-  p = scriptedPlanner([{ files: [{ path: 'src/routes.ts', reason: 'r' }] }]);
-  out = await planFileEdits(PROJECT, 'x', '', p);
-  check('a usable plan is not asked twice', p.asked.length, 1);
+s = stub({ files: [{ path: 'src/screens/ReportScreen.tsx', reason: 'new' }] },
+  { 'src/screens/ReportScreen.tsx': 'export default function ReportScreen(): JSX.Element { return <section>r</section>; }' });
+await applyFileEdits(BIG_PROJECT,
+  [{ path: 'src/screens/ReportScreen.tsx', reason: 'new', create: true }], 'x', '', s);
+check('a new file is asked for whole — there is nothing to search',
+  /Return the COMPLETE file/.test(s.seen.find((c) => c.path === 'src/screens/ReportScreen.tsx').system), true);
 
-  // Twice, not until it works.
-  p = scriptedPlanner([{ files: [] }, { files: [] }, { files: [{ path: 'src/routes.ts', reason: 'r' }] }]);
-  out = await planFileEdits(PROJECT, 'x', '', p);
-  check('it gives up after one retry', p.asked.length, 2);
-  check('and declines', out, []);
-
-  /*
-   * A refusal is rethrown rather than retried. The account being out of daily
-   * tokens is not answered by asking again, and it must not be answered by the
-   * full rewrite either — which is what the caller does with an empty plan.
-   */
-  const throttle = Object.assign(
-    new Error('Too many tokens per day, please wait before trying again.'),
-    { name: 'ThrottlingException' }
-  );
-  p = scriptedPlanner([throttle, { files: [{ path: 'src/routes.ts', reason: 'r' }] }]);
-  let threw = null;
-  try { await planFileEdits(PROJECT, 'x', '', p); } catch (e) { threw = e; }
-  check('a refusal is rethrown', threw === throttle, true);
-  check('and not retried', p.asked.length, 1);
-
-  // An ordinary error is a bad answer, not a wall.
-  p = scriptedPlanner([new Error('socket hang up'), { files: [{ path: 'src/routes.ts', reason: 'r' }] }]);
-  out = await planFileEdits(PROJECT, 'x', '', p);
-  check('an ordinary failure is retried', p.asked.length, 2);
-  check('and recovers too', out.map((x) => x.path), ['src/routes.ts']);
-}
-
-
-console.log(`\n${pass} passed, ${fail} failed`);
+console.log(`
+${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

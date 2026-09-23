@@ -72,7 +72,8 @@ const exported = [...fixups.matchAll(/^export function (fix[A-Za-z]+|salvage[A-Z
   .map((m) => m[1])
   .filter((n) => n !== 'fixupFile' && n !== 'fixupProject');
 
-check('there are repairs to check', exported.length > 20, true);
+// Sixteen after the Svelte removal (2026-09-18), where it was thirty-nine.
+check('there are repairs to check', exported.length > 10, true);
 check('every exported repair is called', exported.filter((n) => !calls(reachable, n)), []);
 
 // --- every detector is reached -------------------------------------------------
@@ -163,6 +164,26 @@ const fromTier = (expr) => {
 };
 check('every recorded model comes from a resolved tier',
   modelArgs.filter((e) => !fromTier(e)), []);
+
+// --- the judge asks the critic only when its answer is used ------------------------
+/*
+ * A rejected candidate is thrown away with everything measured on it, and the
+ * critic's findings get no vote while a convergent one exists. So inside the
+ * judge the critic is called from one place, which runs before the verdict only
+ * when the verdict is taken on the total, and otherwise only once accepted.
+ */
+{
+  const lf = graph.replace(/\r\n/g, '\n');
+  const judge = lf.slice(lf.indexOf('const judgeRepair = async'), lf.indexOf("logger.info('Interaction repair rejected', {\n      requestId,\n      pass,\n      kind,\n      reason: broke.length"));
+  check('the judge is found', judge.length > 1000, true);
+  check('the judge calls the critic from one place', judge.match(/await critiqueScreenshot\(/g)?.length, 1);
+  check('and that place is the deferred one',
+    /const critiqueCandidate = async[\s\S]*?await critiqueScreenshot\(/.test(judge), true);
+  check('asked before the verdict only when nothing convergent decides it',
+    /if \(!before\.some\(convergent\)\) await critiqueCandidate\(\)/.test(judge), true);
+  check('and after it when the candidate is kept',
+    /if \(improved && longEnough && broke\.length === 0\) \{\s*if \(!critiqued\) \{\s*await critiqueCandidate\(\)\s*after = collectDefects\(candidate, afterRuntime, afterVisual\)/.test(judge), true);
+}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

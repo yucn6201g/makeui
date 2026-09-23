@@ -244,27 +244,6 @@ const vueMoved = m.moveElement(VUE, 3, 1);
 check('a void element can be moved past',
   vueMoved !== null && vueMoved.indexOf('<img') < vueMoved.indexOf('<h1'), vueMoved);
 
-const SVELTE = `<script>
-  let n = $state(3)
-</script>
-<div class="page">
-  <h1 class="title">在庫 {n}</h1>
-  {#if n < 10}<button class="add">追加</button>{/if}
-</div>`;
-
-const sv = m.anchorSvelte('src/App.svelte', SVELTE);
-check('a svelte component is anchored', sv.includes('<div data-mkui-src="src/App.svelte:4"'), sv);
-check('its script block is left alone', sv.includes('let n = $state(3)') && !sv.slice(0, sv.indexOf('</script>')).includes('data-mkui-src'));
-check('a less-than inside a block expression is not read as a tag',
-  sv.includes('{#if n < 10}<button data-mkui-src'), sv.slice(sv.indexOf('{#if')));
-check('an element inside a block still gets its own line',
-  m.readAnchor(/data-mkui-src="([^"]*)"/.exec(sv.slice(sv.indexOf('<button')))?.[1])?.line === 6,
-  sv.slice(sv.indexOf('<button'), sv.indexOf('<button') + 60));
-
-// The block delimiters are not elements, so an element beside one has no sibling
-// the scanner can name — and it refuses rather than moving past `{#if}`.
-check('a block boundary blocks a swap', m.moveElement(SVELTE, 5, 1) === null);
-
 // --- text, on a project ------------------------------------------------------
 //
 // `directEdit` does this for a single-page mock by selector, and says why it

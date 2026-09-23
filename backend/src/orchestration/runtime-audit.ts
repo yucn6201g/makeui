@@ -1,7 +1,7 @@
 import { readProjectFiles } from '../tools/project-transport.js'
 import type { InteractionDefect } from './interaction-audit.js'
 import { auditComposition } from './preset-composition.js'
-import type { BrokenBox, ContrastFault, RuntimeFacts } from '../tools/browser-verify.js'
+import type { BrokenBox, ContrastFault, RuntimeFacts, VerifyFailure } from '../tools/browser-verify.js'
 
 /**
  * Defects that only exist once the document has been rendered.
@@ -193,7 +193,7 @@ export function undefinedClassesAround(source: string, elements: string[]): { pa
   const files = readProjectFiles(source)
   const defined = new Set<string>()
   for (const [p, body] of files) {
-    const css = p.endsWith('.css') ? body : /\.(vue|svelte)$/.test(p) ? [...body.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)].map((m) => m[1]).join('\n') : ''
+    const css = p.endsWith('.css') ? body : /\.(vue)$/.test(p) ? [...body.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)].map((m) => m[1]).join('\n') : ''
     for (const m of css.matchAll(/\.(-?[_a-zA-Z][\w-]*)/g)) defined.add(m[1])
   }
   const out: { path: string; classes: string[] }[] = []
@@ -201,7 +201,7 @@ export function undefinedClassesAround(source: string, elements: string[]): { pa
     const cls = /^[a-z][\w-]*\.([\w-]+)/.exec(el)?.[1]
     const tag = /^([a-z][\w-]*)/.exec(el)?.[1] ?? 'nav'
     for (const [p, body] of files) {
-      if (!/\.(tsx|jsx|vue|svelte)$/.test(p) || out.some((o) => o.path === p)) continue
+      if (!/\.(tsx|jsx|vue)$/.test(p) || out.some((o) => o.path === p)) continue
       const renders = cls
         ? new RegExp(`class(?:Name)?\\s*=\\s*(?:"[^"]*|'[^']*|\\{\`[^\`]*)(?<![\\w-])${cls.replace(/[-]/g, '\\-')}(?![\\w-])`).test(body)
         : new RegExp(`<${tag}[\\s>]`).test(body)
@@ -246,8 +246,7 @@ export function auditRuntime(facts: RuntimeFacts, source = '', presetName?: stri
           : 'コンソールにエラーは出ていないため、エントリファイルがマウントに失敗しているか、' +
             'シェルが何も返していない可能性が高いです。\n') +
         'まず確認すること: エントリファイルが正しいマウント方法を使っているか' +
-        '（React は createRoot(...).render(...)、Vue は createApp(App).mount(...)、' +
-        'Svelte 5 は mount(App, { target })。Svelte で new App({...}) と書くと実行時に落ちます）、' +
+        '（React は createRoot(...).render(...)、Vue は createApp(App).mount(...)）、' +
         'マウント先の要素 id が index.html と一致しているか、' +
         'ルートが空のときに既定の画面へ落ちるようになっているか。',
     })
@@ -707,6 +706,46 @@ export function auditRuntime(facts: RuntimeFacts, source = '', presetName?: stri
  * A one-line summary for the run log and the chat transcript, so a user watching
  * the run can see that the page was actually opened rather than only parsed.
  */
+/**
+ * The page stopped answering when a control was pressed.
+ *
+ * Found on a user's 在庫管理 run of 2026-09-20. Clicking any item row froze the
+ * preview outright: the detail screen read `selectedItemId` from the top of the
+ * store while the reducer wrote it under `state.ui`, so it was never set, and
+ * the screen answered that by navigating back DURING ITS OWN RENDER —
+ *
+ *     if (!selectedItemId) { onNavigateItems(); return null; }
+ *
+ * navigate() updates the router while a child renders, the router renders again
+ * before the hash has changed, the child renders again, and the page never
+ * returns to the event loop. The walk went down with it, and the run shipped at
+ * 89 with nothing reported about the one thing a reviewer would hit first.
+ *
+ * The instruction names the control and the three shapes that do this, most
+ * likely first — the fix for each is to move the update out of the render.
+ */
+export function pageFrozenDefect(failure: VerifyFailure): InteractionDefect {
+  const on = failure.frozeOn
+  const where = on
+    ? `${on.hash ? `${on.hash} の画面で` : ''}「${on.label || '(ラベルなし)'}」${on.kind === 'row' ? '（一覧の行）' : ''}を押すと`
+    : 'ページを開くと'
+  return {
+    id: 'page-frozen',
+    note: `${where}ページが応答しなくなります（画面全体が固まります）。`,
+    instruction:
+      `${where}ページのメインスレッドが止まり、ブラウザが一切応答しなくなります。` +
+      '無限ループです。次の順に確認して直してください:\n' +
+      '1. 描画中の画面遷移・状態更新。コンポーネント本体（return より前、ハンドラや useEffect の外）で ' +
+      'navigate() / onNavigate…() / setState / dispatch を呼んでいないか。' +
+      '`if (!x) { navigate(...); return null; }` は描画のたびに遷移を起こし、止まりません。' +
+      '遷移は useEffect の中か、イベントハンドラの中で行ってください。\n' +
+      '2. その画面が読む値が、ストアの実際の置き場所と一致しているか。' +
+      'reducer が `state.ui.X` に書いている値を `state.X` から読むと常に undefined になり、' +
+      '上の「未設定なら戻る」分岐が毎回走ります。\n' +
+      '3. 依存配列の無い useEffect が、毎回新しい値で setState していないか。',
+  }
+}
+
 export function summariseRuntime(facts: RuntimeFacts): string {
   const fills = facts.screens.map((s) => `${s.id} ${Math.round(s.fill * 100)}%`).join(' / ')
   const contrast = facts.contrast.length ? `、コントラスト不足 ${facts.contrast.length}件` : ''

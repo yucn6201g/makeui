@@ -117,17 +117,9 @@ const asFiles = (paths) => paths.map((p) => ({ path: p, content: '', lang: 'js' 
 
 check('React is detected', dk.detectKind(asFiles(['src/main.tsx', 'src/App.tsx'])), 'react');
 check('Vue is detected', dk.detectKind(asFiles(['src/main.ts', 'src/App.vue'])), 'vue');
-check('Svelte is detected', dk.detectKind(asFiles(['src/main.ts', 'src/App.svelte'])), 'svelte');
-// The shape that shipped broken: a Svelte project has no .tsx anywhere, so the
-// old gate saw nothing it recognised.
-check('a Svelte project has no .tsx to match on',
-  asFiles(['src/main.ts', 'src/App.svelte', 'src/lib/store.svelte.ts']).some((f) => f.path.endsWith('.tsx')),
-  false);
-check('yet it is a compilable project', dk.detectKind(asFiles(['src/main.ts', 'src/App.svelte'])) !== null, true);
 // A stored document that is genuinely just a page must still be refused, or the
 // preview would try to compile a web page.
 check('a plain page is not a project', dk.detectKind(asFiles(['index.html'])), null);
-
 
 // --- compiling must never evaluate a string ------------------------------------
 //

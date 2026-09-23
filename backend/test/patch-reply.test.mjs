@@ -97,7 +97,7 @@ check('a marker-like line inside the code is not a marker', applyPatchReply('a\n
 
 // --- wiring ---------------------------------------------------------------------------------
 const repair = read('src/orchestration/repair-files.ts');
-check('a patch is asked for only where one pays', /const reply = plan\.create \|\| !patchWorthy\(plan\) \? 'whole' : 'patch'/.test(repair), true);
+check('a patch is asked for only where one pays', /const reply = patchWorthy\(plan, leaned\.text\.length\) \? 'patch' : 'whole'/.test(repair), true);
 check('and a reply is read as blocks only when blocks were asked for', /if \(reply === 'patch' && isPatchReply\(answer\)\)/.test(repair), true);
 
 // --- which repairs get the patch form -------------------------------------------------------
@@ -113,12 +113,29 @@ execSync(
 );
 const { patchWorthy } = await import(pathToFileURL(path.join(root, 'dist/patch-worthy.test.mjs')).href);
 const plan = (p, ids, create = false) => ({ path: p, create, defects: ids.map((id) => ({ id, instruction: '' })) });
-check('a stylesheet is always patched', patchWorthy(plan('src/styles/globals.css', ['decomposition'])), true);
-check('a component with only visual findings is patched', patchWorthy(plan('src/components/RoomTable.tsx', ['visual-accent', 'visual-density'])), true);
-check('a component being decomposed is rewritten whole', patchWorthy(plan('src/screens/Dashboard.tsx', ['decomposition', 'icons', 'imagery-missing'])), false);
-check('one structural defect among visual ones makes it whole', patchWorthy(plan('src/components/Header.tsx', ['visual-accent', 'icons'])), false);
-check('a new file is never a patch', patchWorthy(plan('src/styles/extra.css', ['visual-accent'], true)), false);
-check('nothing to fix is not a patch', patchWorthy(plan('src/App.tsx', [])), false);
+/** Big enough to be worth patching, unless a check is asking about the floor. */
+const BIG = 8000;
+check('a stylesheet is always patched', patchWorthy(plan('src/styles/globals.css', ['decomposition']), BIG), true);
+check('a component with only visual findings is patched', patchWorthy(plan('src/components/RoomTable.tsx', ['visual-accent', 'visual-density']), BIG), true);
+check('a component being decomposed is rewritten whole', patchWorthy(plan('src/screens/Dashboard.tsx', ['decomposition', 'icons', 'imagery-missing']), BIG), false);
+check('one structural defect among visual ones makes it whole', patchWorthy(plan('src/components/Header.tsx', ['visual-accent', 'icons']), BIG), false);
+check('a new file is never a patch', patchWorthy(plan('src/styles/extra.css', ['visual-accent'], true), BIG), false);
+check('nothing to fix is not a patch', patchWorthy(plan('src/App.tsx', []), BIG), false);
+
+/*
+ * The seven ids added 2026-09-18, and the floor that came with them. Both are
+ * measurements: the ids change a median 2-10% of the file, and every patched
+ * file under 1,100 characters in the 60-day window cost more than sending it
+ * whole — the worst a 289-character Header that replied with 3,717.
+ */
+check('a wiring repair is patched', patchWorthy(plan('src/screens/CartScreen.tsx', ['action-dead-runtime']), BIG), true);
+check('so is a routing one', patchWorthy(plan('src/App.tsx', ['nav-dead-runtime', 'screen-hidden']), BIG), true);
+check('and a preset drift', patchWorthy(plan('src/components/Card.tsx', ['preset-drift', 'palette-size']), BIG), true);
+check('an unmeasured defect is written whole', patchWorthy(plan('src/App.tsx', ['something-new']), BIG), false);
+check('icons stay whole — they create components', patchWorthy(plan('src/App.tsx', ['icons']), BIG), false);
+check('a small file is never patched', patchWorthy(plan('src/components/Header.tsx', ['visual-accent']), 289), false);
+check('nor is a small stylesheet', patchWorthy(plan('src/components/StatusBadge.css', ['palette-size']), 524), false);
+check('the floor is 2,000 characters', [patchWorthy(plan('src/App.tsx', ['visual-accent']), 1999), patchWorthy(plan('src/App.tsx', ['visual-accent']), 2000)], [false, true]);
 check('the module-writing round still asks for whole files', /cleanFile\(await invoke\(fileSystem\(kind\), user\), path\)/.test(repair), true);
 check('a patch is applied to the lean body the model was shown', /applyPatchReply\(leaned\.text, answer\)/.test(repair), true);
 check('a patch that does not apply is retried once as a whole file', /File repair patch did not apply[\s\S]{0,600}fileSystem\(kind, 'whole'\)/.test(repair), true);

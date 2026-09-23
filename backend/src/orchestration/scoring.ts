@@ -17,7 +17,8 @@
  */
 import { readProjectFiles, writeProjectFile } from '../tools/project-transport.js'
 import { detectKind } from '../tools/framework-compile.js'
-import { countScreens, hasLoginGate, hasVisibleDemoCredentials, renderedFrom } from './interaction-audit.js'
+import { countScreens, hasLoginGate, hasVisibleDemoCredentials } from './interaction-audit.js'
+import { renderedFrom } from '../tools/artwork.js'
 import { DEFAULT_OUTPUT_KIND, FRAMEWORKS, type OutputKind } from '../config/frameworks.js'
 import { countEmoji } from './design-audit.js'
 import { designSystemScore, measureDesignSystem } from './design-system-audit.js'
@@ -79,7 +80,7 @@ function scoreProject(
   r.gate(paths.includes(`src/App${fw.componentExt}`), 4)
   r.gate(paths.includes(fw.routesFile), 6)
   r.gate(paths.some((p) => /^src\/(hooks|composables|lib)\//.test(p)), 3)
-  r.gate(paths.some((p) => /^src\/store\//.test(p) || /store\.svelte\.[jt]s$/.test(p)), 4)
+  r.gate(paths.some((p) => /^src\/store\//.test(p)), 4)
   r.award(has(/^src\/lib\//), 3)
   r.gate(has(/^src\/screens\//), 5)
   r.award(has(/^src\/components\/ui\//), 4)
@@ -136,7 +137,7 @@ function scoreProject(
   r.gate(/ScreenId/.test(html), 4)
   r.gate(/NAV_ITEMS/.test(html), 3)
   r.award(/hashchange/.test(html), 5)
-  r.gate(/useNavigation|navigation\.svelte|composables\/useNavigation|export function navigate/.test(html), 4)
+  r.gate(/useNavigation|navigation\.composables\/useNavigation|export function navigate/.test(html), 4)
   r.gate(/params/.test(html) && /detail/i.test(html), 4)   // list -> detail with an id
   r.gate(/canGoBack|back\(/.test(html), 3)
 
@@ -510,7 +511,7 @@ export function isRoutingFile(path: string, kind: OutputKind): boolean {
  * only by an orphaned card is an orphan too.
  */
 export function orphanedNewFiles(base: Map<string, string>, result: Map<string, string>): Set<string> {
-  const stem = (p: string) => p.replace(/(?:\.(?:vue|svelte|tsx|ts|jsx|js|mjs))+$/, '')
+  const stem = (p: string) => p.replace(/(?:\.(?:vue|tsx|ts|jsx|js|mjs))+$/, '')
   const target = (importer: string, spec: string): string => {
     const parts = importer.split('/').slice(0, -1)
     for (const seg of spec.split('/')) {
@@ -520,7 +521,7 @@ export function orphanedNewFiles(base: Map<string, string>, result: Map<string, 
     }
     return stem(parts.join('/'))
   }
-  const created = [...result.keys()].filter((p) => !base.has(p) && /\.(vue|svelte|tsx|ts|jsx|js)$/.test(p))
+  const created = [...result.keys()].filter((p) => !base.has(p) && /\.(vue|tsx|ts|jsx|js)$/.test(p))
   const orphans = new Set<string>()
   for (let changed = true; changed;) {
     changed = false
@@ -599,7 +600,7 @@ export function revertSuspects(base: string, candidate: string, errors: string[]
   const changed = [...readProjectFiles(candidate)]
     .filter(([path, body]) => original.has(path) && original.get(path) !== body)
     .map(([path]) => path)
-    .filter((path) => /\.(tsx|jsx|ts|js|vue|svelte)$/.test(path))
+    .filter((path) => /\.(tsx|jsx|ts|js|vue)$/.test(path))
   if (changed.length < 2) return []
 
   const text = errors.join('\n')

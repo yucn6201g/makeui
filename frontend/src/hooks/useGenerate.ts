@@ -53,7 +53,7 @@ interface UseGenerateReturn {
   score: number | null;
   /** What the browser measured. Null when the page was never rendered. */
   /** Which tier actually ran, and the design system it was bound to. */
-  runInfo: { modelTier: string; preset: string; effort?: string; scoreVerified?: boolean; unrepairedDefects?: number;
+  runInfo: { modelTier: string; preset: string; effort?: string; scoreVerified?: boolean;
     /** `qualityScore` taken apart — the checklist, and what a browser found. */
     scoreParts?: ScoreParts } | null;
   /** The client gave up waiting, but the job is still running server-side. */
@@ -105,7 +105,7 @@ export function useGenerate(): UseGenerateReturn {
   const [events, setEvents] = useState<StreamEvent[]>([]);
   const [result, setResult] = useState<string | null>(null);
   const [score, setScore] = useState<number | null>(null);
-  const [runInfo, setRunInfo] = useState<{ modelTier: string; preset: string; effort?: string; scoreVerified?: boolean; unrepairedDefects?: number;
+  const [runInfo, setRunInfo] = useState<{ modelTier: string; preset: string; effort?: string; scoreVerified?: boolean;
     /** `qualityScore` taken apart — the checklist, and what a browser found. */
     scoreParts?: ScoreParts } | null>(null);
   /** True when the client stopped polling a job that is still running. */
@@ -240,7 +240,7 @@ export function useGenerate(): UseGenerateReturn {
             if (meta?.tokenUsage) setTokenUsage(meta.tokenUsage as TokenUsage);
             setRunInfo(
               typeof meta?.modelTier === 'string'
-                ? { modelTier: meta.modelTier as string, preset: (meta.preset as string) || 'none', effort: meta.effort as string | undefined, scoreVerified: meta.scoreVerified as boolean | undefined, scoreParts: meta.scoreParts as ScoreParts | undefined, unrepairedDefects: meta.unrepairedDefects as number | undefined }
+                ? { modelTier: meta.modelTier as string, preset: (meta.preset as string) || 'none', effort: meta.effort as string | undefined, scoreVerified: meta.scoreVerified as boolean | undefined, scoreParts: meta.scoreParts as ScoreParts | undefined }
                 : null
             );
             setPhases(closeTranscript);
@@ -342,7 +342,7 @@ export function useGenerate(): UseGenerateReturn {
             if (tu) setTokenUsage({ inputTokens: tu.inputTokens || 0, outputTokens: tu.outputTokens || 0 });
             setRunInfo(
               typeof data.metadata?.modelTier === 'string'
-                ? { modelTier: data.metadata.modelTier as string, preset: (data.metadata.preset as string) || 'none', effort: data.metadata.effort as string | undefined, scoreVerified: data.metadata.scoreVerified as boolean | undefined, scoreParts: data.metadata.scoreParts as ScoreParts | undefined, unrepairedDefects: data.metadata.unrepairedDefects as number | undefined }
+                ? { modelTier: data.metadata.modelTier as string, preset: (data.metadata.preset as string) || 'none', effort: data.metadata.effort as string | undefined, scoreVerified: data.metadata.scoreVerified as boolean | undefined, scoreParts: data.metadata.scoreParts as ScoreParts | undefined }
                 : null
             );
             setIsGenerating(false);

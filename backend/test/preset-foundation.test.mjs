@@ -289,5 +289,53 @@ check('a preset without a block is left as written', m.withoutTokenDeclarations(
     [bf.includes('withoutTokenDeclarations(ctx.presetSpec, ctx.presetName)'), gr.includes('${withoutTokenDeclarations(presetSpec, presetName)}')], [true, true]);
 }
 
+// --- the drift with one right answer is put on the system ------------------------
+/*
+ * Measured over 30 days after the block: 14 runs shipped with size drift, six of
+ * them a 44px button or field — the pipeline's own touch-target minimum — and
+ * five Digital Agency runs with 12px text under a scale that starts at 14.
+ */
+{
+  const sheet = [
+    ':root { --font-size-xs: 12px; --button-height: 44px; --radius-sm: 4px; }',
+    '.btn-primary { min-height: 44px; padding: 0 16px; }',
+    '.search-input { height: 32px; }',
+    '.caption { font-size: 12px; }',
+    '.meta { font-size: 0.75rem; }',
+    '.lead { font-size: 18px; }',
+    '.hero-button { height: 80px; }',
+    '.badge { font-size: 4px; }',
+    '@media (max-width: 600px) { .btn { height: 44px; } }',
+  ].join('\n');
+  const project = m.applyPresetFoundation(fence({ 'src/main.tsx': "import './styles/globals.css'", 'src/styles/globals.css': sheet }), 'digital-agency').html;
+  const before = m.measureComponentDrift(project, 'digital-agency');
+  const { html, changes } = m.snapComponentSizes(project, 'digital-agency');
+  const css = read(html, 'src/styles/globals.css');
+  const after = m.measureComponentDrift(html, 'digital-agency');
+  check('there was drift to begin with', before.details.length > 0, true);
+  check('a 44px button goes up to 48, not down to 36', /\.btn-primary \{ min-height: 48px;/.test(css), true);
+  check('inside a media query too', /@media \(max-width: 600px\) \{ \.btn \{ height: 48px; \} \}/.test(css), true);
+  check('a field 8px under the system goes up to it', /\.search-input \{ height: 40px; \}/.test(css), true);
+  check('text under the smallest step rises to it', [/\.caption \{ font-size: 14px; \}/.test(css), /\.meta \{ font-size: 14px; \}/.test(css)], [true, true]);
+  check('and so do the project\'s own tokens', [/--font-size-xs: 14px/.test(css), /--button-height: 48px/.test(css)], [true, true]);
+  // The design calls stay findings: between steps, far from any allowed height, a glyph-sized mark.
+  check('a size between steps is left', /\.lead \{ font-size: 18px; \}/.test(css), true);
+  check('a height nowhere near the system is left', /\.hero-button \{ height: 80px; \}/.test(css), true);
+  check('a size far under the scale is left', /\.badge \{ font-size: 4px; \}/.test(css), true);
+  check('what is left is still reported', [after.fontSizes, after.buttonHeights, after.fieldHeights], [[4, 18], [80], []]);
+  check('the block itself is untouched', read(html, 'src/styles/globals.css').includes(m.foundationCss('digital-agency').split('\n').slice(0, -1).join('\n')), true);
+  check('every move is recorded', changes.length, 7);
+  check('idempotent', m.snapComponentSizes(html, 'digital-agency').changes, []);
+  check('no system, no change', m.snapComponentSizes(project, 'none').html, project);
+  // A .vue file's styles are sheets; its template is not.
+  const vue = fence({ 'src/App.vue': '<template><button class="btn" style="height: 44px">x</button></template>\n<style scoped>\n.btn { height: 44px; }\n</style>' });
+  const snappedVue = read(m.snapComponentSizes(vue, 'carbon').html, 'src/App.vue');
+  check('a Vue style block is snapped and its template is not', [/<style scoped>\n\.btn \{ height: 48px; \}/.test(snappedVue), /style="height: 44px"/.test(snappedVue)], [true, true]);
+  const gr = fs.readFileSync(path.join(root, 'src/orchestration/graph.ts'), 'utf8');
+  check('the generation runs it before the repair loop and after it', gr.match(/snapComponentSizes\(finalHtml, presetName\)/g)?.length, 2);
+  // An edit is the user's word, and "make the button 44px" is one.
+  check('the edit path does not', fs.readFileSync(path.join(root, 'src/orchestration/meta-orchestrator.ts'), 'utf8').includes('snapComponentSizes'), false);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

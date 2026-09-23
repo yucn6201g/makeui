@@ -226,7 +226,8 @@ function bodyOf(src, name) {
    */
   const updates = [...jobs.matchAll(/UpdateExpression:[\s\S]{0,200}?ttl/g)].map((m) => m[0]);
   check('the update expressions alias it', updates.filter((u) => !u.includes('#ttl')), []);
-  check('and declare the alias', [...jobs.matchAll(/'#ttl': 'ttl'/g)].length, 3);
+  // Four: stream, status, event, and the token heartbeat (2026-09-23).
+  check('and declare the alias', [...jobs.matchAll(/'#ttl': 'ttl'/g)].length, 4);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

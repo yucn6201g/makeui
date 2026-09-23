@@ -182,7 +182,11 @@ export function writeProjectFile(source: string, path: string, body: string): st
     if (new RegExp(`^${FILE_CLOSE}$|^${FILE_OPEN}\\s`, 'm').test(body)) return null
     const escaped = path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     const block = new RegExp(`^${FILE_OPEN} ${escaped}\\r?\\n[\\s\\S]*?^${FILE_CLOSE}$`, 'm')
-    if (block.test(source)) return source.replace(block, fenceFile(path, body))
+    // A function, not a string: a body holding `$&` — every regex-escape helper
+    // does — was spliced as a replacement pattern, pasting the whole old block
+    // into the new one. Measured on a stored blog project, whose format.ts no
+    // longer compiled after an unrelated fixup rewrote it.
+    if (block.test(source)) return source.replace(block, () => fenceFile(path, body))
     const at = source.lastIndexOf('</body>')
     const fenced = fenceFile(path, body)
     return at === -1 ? `${source}\n${fenced}` : `${source.slice(0, at)}${fenced}\n${source.slice(at)}`

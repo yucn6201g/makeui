@@ -44,6 +44,59 @@ export interface FrameworkRuntime {
   renderProbe: string;
 }
 
+/**
+ * A screen that throws while it renders, shown as a message rather than as a
+ * blank page.
+ *
+ * React unmounts the WHOLE root when a render throws and nothing catches it, so
+ * one broken screen took the shell, the navigation and every other screen with
+ * it — a white page and no way out but a reload. Over thirty days to 2026-09-23,
+ * 15 of 123 generations shipped with a finding that can do that (console-error
+ * 12, blank-render 6); the recent ones all render after this week's fixups, but
+ * a fixup only closes a shape somebody has already seen.
+ *
+ * So the runtime wraps the app, not the project: a class component whose only
+ * job is to catch, say what broke, and let the user leave. It resets itself on
+ * hashchange, so 「前の画面に戻る」 and 「最初の画面へ」 remount the app on a
+ * screen that works.
+ *
+ * It hides nothing from verification. The error still goes to console.error, so
+ * the walk still reports console-error, and the panel carries
+ * data-makeui-render-error so the walk measures the screen as failed rather
+ * than as filled. What changes is what a person sees.
+ *
+ * Written twice — here, which is the preview the user actually looks at, and
+ * in backend/src/tools/framework-compile.ts, which is what verification renders — and held equal by
+ * test/render-boundary.test.mjs. ES5 and no backticks: it is spliced into a
+ * template literal and runs in whatever the page's engine is.
+ */
+export const RENDER_BOUNDARY = `var __R = window.React;
+      function MakeuiBoundary(props) {
+        __R.Component.call(this, props);
+        this.state = { error: null };
+        var self = this;
+        this.__reset = function() { if (self.state.error) self.setState({ error: null }); };
+      }
+      MakeuiBoundary.prototype = Object.create(__R.Component.prototype);
+      MakeuiBoundary.prototype.constructor = MakeuiBoundary;
+      MakeuiBoundary.getDerivedStateFromError = function(error) { return { error: error }; };
+      MakeuiBoundary.prototype.componentDidCatch = function(error) {
+        console.error('[makeui] 画面の描画中にエラーが発生しました: ' + ((error && error.message) || String(error)));
+      };
+      MakeuiBoundary.prototype.componentDidMount = function() { window.addEventListener('hashchange', this.__reset); };
+      MakeuiBoundary.prototype.componentWillUnmount = function() { window.removeEventListener('hashchange', this.__reset); };
+      MakeuiBoundary.prototype.render = function() {
+        var e = this.state.error;
+        if (!e) return this.props.children;
+        var h = __R.createElement;
+        var btn = { font: 'inherit', fontSize: '14px', padding: '8px 16px', borderRadius: '6px', border: '1px solid #c6c6c6', background: '#fff', color: '#1f1f1f', cursor: 'pointer' };
+        return h('div', { 'data-makeui-render-error': '', role: 'alert', style: { maxWidth: '560px', margin: '64px auto', padding: '24px', fontFamily: 'system-ui, sans-serif', color: '#1f1f1f', border: '1px solid #e0e0e0', borderRadius: '8px', background: '#fafafa' } },
+          h('p', { style: { margin: '0 0 8px', fontSize: '16px', fontWeight: 600 } }, 'この画面を表示中にエラーが発生しました'),
+          h('p', { style: { margin: '0 0 16px', fontSize: '13px', color: '#5c5c5c', wordBreak: 'break-word' } }, String((e && e.message) || e).slice(0, 300)),
+          h('div', { style: { display: 'flex', gap: '8px' } },
+            h('button', { type: 'button', style: btn, onClick: function() { history.back(); } }, '前の画面に戻る'),
+            h('button', { type: 'button', style: btn, onClick: function() { location.hash = ''; window.dispatchEvent(new HashChangeEvent('hashchange')); } }, '最初の画面へ')));
+      };`
 
 export const RUNTIMES: Record<OutputKind, FrameworkRuntime> = {
   react: {
@@ -56,11 +109,13 @@ export const RUNTIMES: Record<OutputKind, FrameworkRuntime> = {
       return [runtime.default];
     },
     builtins: `(function(){
+      ${RENDER_BOUNDARY}
       var shim = Object.create(window.ReactDOM);
       shim.createRoot = function(container) {
         var root = window.ReactDOM.createRoot(container);
         var orig = root.render.bind(root);
-        root.render = function(el) { __rendered = true; return orig(el); };
+        // Wrapped once, at the root — see RENDER_BOUNDARY.
+        root.render = function(el) { __rendered = true; return orig(__R.createElement(MakeuiBoundary, null, el)); };
         return root;
       };
       /*
@@ -99,35 +154,6 @@ export const RUNTIMES: Record<OutputKind, FrameworkRuntime> = {
         return app;
       };
       return { 'vue': v };
-    })()`,
-    renderProbe: '',
-  },
-
-  svelte: {
-    sourceExt: ['.svelte', '.ts', '.js', '.mjs'],
-    entries: ['src/main.ts', 'src/main.js'],
-    async runtimeScripts() {
-      const svelte = await import('virtual:svelte-runtime');
-      return [svelte.default];
-    },
-    /**
-     * Svelte 5's public API (`mount`, `unmount`) and the compiler's own import
-     * target (`svelte/internal/client`) are the same bundle here, so both
-     * specifiers point at it. `disclose-version` is a side-effect import the
-     * compiler always emits and there is nothing behind it.
-     */
-    builtins: `(function(){
-      var pub = window.__svelte_internal.__public;
-      var s = Object.create(pub);
-      s.mount = function() { __rendered = true; return pub.mount.apply(null, arguments); };
-      return {
-        'svelte': s,
-        'svelte/internal/client': window.__svelte_internal,
-        // Both are side-effect imports the compiler always emits. Their effects
-        // are already in the bundle above, so there is nothing to hand back.
-        'svelte/internal/disclose-version': {},
-        'svelte/internal/flags/legacy': {}
-      };
     })()`,
     renderProbe: '',
   },
@@ -230,14 +256,12 @@ export async function compileFile(
   sucrase: Sucrase
 ): Promise<CompiledFile> {
   if (kind === 'vue' && path.endsWith('.vue')) return compileVue(path, source, sucrase);
-  if (kind === 'svelte' && path.endsWith('.svelte')) return compileSvelte(path, source, sucrase);
   /**
    * A `.svelte.ts` module is not TypeScript that happens to be named oddly — it
    * is the only kind of plain module where runes work, and the compiler has a
    * separate entry point for it. Passed through as ordinary TS, `$state(...)`
    * survives into the output as a call to a function that does not exist.
    */
-  if (kind === 'svelte' && /\.svelte\.(ts|js)$/.test(path)) return compileSvelteModule(path, source, sucrase);
   return {
     code: sucrase.transform(addMissingFrameworkImports(kind, source), {
       transforms: scriptTransforms(path),
@@ -371,231 +395,5 @@ async function compileVue(path: string, source: string, sucrase: Sucrase): Promi
   return {
     code: sucrase.transform(esm, { transforms: ['typescript', 'imports'], production: true, filePath: path }).code,
     css: css || undefined,
-  };
-}
-
-/** The Svelte 5 runes, which are keywords rather than values. */
-const RUNES = ['$state', '$derived', '$effect', '$props', '$bindable', '$inspect', '$host'];
-
-/**
- * Removes `import { $state } from 'svelte'` and friends.
- *
- * A rune is compile-time syntax, not an export — nothing named `$state` exists
- * in the `svelte` package. Importing one is always wrong, and wrong invisibly:
- * the compiler treats it as an imported binding, declines to compile it away,
- * and emits a call to it. The build succeeds and the page dies on first render
- * with `_svelte.$state is not a function`, leaving an empty preview.
- *
- * Measured on a generated project: `src/lib/navigation.svelte.ts` began with
- * `import { $state } from 'svelte'`, all 25 files compiled, and nothing rendered.
- *
- * Applied in the compiler rather than at generation time so that projects
- * already saved are repaired too.
- */
-function stripRuneImports(source: string): string {
-  return source.replace(
-    /import\s*\{([^}]*)\}\s*from\s*(['"])svelte\2\s*;?/g,
-    (whole, clause: string, quote: string) => {
-      const all = clause.split(',').map((s) => s.trim()).filter(Boolean);
-      const kept = all.filter((spec) => !RUNES.includes(spec.split(/\s+as\s+/)[0].trim()));
-      if (kept.length === all.length) return whole;
-      return kept.length ? `import { ${kept.join(', ')} } from ${quote}svelte${quote};` : '';
-    }
-  );
-}
-
-/**
- * Rewrites `{name: value}` attributes within one tag, and only those.
- *
- * Brace depth is counted rather than pattern-matched, because the pattern alone
- * has a false positive that matters: `<C prop={{ screen: 'home' }} />` passes an
- * object literal, which is ordinary correct Svelte, and a regex looking for
- * `{ident: …}` finds the INNER braces and turns it into
- * `prop={screen={'home'}}`. Measured — it broke a fixture that had been passing.
- *
- * So a group is only considered when it opens at depth zero (an attribute
- * position, not a value) and is preceded by whitespace (so `={…}` is excluded).
- */
-function rewriteTagAttributes(tag: string): string {
-  let out = ''
-  let i = 0
-  let quote = ''
-  while (i < tag.length) {
-    const c = tag[i]
-    if (quote) {
-      out += c
-      if (c === quote) quote = ''
-      i++
-      continue
-    }
-    if (c === '"' || c === "'") {
-      quote = c
-      out += c
-      i++
-      continue
-    }
-    if (c !== '{') {
-      out += c
-      i++
-      continue
-    }
-    // A brace group at attribute level. Find its match, tracking nesting.
-    let depth = 0
-    let j = i
-    let q2 = ''
-    for (; j < tag.length; j++) {
-      const d = tag[j]
-      if (q2) {
-        if (d === q2) q2 = ''
-        continue
-      }
-      if (d === '"' || d === "'") q2 = d
-      else if (d === '{') depth++
-      else if (d === '}') {
-        depth--
-        if (depth === 0) break
-      }
-    }
-    const group = tag.slice(i, Math.min(j + 1, tag.length))
-    const before = i > 0 ? tag[i - 1] : ' '
-    const inner = group.slice(1, -1)
-    const m = /^\s*([A-Za-z_$][\w$]*)\s*:\s*([^{}]+?)\s*$/.exec(inner)
-    // `={` means this group is a value, not an attribute of its own.
-    out += m && /\s/.test(before) ? `${m[1]}={${m[2].trim()}}` : group
-    i = j + 1
-  }
-  return out
-}
-
-function fixShorthandProps(source: string): string {
-  // Only the markup: a colon inside <script> or <style> is ordinary code or CSS.
-  const blocks: Array<[number, number]> = []
-  for (const m of source.matchAll(/<(script|style)[^>]*>[\s\S]*?<\/\1>/g)) {
-    blocks.push([m.index!, m.index! + m[0].length])
-  }
-  const inBlock = (i: number) => blocks.some(([a, b]) => i >= a && i < b)
-
-  let out = ''
-  let i = 0
-  while (i < source.length) {
-    const lt = source.indexOf('<', i)
-    if (lt === -1) {
-      out += source.slice(i)
-      break
-    }
-    // Everything before the tag is copied through untouched. Forgetting this is
-    // how a first attempt at this deleted the body of every component and left
-    // the compiler reporting `<script> was left open`.
-    out += source.slice(i, lt)
-    if (inBlock(lt)) {
-      out += '<'
-      i = lt + 1
-      continue
-    }
-    // Walk to the end of this tag, respecting quotes so a `>` inside an
-    // attribute value does not end it early.
-    let j = lt + 1
-    let quote = ''
-    while (j < source.length) {
-      const c = source[j]
-      if (quote) {
-        if (c === quote) quote = ''
-      } else if (c === '"' || c === "'") quote = c
-      else if (c === '>') break
-      j++
-    }
-    out += rewriteTagAttributes(source.slice(lt, Math.min(j + 1, source.length)))
-    i = j + 1
-  }
-  return out
-}
-
-async function compileSvelte(path: string, source: string, sucrase: Sucrase): Promise<CompiledFile> {
-  const compiler: any = await import('svelte/compiler');
-  const name = (path.split('/').pop() ?? 'Component').replace(/\.svelte$/, '').replace(/[^A-Za-z0-9_$]/g, '');
-  source = fixShorthandProps(stripRuneImports(source));
-  /**
-   * TypeScript in a Svelte file is not handled by the Svelte compiler — that is
-   * a preprocessor's job, and there is no preprocessor here — so types have to
-   * be stripped first.
-   *
-   * EVERY script block is stripped, not only those declaring `lang="ts"`.
-   * Keying off the attribute assumes it is present, and a generated component
-   * routinely writes a bare `<script>` and puts TypeScript in it. Measured: a
-   * sidebar with `import type { Route }` and `(screenId: string)` under a plain
-   * `<script>` reached the compiler untouched and failed with `Unexpected
-   * token`. The pass is free either way — Sucrase's typescript transform over
-   * plain JavaScript is a no-op.
-   */
-  const prepared = source.replace(
-    /(<script[^>]*>)([\s\S]*?)(<\/script>)/g,
-    (_m, open: string, body: string, close: string) => {
-      /**
-       * `keepUnusedImports` is not optional here.
-       *
-       * Only the <script> block is handed to Sucrase, and a Svelte component
-       * uses most of its imports in the *markup* — which is not in that string.
-       * Left to decide for itself, Sucrase reads `import { store } from …` as an
-       * unused type import and deletes it, and the Svelte compiler then emits a
-       * component referencing `store` with nothing importing it. Measured:
-       * `ReferenceError: store is not defined`, with the import simply absent.
-       */
-      /*
-       * Sucrase must not lower class fields here.
-       *
-       * Its TypeScript transform rewrites `class R { cur = $state(...) }` into a
-       * constructor calling `__init()` and assigning there — and Svelte then
-       * refuses it, correctly, because `$state` is no longer a class field. The
-       * generated code was valid Svelte and we broke it on the way in. Measured
-       * on a real run: a class-based router in src/lib/navigation.svelte.ts, an
-       * ordinary Svelte 5 idiom, took the whole project to a blank page.
-       *
-       * Nothing is lost. The preview runs in a current browser, which implements
-       * class fields, optional chaining and nullish coalescing natively — the
-       * three things this flag stops Sucrase rewriting. Types are still
-       * stripped, which is the only reason Sucrase is in this path.
-       */
-      const js = sucrase.transform(body, {
-        transforms: ['typescript'],
-        keepUnusedImports: true,
-        disableESTransforms: true,
-        filePath: path,
-      }).code;
-      return `${open.replace(/\s+lang=["'][^"']*["']/, '')}${js}${close}`;
-    }
-  );
-  const result = compiler.compile(prepared, { name, generate: 'client', filename: path });
-  return {
-    code: sucrase.transform(result.js.code, {
-      transforms: ['imports'],
-      production: true,
-      filePath: path,
-    }).code,
-    css: result.css?.code || undefined,
-  };
-}
-
-/**
- * A rune-bearing module (`*.svelte.ts`).
- *
- * `compileModule` is the compiler's entry for these. Types are stripped first,
- * for the same reason as in a component: nothing here preprocesses TypeScript,
- * and the Svelte compiler does not accept it.
- */
-async function compileSvelteModule(path: string, source: string, sucrase: Sucrase): Promise<CompiledFile> {
-  const compiler: any = await import('svelte/compiler');
-  // Same reason as in a component: a rune module's bindings are read by code the
-  // stripper is not looking at, so nothing may be elided as "unused". The rune
-  // imports go first — this is the file where that mistake was measured.
-  // disableESTransforms for the same reason as the component path above — see there.
-  const js = sucrase.transform(stripRuneImports(source), {
-    transforms: ['typescript'],
-    keepUnusedImports: true,
-    disableESTransforms: true,
-    filePath: path,
-  }).code;
-  const result = compiler.compileModule(js, { filename: path, generate: 'client' });
-  return {
-    code: sucrase.transform(result.js.code, { transforms: ['imports'], production: true, filePath: path }).code,
   };
 }
