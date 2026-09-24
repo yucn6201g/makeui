@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { needsCompileToRender } from '../utils/thumbnail';
 import { splitHtmlToFiles } from '../utils/virtualFs';
 import { buildReactPreview, enqueueBuild } from '../utils/reactPreview';
+import { PREVIEW_GUARD_SCRIPT } from '../utils/previewGuard';
 
 /**
  * A running copy of a document, which can be clicked through.
@@ -47,13 +48,28 @@ const SYNC_SCRIPT = `<script>
 })();
 </script>`;
 
-/** Puts the script where the document will run it, whatever shape it arrived in. */
+/*
+ * The editing preview's navigation guard, which this frame did not have.
+ *
+ * The frame's document is about:srcdoc, but its BASE url is the host page's, so
+ * a generated `<a href="#/">` resolves to https://<MakeUI's host>/#/ — a
+ * different document — and the click navigates the whole frame out of the
+ * comparison. Reported 2026-09-25 twice over: the link to the booking system's
+ * first screen showed 「（MakeUI のドメイン）で接続が拒否されました」,
+ * and 「画面を連動」 did nothing, because every screen change that went through a
+ * link replaced the document together with the sync script inside it. The
+ * guard performs a fragment link as `location.hash = …`, which stays in the
+ * document and raises `hashchange` for the app and for SYNC_SCRIPT alike.
+ */
+const FRAME_SCRIPTS = PREVIEW_GUARD_SCRIPT + SYNC_SCRIPT;
+
+/** Puts the scripts where the document will run them, whatever shape it arrived in. */
 function withSync(doc: string): string {
   const head = doc.match(/<head(\s[^>]*)?>/i);
-  if (head) return doc.replace(head[0], head[0] + SYNC_SCRIPT);
+  if (head) return doc.replace(head[0], head[0] + FRAME_SCRIPTS);
   const body = doc.match(/<body(\s[^>]*)?>/i);
-  if (body) return doc.replace(body[0], body[0] + SYNC_SCRIPT);
-  return SYNC_SCRIPT + doc;
+  if (body) return doc.replace(body[0], body[0] + FRAME_SCRIPTS);
+  return FRAME_SCRIPTS + doc;
 }
 
 interface LiveFrameProps {

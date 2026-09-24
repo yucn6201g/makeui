@@ -18,6 +18,7 @@ import { FRAMEWORKS, type OutputKind } from '../config/frameworks.js';
 import { formControlRules, smallControlFonts, textEntryControlTags } from '../tools/form-controls.js';
 import { renderedFrom } from '../tools/artwork.js';
 import { unguardedCheckouts } from '../tools/shell-fixes.js';
+import { unhandledDispatches } from '../tools/source-consistency.js';
 
 export interface InteractionDefect {
   /** Stable id, so logs can be grouped. */
@@ -1593,6 +1594,28 @@ export function auditShellContract(html: string, outputKind: OutputKind): Intera
         '商品一覧へ戻るボタンだけを表示する分岐を、この画面の先頭に追加してください。' +
         'カートに商品があるときの表示と動作は変えないでください。',
       paths: unguarded,
+    });
+  }
+
+  /*
+   * An action no reducer handles — see tools/source-consistency.ts. The names
+   * that could be matched without doubt were renamed by the fixups before this
+   * runs; what is left needs a decision only the code's meaning can make.
+   */
+  const { unhandled, handled } = unhandledDispatches(files);
+  if (unhandled.length > 0) {
+    const senders = [...files.entries()]
+      .filter(([, body]) => unhandled.some((t) => body.includes(`'${t}'`) || body.includes(`"${t}"`)))
+      .map(([path]) => path);
+    defects.push({
+      id: 'dispatch-unhandled',
+      note: `押しても状態が変わらない操作があります（${unhandled.slice(0, 3).join('、')}）。`,
+      instruction:
+        `次の action は dispatch されていますが、どの reducer の case も処理しないため無視されます: ${unhandled.join(', ')}。` +
+        `reducer が処理する type は ${handled.slice(0, 30).join(', ')} です。` +
+        '送る側の type を処理される名前に合わせるか、reducer に case を追加して、この操作が状態を変えるようにしてください。' +
+        'payload の形も、その case が読む形に合わせてください。',
+      paths: senders,
     });
   }
 

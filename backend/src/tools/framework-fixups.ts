@@ -3,6 +3,7 @@ import { readProjectFiles, writeProjectFile } from './project-transport.js'
 import { dropSuppliedFiles } from './supplied-files.js'
 import { fixCountBadges, fixFlowScreensInNav, fixIconBaseline } from './shell-fixes.js'
 import { fixResponsiveDisplay } from './responsive-display.js'
+import { fixSourceConsistency } from './source-consistency.js'
 export { dropSuppliedFiles }
 import { fixNamedImportOfDefault } from './react-bundle.js'
 import { replaceEmoji } from './emoji-icons.js'
@@ -301,6 +302,9 @@ export function fixupProject(html: string, kind: OutputKind): { html: string; fi
   apply(fixIconBaseline(files))
 
   apply(fixResponsiveDisplay(files))
+
+  // Four that compile and render and are wrong — see tools/source-consistency.ts.
+  apply(fixSourceConsistency(files))
 
   /**
    * Two defects a user reported on one generated storefront, both invisible to
