@@ -438,6 +438,13 @@ export async function getVersion(userId: string, versionId: string): Promise<Ver
   return {
     versionId: item.versionId?.S ?? '',
     userId,
+    /*
+     * Which project it belongs to. Left out, and GET /versions/:id?projectId
+     * — which refuses a version of another project — refused every version:
+     * the comparison said 「読み込みに失敗しました」 on both sides and picking an
+     * older version from the menu failed the same way (2026-09-24).
+     */
+    projectId: item.projectId?.S,
     prompt: stripInternalPrompt(item.prompt?.S ?? ''),
     html: await hydrateHtml(item),
     score: parseInt(item.score?.N ?? '0', 10),
