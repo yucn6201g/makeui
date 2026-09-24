@@ -8,6 +8,8 @@ import { Preview } from './Preview';
 import { Dropdown } from './Dropdown';
 import { isOlderScoreScale } from '../utils/scoreScale';
 import { versionQualityLabel, versionQualityTitle } from '../utils/versionQuality';
+import { SlidingIndicator } from './SlidingIndicator';
+import { usePresence } from '../hooks/usePresence';
 
 const UNLIMITED = -1;
 
@@ -2500,7 +2502,8 @@ function ModelsTab({
             <div className="adm-modeltotals">
               <div className="adm-modeltotals__head">
                 {span}の推移
-                <span className="adm-metrics" role="group" aria-label="表示する指標">
+                <span className="adm-metrics motion-track" role="group" aria-label="表示する指標">
+                  <SlidingIndicator active={metric} />
                   {METRICS.map((m) => (
                     <button
                       key={m.id}
@@ -2734,7 +2737,10 @@ export function AdminPanel() {
     if (visible && tab === 'groups') fetchGroups().catch(() => {});
   }, [visible, tab, cognitoUsers.length, fetchCognitoUsers, fetchGroups]);
 
-  if (!visible) {
+  // Kept on screen while it slides away — see usePresence.
+  const sheet = usePresence(visible);
+
+  if (!sheet.mounted) {
     return (
       <button
         onClick={() => { setVisible(true); }}
@@ -2750,8 +2756,8 @@ export function AdminPanel() {
 
   return (
     <>
-      <div className="adm-overlay" onClick={() => setVisible(false)} aria-hidden="true" />
-      <div className="adm-panel" role="region" aria-label="管理画面">
+      <div className="adm-overlay" onClick={() => setVisible(false)} aria-hidden="true" data-state={sheet.state} />
+      <div className="adm-panel" role="region" aria-label="管理画面" data-state={sheet.state}>
         {/* Header */}
         <div className="adm-header">
           <div className="adm-header__left">
@@ -2793,7 +2799,8 @@ export function AdminPanel() {
         </div>
 
         {/* Tabs */}
-        <div className="adm-tabs">
+        <div className="adm-tabs motion-track">
+          <SlidingIndicator active={tab} selector=".adm-tab--active" />
           <button
             className={`adm-tab${tab === 'usage' ? ' adm-tab--active' : ''}`}
             onClick={() => setTab('usage')}
@@ -2857,7 +2864,7 @@ export function AdminPanel() {
         {cognitoError && tab === 'users' && <div className="adm-error-banner" role="alert">{cognitoError}</div>}
 
         {/* Tab content */}
-        <div className="adm-body">
+        <div className="adm-body motion-swap" key={tab}>
           {tab === 'usage' && (
             <UsageTab users={users} loading={loading} period={period} onPeriodChange={setPeriod} />
           )}

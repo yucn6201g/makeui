@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { usePresence } from '../hooks/usePresence';
 
 export interface DropdownOption {
   id: string;
@@ -60,6 +61,8 @@ export function Dropdown({ value, options, onChange, label, disabled, title, pla
   const selected = options.find((o) => o.id === value) ?? options[0];
 
   const close = useCallback(() => setOpen(false), []);
+  /* Stays for its closing animation, in the place it opened. */
+  const shown = usePresence(open);
 
   // Dismiss on outside click and on Escape, the two things every menu owes the user.
   useEffect(() => {
@@ -134,8 +137,9 @@ export function Dropdown({ value, options, onChange, label, disabled, title, pla
     };
   }, [open, placement]);
 
-  // A stale position from the last time it was open must not be reused.
-  useEffect(() => { if (!open) setBox(null); }, [open]);
+  // A stale position from the last time it was open must not be reused —
+  // cleared once it has finished leaving, not as it starts to.
+  useEffect(() => { if (!shown.mounted) setBox(null); }, [shown.mounted]);
 
   // Move focus into the menu so arrow keys and type-ahead work from the keyboard.
   useEffect(() => {
@@ -170,10 +174,12 @@ export function Dropdown({ value, options, onChange, label, disabled, title, pla
           <polyline points="6 9 12 15 18 9" />
         </svg>
       </button>
-      {open && (
+      {shown.mounted && (
         <ul
           className="dd__menu"
           style={box ?? { position: 'fixed', visibility: 'hidden' }}
+          data-state={shown.state}
+          data-side={box && box.bottom !== undefined ? 'up' : 'down'}
           id={listId}
           role="listbox"
           ref={listRef}

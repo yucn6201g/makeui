@@ -1,4 +1,7 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import { usePresence } from '../hooks/usePresence';
+import { useFlip } from '../hooks/useFlip';
+import { SlidingIndicator } from './SlidingIndicator';
 
 import { TEMPLATES, CATEGORIES } from '../data/promptTemplates';
 export { CHAT_SUGGESTIONS } from '../data/promptTemplates';
@@ -14,6 +17,10 @@ export function PromptTemplates({ onSelect }: PromptTemplatesProps) {
   const filteredTemplates = activeCategory === '全て'
     ? TEMPLATES
     : TEMPLATES.filter((t) => t.category === activeCategory);
+  const panel = usePresence(isOpen);
+  // A category narrows the list by moving what stays, not by redrawing it.
+  const listRef = useRef<HTMLUListElement>(null);
+  useFlip(listRef, { stagger: 18 });
 
   return (
     <div className="prompt-templates">
@@ -29,9 +36,10 @@ export function PromptTemplates({ onSelect }: PromptTemplatesProps) {
           {isOpen ? '▲' : '▼'}
         </span>
       </button>
-      {isOpen && (
-        <div className="prompt-templates__panel" id="prompt-templates-panel" role="region" aria-label="プロンプトテンプレート">
-          <div className="prompt-templates__categories" role="group" aria-label="カテゴリフィルター">
+      {panel.mounted && (
+        <div className="prompt-templates__panel" id="prompt-templates-panel" role="region" aria-label="プロンプトテンプレート" data-state={panel.state}>
+          <div className="prompt-templates__categories motion-track" role="group" aria-label="カテゴリフィルター">
+            <SlidingIndicator active={activeCategory} />
             {CATEGORIES.map((category) => (
               <button
                 key={category}
@@ -44,7 +52,7 @@ export function PromptTemplates({ onSelect }: PromptTemplatesProps) {
               </button>
             ))}
           </div>
-          <ul className="prompt-templates__list">
+          <ul className="prompt-templates__list" ref={listRef}>
             {filteredTemplates.map((template) => (
               <li key={template.id}>
                 <button

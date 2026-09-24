@@ -3188,13 +3188,18 @@ fieldset legend {
   border-radius: 8px;
   overflow: hidden;
   cursor: pointer;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  /* `translate`, not `transform`: the layout animation (useFlip) moves cards
+     with their transform, and the lift has to compose with it, not replace it. */
+  transition: border-color 0.15s, box-shadow var(--spring-smooth-ms) var(--spring-smooth),
+    translate var(--spring-smooth-ms) var(--spring-smooth);
   position: relative;
 }
 
+/* Lifted a little toward the pointer, the way a tile under a finger rises. */
 .project-list__card:hover {
   border-color: #0d99ff;
-  box-shadow: 0 0 0 1px #0d99ff;
+  box-shadow: 0 0 0 1px #0d99ff, 0 10px 24px -14px rgba(13, 153, 255, 0.45);
+  translate: 0 -2px;
 }
 
 .project-list__card--new {
@@ -4122,7 +4127,7 @@ button.app__logo:hover {
 .vsc__chevron {
   flex: none;
   color: #cccccc;
-  transition: transform 0.1s;
+  transition: transform var(--spring-snappy-ms) var(--spring-snappy);
 }
 .vsc__chevron--open {
   transform: rotate(90deg);
@@ -4841,11 +4846,13 @@ button.app__logo:hover {
   background: transparent;
   border: 0;
   border-radius: 0;
-  animation: chat-msg-in 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  /* Backwards only: a transform left filling after the entrance would make
+     every message a containing block for the fixed menus inside it. */
+  animation: chat-msg-in var(--spring-smooth-ms) var(--spring-smooth) backwards;
 }
 
 @keyframes chat-msg-in {
-  from { opacity: 0; transform: translateY(4px); }
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
   to   { opacity: 1; transform: none; }
 }
 
@@ -5537,7 +5544,7 @@ button.app__logo:hover {
   color: var(--figma-text-dim);
   display: grid;
   place-items: center;
-  transition: transform 120ms ease;
+  transition: transform var(--spring-snappy-ms) var(--spring-snappy);
 }
 .rt__caret--open { transform: rotate(90deg); }
 
@@ -8673,3 +8680,293 @@ button.app__logo:hover {
 }
 .project-list__role--full { border-color: var(--figma-blue-on-white-text); color: var(--figma-blue-on-white-text); }
 .project-list__role--edit { border-color: var(--figma-text-muted); color: var(--figma-text); }
+
+/* ==========================================================================
+   Motion — the feel of a native app.
+
+   Four mechanisms, each with one home:
+
+   1. Springs. The tokens below are springs sampled into `linear()` easings by
+      utils/motion.ts (motion.test.mjs keeps the two identical). `smooth` for
+      things that travel, `snappy` for selection, `bouncy` for small things
+      that should feel alive. An engine without `linear()` gets a curve of the
+      same character instead of losing the animation.
+   2. The sliding thumb. A `.motion-track` holds one `.motion-indicator`
+      (components/SlidingIndicator.tsx) that travels to the chosen item. The
+      chosen item keeps its class for its text colour, and the rules at the
+      end of the indicator block take its fill away and give it to the thumb —
+      a fill that stays on the item can only reappear, never move.
+   3. Presence. Something shown and hidden is kept for its exit
+      (hooks/usePresence.ts) and carries `data-state="open" | "closing"`.
+      Entrances fill backwards only: a transform left filling after the
+      animation would make the element a containing block for the fixed
+      menus inside it.
+   4. Layout. A grid or list whose items move animates them in script
+      (hooks/useFlip.ts); nothing here. Nor is the press feedback, which
+      animates `scale` from utils/pressFeedback.ts.
+   ========================================================================== */
+
+:root {
+  --spring-smooth: linear(0, 0.0195, 0.0681, 0.134, 0.2086, 0.2864, 0.3633, 0.4369, 0.5057, 0.5687, 0.6256, 0.6766, 0.7218, 0.7615, 0.7961, 0.8263, 0.8524, 0.8748, 0.8941, 0.9105, 0.9246, 0.9365, 0.9467, 0.9552, 0.9625, 0.9686, 0.9737, 0.9781, 0.9817, 0.9847, 0.9873, 0.9894, 0.9912, 0.9927, 0.9939, 0.995, 0.9958, 0.9965, 0.9971, 0.9976, 1);
+  --spring-smooth-ms: 567ms;
+  --spring-snappy: linear(0, 0.0186, 0.0664, 0.1334, 0.2119, 0.2959, 0.3807, 0.4632, 0.5412, 0.6132, 0.6783, 0.7362, 0.787, 0.8308, 0.8681, 0.8995, 0.9255, 0.9467, 0.9638, 0.9773, 0.9877, 0.9957, 1.0015, 1.0056, 1.0084, 1.01, 1.0109, 1.0111, 1.0109, 1.0103, 1.0096, 1.0087, 1.0078, 1.0068, 1.0059, 1.005, 1.0042, 1.0035, 1.0029, 1.0023, 1);
+  --spring-snappy-ms: 467ms;
+  --spring-bouncy: linear(0, 0.0275, 0.0986, 0.198, 0.3132, 0.4339, 0.5523, 0.6629, 0.762, 0.8473, 0.9182, 0.9746, 1.0174, 1.0481, 1.0681, 1.0793, 1.0834, 1.0821, 1.0768, 1.0689, 1.0595, 1.0494, 1.0394, 1.03, 1.0215, 1.0142, 1.008, 1.003, 0.9992, 0.9964, 0.9946, 0.9935, 0.9931, 0.9931, 0.9935, 0.9941, 0.9949, 0.9957, 0.9965, 0.9973, 1);
+  --spring-bouncy-ms: 629ms;
+  --spring-swap-ms: 320ms;
+  --motion-exit-ms: 180ms;
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  /* Which way a popover rises from — flipped for a menu that opens upward. */
+  --pop-y: -6px;
+}
+
+@supports not (transition-timing-function: linear(0, 1)) {
+  :root {
+    --spring-smooth: cubic-bezier(0.22, 1, 0.36, 1);
+    --spring-snappy: cubic-bezier(0.3, 1.15, 0.5, 1);
+    --spring-bouncy: cubic-bezier(0.34, 1.5, 0.64, 1);
+  }
+}
+
+/* --- 2. the sliding thumb --------------------------------------------------- */
+
+.motion-track {
+  position: relative;
+  isolation: isolate;
+}
+.motion-track > :not(.motion-indicator) {
+  position: relative;
+  z-index: 1;
+}
+.motion-indicator {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 0;
+  opacity: 0;
+  pointer-events: none;
+  border-radius: var(--radius-4);
+  transition:
+    transform var(--spring-snappy-ms) var(--spring-snappy),
+    width var(--spring-snappy-ms) var(--spring-snappy),
+    height var(--spring-snappy-ms) var(--spring-snappy),
+    opacity 0.15s ease;
+}
+/* The raised white segment of a segmented control. */
+.motion-indicator--pill {
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08), 0 2px 6px -2px rgba(0, 0, 0, 0.08);
+}
+/* A tab row's underline, drawn inside the tab's own box. */
+.motion-indicator--underline {
+  border-radius: 0;
+  box-shadow: inset 0 -2px 0 var(--figma-blue);
+}
+/* The code editor's activity bar marks its view with a bar on the left. */
+.motion-indicator--rail {
+  border-radius: 0;
+  box-shadow: inset 2px 0 0 #ffffff;
+}
+/* The viewport chips: a blue outline on a blue tint. */
+.motion-indicator--chip {
+  background: rgba(13, 153, 255, 0.1);
+  box-shadow: inset 0 0 0 1px var(--figma-blue);
+}
+
+.project-list__segmented > .motion-indicator { border-radius: var(--radius-6); }
+.adm-tabs > .motion-indicator,
+.vc__tabs > .motion-indicator { border-radius: 5px; }
+.prompt-templates__categories > .motion-indicator {
+  background: var(--figma-blue-on-white-text);
+  box-shadow: none;
+}
+
+/* The fills the thumb has taken over. */
+.motion-track > .project-list__segment--on,
+.motion-track > .app__preview-tab--active,
+.motion-track > .adm-metric--active,
+.motion-track > .adm-tab--active,
+.motion-track > .adm-tab--active:hover {
+  background: transparent;
+  box-shadow: none;
+  border-color: transparent;
+}
+.motion-track > .project-list__tab--on { border-bottom-color: transparent; }
+.motion-track > .vc__tab--on { background: transparent; }
+.motion-track > .app__viewport-chip--active { background: transparent; border-color: transparent; }
+/* Every chip clear, so the thumb is not hidden behind the ones it passes. */
+.motion-track > .prompt-templates__chip { background: transparent; }
+.motion-track > .prompt-templates__chip--active,
+.motion-track > .prompt-templates__chip--active:hover {
+  background: transparent;
+  border-color: transparent;
+}
+.motion-track > .vsc__activity-btn--active::before { content: none; }
+
+/* --- 3. presence ------------------------------------------------------------ */
+
+@keyframes motion-pop-in {
+  from { opacity: 0; transform: translateY(var(--pop-y)) scale(0.96); }
+}
+@keyframes motion-pop-out {
+  to { opacity: 0; transform: translateY(calc(var(--pop-y) * 0.6)) scale(0.97); }
+}
+@keyframes motion-sheet-in {
+  from { opacity: 0; transform: translateY(28px) scale(0.985); }
+}
+@keyframes motion-sheet-out {
+  to { opacity: 0; transform: translateY(18px) scale(0.99); }
+}
+@keyframes motion-fade-in {
+  from { opacity: 0; }
+}
+@keyframes motion-fade-out {
+  to { opacity: 0; }
+}
+@keyframes motion-drop-in {
+  from { opacity: 0; transform: translateY(-6px); }
+}
+@keyframes motion-drop-out {
+  to { opacity: 0; transform: translateY(-4px); }
+}
+@keyframes motion-swap-in {
+  from { opacity: 0; transform: translateY(6px); }
+}
+@keyframes motion-pop {
+  from { transform: scale(0.4); }
+}
+
+/* Popovers grow out of the control that opened them. */
+.share-panel,
+.usage-menu__panel {
+  transform-origin: top right;
+  animation: motion-pop-in var(--spring-smooth-ms) var(--spring-smooth) backwards;
+}
+.dd__menu {
+  transform-origin: top left;
+  animation: motion-pop-in var(--spring-smooth-ms) var(--spring-smooth) backwards;
+}
+.dd__menu[data-side="up"] {
+  --pop-y: 6px;
+  transform-origin: bottom left;
+}
+.share-panel[data-state="closing"],
+.usage-menu__panel[data-state="closing"],
+.dd__menu[data-state="closing"] {
+  animation: motion-pop-out var(--motion-exit-ms) var(--ease-exit) forwards;
+  pointer-events: none;
+}
+
+/* Full-screen views rise like a sheet and sink away. */
+.adm-panel,
+.vc {
+  animation: motion-sheet-in var(--spring-smooth-ms) var(--spring-smooth) backwards;
+}
+.adm-panel[data-state="closing"],
+.vc[data-state="closing"] {
+  animation: motion-sheet-out var(--motion-exit-ms) var(--ease-exit) forwards;
+  pointer-events: none;
+}
+.adm-overlay { animation: motion-fade-in var(--spring-swap-ms) ease backwards; }
+.adm-overlay[data-state="closing"] { animation: motion-fade-out var(--motion-exit-ms) ease forwards; }
+
+/* Things that open in place drop down into it. */
+.prompt-templates__panel,
+.project-list__bulk {
+  animation: motion-drop-in var(--spring-smooth-ms) var(--spring-smooth) backwards;
+}
+.prompt-templates__panel[data-state="closing"],
+.project-list__bulk[data-state="closing"] {
+  animation: motion-drop-out var(--motion-exit-ms) var(--ease-exit) forwards;
+  pointer-events: none;
+}
+
+/*
+ * What appears inside a view without being asked for by a toggle: a tab's
+ * content, an expanded step, a folder's files, a message that something went
+ * wrong. Entrance only; they leave with the view they belong to.
+ */
+.motion-swap,
+.app__pane,
+.rt__body,
+.vc__file-body,
+.vsc__sidebar,
+.vsc__tree[role="group"],
+.share-panel__results,
+.project-list__empty {
+  animation: motion-swap-in var(--spring-swap-ms) var(--spring-smooth) backwards;
+}
+.project-list__error,
+.app__save-failed,
+.share-panel__error {
+  animation: motion-drop-in var(--spring-smooth-ms) var(--spring-smooth) backwards;
+}
+.project-list__confirm,
+.app__scroll-bottom {
+  animation: motion-pop-in var(--spring-smooth-ms) var(--spring-smooth) backwards;
+}
+.app__edit-status { animation: motion-fade-in var(--spring-swap-ms) ease backwards; }
+
+/* A star being set, a box being ticked: a small spring, once. */
+.project-list__card-star--on svg,
+.project-list__favourite-filter--on svg,
+.project-list__check svg {
+  animation: motion-pop var(--spring-bouncy-ms) var(--spring-bouncy) backwards;
+}
+
+/* A disclosure opens to its height and closes from it, where the engine can
+   animate to `auto`; elsewhere its content simply fades in. */
+@supports (interpolate-size: allow-keywords) {
+  details { interpolate-size: allow-keywords; }
+  details::details-content {
+    height: 0;
+    overflow: clip;
+    transition:
+      height var(--spring-smooth-ms) var(--spring-smooth),
+      content-visibility var(--spring-smooth-ms) allow-discrete;
+  }
+  details[open]::details-content { height: auto; }
+}
+@supports not (interpolate-size: allow-keywords) {
+  details[open] > :not(summary) {
+    animation: motion-swap-in var(--spring-swap-ms) var(--spring-smooth) backwards;
+  }
+}
+
+/* Leaving cards are lifted out of the grid by useFlip; they cannot be hit. */
+[data-flip-exiting] { pointer-events: none; }
+
+/* --- navigation: a push into a project, a pop back to the list ---------------- */
+
+@keyframes motion-nav-in-from-right { from { opacity: 0; transform: translateX(48px); } }
+@keyframes motion-nav-out-to-left { to { opacity: 0; transform: translateX(-24px); } }
+@keyframes motion-nav-in-from-left { from { opacity: 0; transform: translateX(-48px); } }
+@keyframes motion-nav-out-to-right { to { opacity: 0; transform: translateX(24px); } }
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: var(--spring-smooth-ms);
+  animation-timing-function: var(--spring-smooth);
+}
+html[data-nav="forward"]::view-transition-old(root),
+html[data-nav="back"]::view-transition-old(root) {
+  animation-duration: var(--spring-swap-ms);
+  animation-timing-function: var(--ease-exit);
+}
+html[data-nav="forward"]::view-transition-old(root) { animation-name: motion-nav-out-to-left; }
+html[data-nav="forward"]::view-transition-new(root) { animation-name: motion-nav-in-from-right; }
+html[data-nav="back"]::view-transition-old(root) { animation-name: motion-nav-out-to-right; }
+html[data-nav="back"]::view-transition-new(root) { animation-name: motion-nav-in-from-left; }
+
+/* --- less motion, when asked for ---------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --spring-smooth-ms: 1ms;
+    --spring-snappy-ms: 1ms;
+    --spring-bouncy-ms: 1ms;
+    --spring-swap-ms: 1ms;
+    --motion-exit-ms: 1ms;
+  }
+  .project-list__card:hover { translate: none; }
+}

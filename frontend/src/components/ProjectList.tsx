@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useProjects, type Project } from '../hooks/useProjects';
 import { ProjectThumbnail } from './ProjectThumbnail';
 import {
@@ -19,6 +19,9 @@ import { useUsage } from '../hooks/useUsage';
 import { Dropdown } from './Dropdown';
 import { localPartOf } from '../utils/displayName';
 import { activeJobProjectIds } from '../utils/activeJob';
+import { SlidingIndicator } from './SlidingIndicator';
+import { useFlip, EXITING_ATTR } from '../hooks/useFlip';
+import { usePresence, usePresenceList } from '../hooks/usePresence';
 
 /**
  * What each output format is called on a card.
@@ -162,6 +165,17 @@ export function ProjectList({ onOpenProject, onNewProject }: ProjectListProps) {
    */
   const filtering = query.trim().length > 0 || framework !== 'all' || favouriteOnly;
 
+  /*
+   * The grid moves rather than redraws: a card filtered out fades where it
+   * stood, the rest travel to their new places, and new ones rise in — for a
+   * tab, a framework, a search, a sort or a deletion alike. See useFlip.
+   */
+  const gridRef = useRef<HTMLDivElement>(null);
+  useFlip(gridRef);
+  const cards = usePresenceList(shown, (p) => p.projectId);
+  const newCard = usePresence(tab === 'active' && !selecting);
+  const bulkBar = usePresence(selecting);
+
   const handleNew = async () => {
     setCreating(true);
     const project = await createProject('Untitled');
@@ -295,7 +309,8 @@ export function ProjectList({ onOpenProject, onNewProject }: ProjectListProps) {
 
       <div className="project-list__body">
         <div className="project-list__toolbar">
-          <div className="project-list__tabs" role="tablist" aria-label="表示するプロジェクト">
+          <div className="project-list__tabs motion-track" role="tablist" aria-label="表示するプロジェクト">
+            <SlidingIndicator active={tab} variant="underline" />
             {([
               ['active', 'プロジェクト', 0],
               // Projects this account shared, and projects shared with it — both sides.
@@ -349,8 +364,8 @@ export function ProjectList({ onOpenProject, onNewProject }: ProjectListProps) {
           that has not been put away first is the one mistake with nothing
           behind it, and the server refuses it anyway.
         */}
-        {selecting && (
-          <div className="project-list__bulk" role="region" aria-label="まとめて操作">
+        {bulkBar.mounted && (
+          <div className="project-list__bulk" role="region" aria-label="まとめて操作" data-state={bulkBar.state}>
             <span className="project-list__bulk-count" role="status">
               {selectedShown.length}件を選択中
             </span>
@@ -452,7 +467,8 @@ export function ProjectList({ onOpenProject, onNewProject }: ProjectListProps) {
             )}
           </div>
 
-          <div className="project-list__segmented" role="group" aria-label="フレームワークで絞り込む">
+          <div className="project-list__segmented motion-track" role="group" aria-label="フレームワークで絞り込む">
+            <SlidingIndicator active={framework} />
             {FRAMEWORK_TABS.map((tab) => (
               <button
                 key={tab.value}
@@ -540,10 +556,16 @@ export function ProjectList({ onOpenProject, onNewProject }: ProjectListProps) {
         {/* While the first load is in flight, show skeleton cards in the grid itself.
             Rendering a loading line above a grid that already had the "new project"
             card in it left the page looking half-built. */}
-        <div className="project-list__grid">
+        <div className="project-list__grid" ref={gridRef}>
           {/* New project card. Only on プロジェクト — nothing is created in the archive, and a new project is nobody else's yet. */}
-          {tab === 'active' && !selecting && (
-            <button className="project-list__card project-list__card--new" onClick={handleNew} type="button" disabled={creating}>
+          {newCard.mounted && (
+            <button
+              className="project-list__card project-list__card--new"
+              onClick={handleNew}
+              type="button"
+              disabled={creating || newCard.closing}
+              {...(newCard.closing ? { [EXITING_ATTR]: '' } : {})}
+            >
               <div className="project-list__card-icon">
                 <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
                   <line x1="12" y1="5" x2="12" y2="19" />
@@ -569,7 +591,7 @@ export function ProjectList({ onOpenProject, onNewProject }: ProjectListProps) {
             </>
           )}
 
-          {shown.map((project) => {
+          {cards.map(({ item: project, exiting }) => {
             const kind = projectKind(project);
             const running = busyProjects.has(project.projectId);
             const archived = Boolean(project.archivedAt);
@@ -591,7 +613,9 @@ export function ProjectList({ onOpenProject, onNewProject }: ProjectListProps) {
               onClick={activate}
               role={selecting ? 'checkbox' : 'button'}
               aria-checked={selecting ? isSelected : undefined}
-              tabIndex={0}
+              tabIndex={exiting ? -1 : 0}
+              aria-hidden={exiting || undefined}
+              {...(exiting ? { [EXITING_ATTR]: '' } : {})}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || (selecting && e.key === ' ')) {
                   e.preventDefault();

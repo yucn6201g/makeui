@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { usePresence } from '../hooks/usePresence';
 
 interface UsageMenuProps {
   /**
@@ -172,6 +173,8 @@ export function UsageMenu({ name, group = null, limits, error = null, onOpen }: 
     if (next) onOpen?.();
   };
 
+  const panel = usePresence(open);
+
   return (
     <div className="usage-menu">
       <button
@@ -192,11 +195,11 @@ export function UsageMenu({ name, group = null, limits, error = null, onOpen }: 
         {name || <span className="usage-menu__name-wait" aria-label="読み込み中" />}
         {group && <span className="usage-menu__group">{group}</span>}
       </button>
-      {open && (
+      {panel.mounted && (
         <>
           {/* Click-away, so the panel does not need a close button. */}
           <div className="usage-menu__scrim" onClick={() => setOpen(false)} aria-hidden="true" />
-          <div className="usage-menu__panel" role="dialog" aria-label="今月の上限">
+          <div className="usage-menu__panel" role="dialog" aria-label="今月の上限" data-state={panel.state}>
             <p className="usage-menu__who">
               {name || <span className="usage-menu__name-wait" aria-label="読み込み中" />}
               {group && <span className="usage-menu__group">{group}</span>}

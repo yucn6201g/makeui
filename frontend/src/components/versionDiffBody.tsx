@@ -160,7 +160,7 @@ export function CodeDiff({ files }: { files: FileDiff[] }) {
   };
 
   return (
-    <div className="vc__code" role="region" aria-label="コード差分">
+    <div className="vc__code motion-swap" role="region" aria-label="コード差分">
       <nav className="vc__files" aria-label="変更されたファイル">
         <span className="vc__files-total">
           {total.files} ファイルが変更 <Counts added={total.added} removed={total.removed} />

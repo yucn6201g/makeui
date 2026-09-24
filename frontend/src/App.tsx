@@ -48,6 +48,8 @@ import { useProjects, type Project } from './hooks/useProjects';
 import { localPartOf } from './utils/displayName';
 import { useRefinePrompt } from './hooks/useRefinePrompt';
 import { isOlderRubric } from './utils/scoreScale';
+import { navigate } from './utils/viewTransition';
+import { SlidingIndicator } from './components/SlidingIndicator';
 
 function LoginForm() {
   const { authStep, mfaSecret, mfaEmail, login, submitNewPassword, submitMFACode } = useAuth();
@@ -2722,7 +2724,8 @@ function MainApp({ project, onBackToProjects, onUpdateProject, fetchProjectPrevi
         {/* Right: Preview / Code */}
         <main className="app__preview-pane">
           <div className="app__preview-toolbar">
-            <div className="app__preview-tabs" role="tablist" aria-label="Preview/Code">
+            <div className="app__preview-tabs motion-track" role="tablist" aria-label="Preview/Code">
+              <SlidingIndicator active={previewTab} />
               <button
                 className={`app__preview-tab${previewTab === 'preview' ? ' app__preview-tab--active' : ''}`}
                 onClick={() => setPreviewTab('preview')}
@@ -2742,7 +2745,8 @@ function MainApp({ project, onBackToProjects, onUpdateProject, fetchProjectPrevi
                 Code
               </button>
             </div>
-            <div className="app__viewport-chips" role="group" aria-label="Viewport">
+            <div className="app__viewport-chips motion-track" role="group" aria-label="Viewport">
+              <SlidingIndicator active={device} variant="chip" />
               {DEVICES.map((d) => (
                 <button
                   key={d.id}
@@ -2975,20 +2979,20 @@ function AppContent() {
 
   if (!isAuthenticated) return <LoginForm />;
 
+  /*
+   * Into a project and back out, as a push and a pop — see utils/viewTransition.ts.
+   */
+  const open = (project: Project) => navigate(() => setCurrentProject(project), 'forward');
+
   if (!currentProject) {
-    return (
-      <ProjectList
-        onOpenProject={(project) => setCurrentProject(project)}
-        onNewProject={(project) => setCurrentProject(project)}
-      />
-    );
+    return <ProjectList onOpenProject={open} onNewProject={open} />;
   }
 
   return (
     <MainApp
       key={currentProject.projectId}
       project={currentProject}
-      onBackToProjects={() => setCurrentProject(null)}
+      onBackToProjects={() => navigate(() => setCurrentProject(null), 'back')}
       onUpdateProject={updateProject}
       fetchProjectPreview={fetchProjectPreview}
     />

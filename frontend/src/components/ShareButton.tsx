@@ -5,6 +5,8 @@ import type { ProjectRole } from '../hooks/useProjects';
 import { shareDocument } from '../utils/shareDocument';
 import { buildReactPreview } from '../utils/reactPreview';
 import { ROLE_HINTS, ROLE_LABELS, SHARE_ROLES, canManageShares, canWrite, type ShareRole } from '../utils/shareRoles';
+import { usePresence, usePresenceList } from '../hooks/usePresence';
+import { useFlip, EXITING_ATTR } from '../hooks/useFlip';
 
 /**
  * 共有: people and groups inside MakeUI, and a public link outside it.
@@ -49,6 +51,8 @@ export function ShareButton({
     };
   }, [open]);
 
+  const panel = usePresence(open);
+
   return (
     <div className="app__share" ref={rootRef}>
       <button
@@ -66,8 +70,8 @@ export function ShareButton({
         </svg>
         共有
       </button>
-      {open && (
-        <div className="share-panel" role="dialog" aria-label="共有">
+      {panel.mounted && (
+        <div className="share-panel" role="dialog" aria-label="共有" data-state={panel.state}>
           {projectId && <PeopleSection projectId={projectId} role={role} />}
           <LinkSection html={html} title={title} allowed={canWrite(role)} />
         </div>
@@ -82,6 +86,10 @@ function PeopleSection({ projectId, role }: { projectId: string; role: ProjectRo
   const manage = canManageShares(effectiveRole);
   const [picked, setPicked] = useState<ShareCandidate | null>(null);
   const [newRole, setNewRole] = useState<ShareRole>('edit');
+  /* Someone added slides in, someone removed folds away and the rest close up. */
+  const membersRef = useRef<HTMLUListElement>(null);
+  useFlip(membersRef);
+  const members = usePresenceList(s.shares, (g) => `${g.type}:${g.id}`);
 
   const add = async () => {
     if (!picked) return;
@@ -157,7 +165,7 @@ function PeopleSection({ projectId, role }: { projectId: string; role: ProjectRo
         </div>
       )}
 
-      <ul className="share-panel__members" aria-label="アクセスできるユーザー">
+      <ul className="share-panel__members" aria-label="アクセスできるユーザー" ref={membersRef}>
         {s.owner && (
           <li className="share-panel__member">
             <span className="share-panel__member-name">
@@ -167,10 +175,10 @@ function PeopleSection({ projectId, role }: { projectId: string; role: ProjectRo
             <span className="share-panel__role-badge">{ROLE_LABELS.owner}</span>
           </li>
         )}
-        {s.shares.map((g) => {
+        {members.map(({ item: g, exiting }) => {
           const isSelf = g.type === 'user' && g.id === s.self;
           return (
-            <li key={`${g.type}:${g.id}`} className="share-panel__member">
+            <li key={`${g.type}:${g.id}`} className="share-panel__member" {...(exiting ? { [EXITING_ATTR]: '', 'aria-hidden': true } : {})}>
               <span className="share-panel__member-name" title={g.grantedByName ? `${g.grantedByName} さんが共有` : undefined}>
                 {g.type === 'group' && <GroupIcon />}
                 {g.label}

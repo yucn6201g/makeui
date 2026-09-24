@@ -4,6 +4,7 @@ import { editability } from '../utils/sourceEdit';
 import { splitHtmlToFiles, toProjectFiles, buildTree, type VFile, type TreeNode } from '../utils/virtualFs';
 import { searchFiles, MAX_MATCHES, type SearchResult } from '../utils/codeSearch';
 import { renderMarkdown } from '../utils/markdown';
+import { SlidingIndicator } from './SlidingIndicator';
 
 interface CodeEditorProps {
   html: string | null;
@@ -449,7 +450,8 @@ export function CodeEditor({ html, onEditFile }: CodeEditorProps) {
       <TitleBar title={activePath || 'エディタ'} />
       <div className="vsc__body">
       {/* Activity bar */}
-      <div className="vsc__activity">
+      <div className="vsc__activity motion-track">
+        <SlidingIndicator active={sidebar} variant="rail" />
         <button
           className={`vsc__activity-btn${showExplorer ? ' vsc__activity-btn--active' : ''}`}
           onClick={() => setSidebar((v) => (v === 'explorer' ? null : 'explorer'))}

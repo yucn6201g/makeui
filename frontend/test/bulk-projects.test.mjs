@@ -97,7 +97,9 @@ check('Space toggles it from the keyboard', /selecting && e\.key === ' '/.test(l
 check('the per-card star steps aside', /!archived && !selecting &&/.test(list), true);
 // And for a viewer of a shared project, who may not archive or delete either (2026-09-23).
 check('and so do the per-card archive and delete', /\{selecting \|\| !canWrite \? null : !archived \? \(/.test(list), true);
-check('the new-project card is not selectable', /tab === 'active' && !selecting &&/.test(list), true);
+// Shown through usePresence since 2026-09-24, so it can fade out rather than vanish.
+check('the new-project card is not selectable',
+  /const newCard = usePresence\(tab === 'active' && !selecting\)/.test(list) && /\{newCard\.mounted && \(/.test(list), true);
 check('Escape leaves the mode', /e\.key === 'Escape'\) leaveSelecting\(\)/.test(list), true);
 // Selected by outline AND the tick, not by colour alone.
 check('a selected card is marked by more than colour',
@@ -112,7 +114,7 @@ check('a selected card is marked by more than colour',
 check('the blue button is gone', /project-list__new-btn/.test(list), false);
 check('and its styles with it', /\.project-list__new-btn/.test(css), false);
 check('the card is still there', /project-list__card--new/.test(list), true);
-check('and still creates a project', /project-list__card--new" onClick=\{handleNew\}/.test(list), true);
+check('and still creates a project', /project-list__card--new"\s+onClick=\{handleNew\}/.test(list), true);
 check('there is exactly one way to create one', (list.match(/onClick=\{handleNew\}/g) ?? []).length, 1);
 
 console.log(`\n${pass} passed, ${fail} failed`);

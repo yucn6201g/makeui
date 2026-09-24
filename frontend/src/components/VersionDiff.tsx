@@ -4,6 +4,8 @@ import { SidePicker, SideFrame, CodeDiff } from './versionDiffBody';
 import { diffFileSets } from '../utils/fileDiff';
 import { splitHtmlToFiles } from '../utils/virtualFs';
 import type { VersionEntry } from '../hooks/useHistory';
+import { usePresence } from '../hooks/usePresence';
+import { SlidingIndicator } from './SlidingIndicator';
 
 interface VersionDiffProps {
   currentHtml: string | null;
@@ -74,6 +76,7 @@ export function VersionDiff({ currentHtml, versions, apiUrl, token, projectId }:
    * copy that goes stale the first time anything in it changes size.
    */
   const [headerBottom, setHeaderBottom] = useState(0);
+  const sheet = usePresence(isOpen);
   useEffect(() => {
     if (!isOpen) return;
     const header = document.querySelector('.app__header');
@@ -146,13 +149,14 @@ export function VersionDiff({ currentHtml, versions, apiUrl, token, projectId }:
         比較
       </button>
 
-      {isOpen && (
+      {sheet.mounted && (
         <div
           className="vc"
           role="dialog"
           aria-modal="true"
           aria-label="バージョン比較"
           style={{ top: headerBottom }}
+          data-state={sheet.state}
         >
           <header className="vc__bar">
             <span className="vc__title">バージョン比較</span>
@@ -175,7 +179,8 @@ export function VersionDiff({ currentHtml, versions, apiUrl, token, projectId }:
               </label>
             )}
 
-            <div className="vc__tabs" role="tablist">
+            <div className="vc__tabs motion-track" role="tablist">
+              <SlidingIndicator active={diffTab} />
               {(['visual', 'code'] as const).map((t) => (
                 <button
                   key={t}
@@ -208,7 +213,7 @@ export function VersionDiff({ currentHtml, versions, apiUrl, token, projectId }:
           </div>
 
           {diffTab === 'visual' && (
-            <div className="vc__pair">
+            <div className="vc__pair motion-swap">
               <SideFrame side={left.side} hash={linked ? hash : null}
                 onNavigate={(h) => { if (linked) setHash(h); }} />
               <SideFrame side={right.side} hash={linked ? hash : null}
