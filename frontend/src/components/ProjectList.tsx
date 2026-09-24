@@ -401,7 +401,7 @@ export function ProjectList({ onOpenProject, onNewProject }: ProjectListProps) {
                     削除する
                   </button>
                   <button className="project-list__bulk-link" onClick={() => setConfirmingBulkDelete(false)} type="button">
-                    やめる
+                    キャンセル
                   </button>
                 </>
               ) : (

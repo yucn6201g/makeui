@@ -91,7 +91,7 @@ const check = (name, got, want) => {
   check('Logout on the list', /className="app__header-btn project-list__logout"/.test(list), true);
   check('Admin', /className="app__header-btn admin-panel__toggle"/.test(admin), true);
   const css = read('src/index.css');
-  check('one height whatever the label', /\.app__header-btn \{[^}]*min-height: 27px;/.test(css), true);
+  check('one height whatever the label', /\.app__header-btn \{[^}]*min-height: var\(--control-h\);/.test(css), true);
   check('and no size of their own', /\.admin-panel__toggle \{\s*padding:/.test(css) || /\.project-list__logout \{\s*font-size:/.test(css), false);
 }
 

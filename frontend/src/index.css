@@ -89,6 +89,17 @@
    *   text on one of the tints above is the darker still, at 5.6:1.
    */
   --figma-blue-on-white-text-hover: #0a63aa;
+  /* Blue text on the blue tint, where #0b76c9 falls under 4.5:1. */
+  --figma-blue-on-tint-text: #0b6d94;
+  /*
+   * The greys by what they do, not by what they happened to be written as
+   * (2026-09-24): twelve near-identical greys had drifted in — #f7f7f7 and
+   * #fbfbfb for one surface, #e0e0e0, #e8e8e8 and #ececec for one border.
+   */
+  --figma-bg-subtle: #fafafa;
+  --figma-bg-track: #f0f0f0;
+  --figma-divider: #f0f0f0;
+  --figma-border-strong: #c8c8c8;
 
   /* Semantic */
   --color-success-1: #259d63;
@@ -108,11 +119,21 @@
    * blue, every grey with an exact Figma equivalent, and white.
    */
   --color-error-1: #b91c1c;
+  /*
+   * Error, warning and success, each as ink, surface and edge. Before, an error
+   * was drawn in nine reds, five pinks and six red borders — #c62828 on the
+   * delete confirmation, #cc2222 on the sign-in form, #d83c3c on the stop chip.
+   */
+  --color-error-hover: #991b1b;
+  --color-error-surface: #fef2f2;
+  --color-error-border: #fecaca;
+  --color-warning-text: #8a5a20;
+  --color-warning-surface: #fdf6ee;
+  --color-warning-border: #ecd3b0;
+  --color-success-surface: #e9f6ee;
+  --color-success-border: #b7e2cc;
 
   /* Semantic Backgrounds */
-  --color-success-bg: #d3f9d8;
-  --color-warning-bg: #fff3bf;
-  --color-error-bg: #ffe3e3;
 
   /* Focus */
 
@@ -137,6 +158,23 @@
   --radius-4: 0.25rem;
   --radius-6: 0.375rem;
   --radius-8: 0.5rem;
+  /*
+   * One height per kind of place a control stands (2026-09-24). Measured before:
+   * the project list's filter row held controls of 25, 32, 33, 34 and 35px, and
+   * the preview toolbar 22, 24, 25 and 28px — neighbours that visibly did not
+   * line up.
+   *   sm  inside dense rows: table actions, the preview's browser chrome
+   *   md  toolbars and the top bar
+   *   lg  a page's own controls: the project list's toolbar and filters
+   */
+  --control-h-sm: 24px;
+  --control-h: 28px;
+  --control-h-lg: 32px;
+  /* Everything that floats over the page — menus, the share panel, the usage
+     panel — had three shadows, two radii and two border greys. One of each. */
+  --shadow-popover: 0 1px 2px rgba(0, 0, 0, 0.06), 0 12px 32px -12px rgba(0, 0, 0, 0.28);
+  /* The halo a focused text field wears, which was four different blues. */
+  --focus-halo: 0 0 0 3px rgba(13, 153, 255, 0.15);
 
   /* Elevation */
   --shadow-1: 0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.24);
@@ -149,6 +187,19 @@
 }
 
 /* ===== Reset & Base ===== */
+/*
+ * Buttons and fields do not inherit the page's font on their own: a button with
+ * no font rule of its own rendered in Arial at 13.33px. Nine did — the prompt
+ * refiner, the send button, the admin tabs, the select toggle, every card
+ * action, the dialog close buttons — beside Inter everywhere else.
+ */
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+}
+
 *,
 *::before,
 *::after {
@@ -192,11 +243,16 @@ a:active {
   color: var(--color-link-active);
 }
 
-/* ===== Focus States (WCAG 2.1 AA) ===== */
+/* ===== Focus States (WCAG 2.1 AA) =====
+ * One ring, the brand blue at 2px outside the control. There were five: this
+ * rule's 4px ring with a 2px halo under it, and 2px rings in #0d99ff,
+ * --figma-blue and --figma-blue-on-white-text on the controls that had their
+ * own — so tabbing along one toolbar changed ring at every stop. A control that
+ * would clip an outer ring (a row inside a scroller) keeps an inset offset.
+ */
 :focus-visible {
-  outline: 4px solid var(--figma-blue-on-white-text);
+  outline: 2px solid var(--figma-blue);
   outline-offset: 2px;
-  box-shadow: 0 0 0 2px var(--figma-blue);
 }
 
 /* ===== App Layout ===== */
@@ -253,7 +309,7 @@ a:active {
 .app__project-title {
   font-family: var(--font-sans);
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-6);
   transition: background-color 0.12s;
 }
 
@@ -311,7 +367,12 @@ a:active {
 /* Viewport chips in toolbar */
 .app__viewport-chips {
   display: flex;
-  gap: 3px;
+  gap: 0;
+  padding: 2px;
+  min-height: var(--control-h);
+  background: var(--figma-bg-track);
+  border: 1px solid var(--figma-border);
+  border-radius: var(--radius-6);
 }
 
 .app__viewport-chip {
@@ -497,8 +558,8 @@ a:active {
 
 .app__structural-btn:hover { background: var(--figma-bg-hover); }
 
-.app__structural-btn--danger { color: #a33; }
-.app__structural-btn--danger:hover { background: #fdf1f1; }
+.app__structural-btn--danger { color: var(--color-error-1); }
+.app__structural-btn--danger:hover { background: var(--color-error-surface); }
 
 /* The line this element came from, which is the whole reason the buttons work. */
 .app__structural-at {
@@ -520,7 +581,7 @@ a:active {
   height: 24px;
   padding: 0 7px;
   border: 1px solid var(--figma-border);
-  border-radius: 5px;
+  border-radius: var(--radius-6);
   background: #ffffff;
   color: var(--figma-text);
   font-family: inherit;
@@ -529,31 +590,32 @@ a:active {
 
 .app__structural-input:focus {
   outline: none;
-  border-color: var(--figma-accent);
+  border-color: var(--figma-blue);
+  box-shadow: var(--focus-halo);
 }
 
 .app__structural-note {
   margin: 6px 0 0;
   font-size: 0.6875rem;
   line-height: 1.6;
-  color: #8a5a20;
+  color: var(--color-warning-text);
 }
 
 .app__chat-notice {
   margin: 4px 0;
   padding: 8px 10px;
-  border-radius: 8px;
+  border-radius: var(--radius-8);
   border: 1px solid var(--figma-border);
-  background: #f7f8f9;
+  background: var(--figma-bg-subtle);
   color: var(--figma-text-muted);
   font-size: 0.75rem;
   line-height: 1.6;
 }
 
 .app__chat-notice--warn {
-  border-color: #e6c9a8;
-  background: #fdf6ee;
-  color: #8a5a20;
+  border-color: var(--color-warning-border);
+  background: var(--color-warning-surface);
+  color: var(--color-warning-text);
 }
 
 /*
@@ -666,7 +728,7 @@ a:active {
   width: 40px;
   height: 40px;
   object-fit: cover;
-  border-radius: 6px;
+  border-radius: var(--radius-6);
   border: 1px solid var(--color-gray-200);
 }
 
@@ -780,9 +842,9 @@ a:active {
   right: 0;
   z-index: 5;
   padding: 6px 12px;
-  background: #fff8e6;
-  border-bottom: 1px solid #e0c068;
-  color: #7a5a10;
+  background: var(--color-warning-surface);
+  border-bottom: 1px solid var(--color-warning-border);
+  color: var(--color-warning-text);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.6875rem;
   line-height: 1.5;
@@ -945,9 +1007,9 @@ a.preview__chrome-btn {
   right: 0;
   z-index: 5;
   padding: 8px 12px;
-  background: #fdf0f0;
-  border-bottom: 1px solid #d98282;
-  color: #8f2423;
+  background: var(--color-error-surface);
+  border-bottom: 1px solid var(--color-error-border);
+  color: var(--color-error-1);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.6875rem;
   line-height: 1.5;
@@ -1034,7 +1096,7 @@ a.preview__chrome-btn {
 .login__title {
   font-size: 1.5rem;
   font-weight: 700;
-  color: #1a1a1a;
+  color: var(--figma-text);
   text-align: center;
   letter-spacing: -0.03em;
   line-height: 1.2;
@@ -1043,7 +1105,7 @@ a.preview__chrome-btn {
 
 .login__subtitle {
   font-size: 0.875rem;
-  color: #8c8c8c;
+  color: var(--figma-text-dim);
   text-align: center;
   margin-bottom: 32px;
   line-height: 1.5;
@@ -1064,46 +1126,46 @@ a.preview__chrome-btn {
 .login__field label {
   font-size: 0.8125rem;
   font-weight: 500;
-  color: #3d3d3d;
+  color: var(--figma-text);
   line-height: 1.4;
 }
 
 .login__field input {
-  padding: 10px 12px;
+  padding: 0 12px;
   font-family: var(--font-sans);
   font-size: 0.9375rem;
   font-weight: 400;
   line-height: 1.4;
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
+  border: 1px solid var(--figma-border);
+  border-radius: var(--radius-6);
   background: #ffffff;
-  color: #1a1a1a;
+  color: var(--figma-text);
   transition: border-color 0.12s, box-shadow 0.12s;
   min-height: 40px;
 }
 
 .login__field input:hover {
-  border-color: #c0c0c0;
+  border-color: var(--figma-border-strong);
 }
 
 .login__field input:focus {
   outline: none;
-  border-color: #1a1a1a;
-  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.06);
+  border-color: var(--figma-blue);
+  box-shadow: var(--focus-halo);
 }
 
 .login__field input::placeholder {
-  color: #b0b0b0;
+  color: var(--figma-text-dim);
 }
 
 .login__error {
   font-size: 0.8125rem;
   font-weight: 500;
-  color: #cc2222;
+  color: var(--color-error-1);
   padding: 10px 12px;
-  background: #fff5f5;
-  border: 1px solid #fdd;
-  border-radius: 8px;
+  background: var(--color-error-surface);
+  border: 1px solid var(--color-error-border);
+  border-radius: var(--radius-8);
   line-height: 1.5;
 }
 
@@ -1116,10 +1178,10 @@ a.preview__chrome-btn {
   font-size: 0.9375rem;
   font-weight: 600;
   line-height: 1;
-  letter-spacing: -0.01em;
+  letter-spacing: normal;
   border: none;
-  border-radius: var(--radius-8);
-  background: #1a1a1a;
+  border-radius: var(--radius-6);
+  background: var(--figma-blue-on-white-text);
   color: #ffffff;
   cursor: pointer;
   transition: background 0.12s, transform 0.08s;
@@ -1128,17 +1190,17 @@ a.preview__chrome-btn {
 }
 
 .login__button:hover:not(:disabled) {
-  background: #333333;
+  background: var(--figma-blue-on-white-text-hover);
 }
 
 .login__button:active:not(:disabled) {
   transform: scale(0.99);
-  background: #000000;
+  background: var(--figma-blue-on-white-text-hover);
 }
 
 .login__button:disabled {
-  background: #e0e0e0;
-  color: #a0a0a0;
+  background: var(--figma-bg-active);
+  color: var(--figma-text-dim);
   cursor: not-allowed;
   pointer-events: none;
 }
@@ -1150,7 +1212,7 @@ a.preview__chrome-btn {
 
 .login__mfa-info p {
   font-size: 0.875rem;
-  color: #6b6b6b;
+  color: var(--figma-text-muted);
   margin-bottom: 16px;
   line-height: 1.6;
 }
@@ -1158,8 +1220,8 @@ a.preview__chrome-btn {
 .login__mfa-qr {
   display: block;
   margin: 0 auto;
-  border: 3px solid #e0e0e0;
-  border-radius: 10px;
+  border: 3px solid var(--figma-border);
+  border-radius: var(--radius-8);
   background: #ffffff;
 }
 
@@ -1168,10 +1230,10 @@ a.preview__chrome-btn {
   padding: 12px;
   font-family: var(--font-mono);
   font-size: 0.8125rem;
-  background: #f5f5f5;
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
-  color: #3d3d3d;
+  background: var(--figma-bg-input);
+  border: 1px solid var(--figma-border);
+  border-radius: var(--radius-8);
+  color: var(--figma-text);
   word-break: break-all;
   user-select: all;
   letter-spacing: 0.03em;
@@ -1182,7 +1244,7 @@ a.preview__chrome-btn {
   flex-direction: column;
   flex: 1;
   min-height: 400px;
-  border-radius: 8px;
+  border-radius: var(--radius-8);
   overflow: hidden;
   background: #ffffff;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.06);
@@ -1205,6 +1267,7 @@ a.preview__chrome-btn {
   transition: all 0.1s;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+  min-height: var(--control-h-sm);
 }
 
 .preview__chrome-btn:hover {
@@ -1222,23 +1285,23 @@ a.preview__chrome-btn {
   font-size: 0.625rem;
   font-weight: 700;
   padding: 2px 6px;
-  border-radius: 3px;
+  border-radius: var(--radius-4);
   line-height: 1.4;
 }
 
 .preview__score-badge--high {
   background: rgba(37, 157, 99, 0.12);
-  color: #1b8a5a;
+  color: var(--color-success-2);
 }
 
 .preview__score-badge--medium {
   background: rgba(183, 143, 0, 0.12);
-  color: #8b6d00;
+  color: var(--color-warning-text);
 }
 
 .preview__score-badge--low {
   background: rgba(185, 28, 28, 0.1);
-  color: #d32f2f;
+  color: var(--color-error-1);
 }
 
 .preview__frame-container {
@@ -1279,7 +1342,7 @@ a.preview__chrome-btn {
 /* ===== Usage Meter ===== */
 .usage-meter__loading {
   font-size: 0.75rem;
-  color: #999999;
+  color: var(--figma-text-dim);
 }
 
 .usage-meter__item {
@@ -1294,14 +1357,14 @@ a.preview__chrome-btn {
   display: flex;
   justify-content: space-between;
   font-size: 0.6875rem;
-  color: #666666;
+  color: var(--figma-text-muted);
   margin-bottom: 4px;
   line-height: 1.5;
 }
 
 .usage-meter__bar {
   height: 4px;
-  background: #e8e8e8;
+  background: var(--figma-bg-track);
   border-radius: 2px;
   overflow: hidden;
 }
@@ -1400,7 +1463,7 @@ fieldset {
 }
 .app__project-title:focus {
   background: var(--figma-bg-input);
-  box-shadow: 0 0 0 1.5px var(--figma-border);
+  box-shadow: var(--focus-halo);
 }
 
 /* Admin and Logout are header buttons like ZIP and 共有, and take their size from
@@ -1467,8 +1530,8 @@ fieldset {
 }
 
 .app__chat-input-capsule:focus-within {
-  border-color: #0d99ff;
-  box-shadow: 0 0 0 2px rgba(13, 153, 255, 0.15);
+  border-color: var(--figma-blue);
+  box-shadow: var(--focus-halo);
 }
 
 .app__chat-input {
@@ -1482,10 +1545,10 @@ fieldset {
 }
 
 .app__chat-send-btn {
-  background: #0d99ff;
+  background: var(--figma-blue-on-white-text);
 }
 .app__chat-send-btn:hover:not(:disabled) {
-  background: #0080e0;
+  background: var(--figma-blue-on-white-text-hover);
 }
 .app__chat-send-btn:disabled {
   background: var(--figma-bg-hover);
@@ -1522,13 +1585,13 @@ fieldset {
   color: var(--figma-blue-on-white-text);
 }
 .app__chip--stop {
-  border-color: rgba(216, 60, 60, 0.5);
-  color: #d83c3c;
+  border-color: var(--color-error-border);
+  color: var(--color-error-1);
 }
 .app__chip--stop:hover:not(:disabled) {
-  background: rgba(216, 60, 60, 0.08);
-  border-color: #d83c3c;
-  color: #b62f2f;
+  background: var(--color-error-surface);
+  border-color: var(--color-error-1);
+  color: var(--color-error-hover);
 }
 
 /* Scroll to bottom btn */
@@ -1575,24 +1638,19 @@ fieldset {
 }
 
 .app__viewport-chip {
-  padding: 3px 8px;
+  padding: 4px 12px;
   font-size: 0.6875rem;
+  font-weight: 500;
   color: var(--figma-text-muted);
-  border: 1px solid var(--figma-border);
+  border: none;
   background: transparent;
 }
 .app__viewport-chip:hover:not(.app__viewport-chip--active) {
   color: var(--figma-text);
-  border-color: var(--figma-bg-hover);
 }
 .app__viewport-chip--active {
-  background: rgba(13, 153, 255, 0.1);
-  border-color: #0d99ff;
-  /* The brand blue on its own 10% tint is 2.69:1. The border keeps it; the
-     label uses the deeper blue the framework badges already use — 5.21:1 on
-     that tint, and the same colour, so the chip still reads as blue. */
-  color: #0b6d94;
-  font-weight: 500;
+  /* The white thumb behind it is the SlidingIndicator's, as for Preview/Code. */
+  color: var(--figma-text);
 }
 /* Preview canvas — generous padding for floating frame */
 .app__preview-canvas {
@@ -1602,8 +1660,8 @@ fieldset {
 /* Preview score badge in toolbar */
 .app__preview-score {
   background: rgba(60, 201, 127, 0.2);
-  color: #3cc97f;
-  border-radius: 4px;
+  color: var(--color-success-2);
+  border-radius: var(--radius-4);
   font-size: 0.6875rem;
   font-weight: 600;
   padding: 2px 8px;
@@ -1629,7 +1687,7 @@ fieldset {
   overflow-y: auto;
   background: var(--figma-bg-panel);
   border: 1px solid var(--figma-border);
-  border-radius: 8px;
+  border-radius: var(--radius-8);
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.32);
 }
 /* On the code tab the selection is one line, so the editor keeps its height. */
@@ -1647,7 +1705,7 @@ fieldset {
 /* Preview frame container — clean, no extra border (chrome above handles it) */
 .preview__frame-container {
   border: none;
-  border-radius: 0 0 8px 8px;
+  border-radius: 0 0 var(--radius-8) var(--radius-8);
   min-height: 600px;
   display: flex;
   flex-direction: column;
@@ -1660,7 +1718,7 @@ fieldset {
 
 .preview__placeholder {
   color: var(--figma-text-dim);
-  background: #fafafa;
+  background: var(--figma-bg-subtle);
 }
 
 .preview__placeholder-icon {
@@ -1720,8 +1778,8 @@ fieldset {
 .app__attach-error {
   margin-top: 8px;
   padding: 6px 10px;
-  background: #fdecec;
-  border-radius: 6px;
+  background: var(--color-error-surface);
+  border-radius: var(--radius-6);
   font-size: 0.75rem;
   line-height: 1.6;
   /* Not `--color-error-1`. That token is measured against white, where it
@@ -1741,7 +1799,7 @@ fieldset {
   padding: 6px 8px 6px 10px;
   background: var(--figma-bg-input);
   border: 1px solid var(--figma-bg-active);
-  border-radius: 6px;
+  border-radius: var(--radius-6);
   font-size: 0.75rem;
   color: var(--figma-text-muted);
   min-width: 0;
@@ -1777,7 +1835,7 @@ fieldset {
    * the moment it was pointed at. A light red for a dark interface, like the
    * #4c9aff focus rings and the inspector's selector chip.
    */
-  background: #fdecec;
+  background: var(--color-error-surface);
   color: var(--color-error-1);
 }
 
@@ -1805,7 +1863,7 @@ fieldset {
 }
 /* Chips — Figma uses 4px radius, not pill */
 .app__chip {
-  border-radius: 4px;
+  border-radius: var(--radius-4);
   padding: 3px 8px;
   font-size: 0.6875rem;
   line-height: 1.4;
@@ -1813,7 +1871,7 @@ fieldset {
 
 /* Viewport chips — 4px radius */
 .app__viewport-chip {
-  border-radius: 4px;
+  border-radius: var(--radius-4);
 }
 
 /* Suggest prompts — subtle ghost buttons with 4px radius */
@@ -1825,41 +1883,41 @@ fieldset {
 
 /* Chat input capsule — less rounded */
 .app__chat-input-capsule {
-  border-radius: 6px;
+  border-radius: var(--radius-6);
 }
 
 /* Send button — square-ish */
 .app__chat-send-btn {
-  border-radius: var(--radius-4);
-  width: 26px;
-  height: 26px;
+  border-radius: var(--radius-6);
+  width: var(--control-h);
+  height: var(--control-h);
 }
 
 /* Attach button — tighter */
 .app__attach-btn {
-  width: 26px;
-  height: 26px;
-  border-radius: var(--radius-4);
+  width: var(--control-h);
+  height: var(--control-h);
+  border-radius: var(--radius-6);
 }
 
 /* Chat messages — tighter radius */
 .app__chat-msg--user {
-  border-radius: 8px;
+  border-radius: var(--radius-8);
   border-bottom-right-radius: 2px;
 }
 .app__chat-msg--assistant {
-  border-radius: 8px;
+  border-radius: var(--radius-8);
   border-bottom-left-radius: 2px;
 }
 
 /* Scroll to bottom — 4px */
 .app__scroll-bottom {
-  border-radius: 4px;
+  border-radius: var(--radius-4);
 }
 
 /* Preview tabs — inner radius 4px */
 .app__preview-tab--active {
-  border-radius: 3px;
+  border-radius: var(--radius-4);
 }
 /* Empty state — compact Figma Make style */
 .app__chat-empty {
@@ -2022,8 +2080,8 @@ fieldset legend {
 
 /* Error banner */
 .adm-error-banner {
-  background: var(--color-error-bg);
-  border: 1px solid rgba(185, 28, 28, 0.25);
+  background: var(--color-error-surface);
+  border: 1px solid var(--color-error-border);
   color: var(--color-error-1);
   padding: 8px 20px;
   font-size: 0.8125rem;
@@ -2211,6 +2269,7 @@ fieldset legend {
   color: var(--figma-text-muted);
   border: none;
   background: none;
+  min-height: var(--control-h);
 }
 
 .adm-btn--icon:hover {
@@ -2238,7 +2297,7 @@ fieldset legend {
   align-items: center;
   background: var(--figma-bg-input);
   border: 1px solid var(--figma-border);
-  border-radius: 4px;
+  border-radius: var(--radius-6);
   color: var(--figma-text-dim);
   cursor: pointer;
   display: inline-flex;
@@ -2284,13 +2343,13 @@ fieldset legend {
 .adm-model:focus-within {
   /* The same indigo as the border used to be, written in decimals — which is
      why a search for #0017c1 did not find it. */
-  box-shadow: 0 0 0 2px rgba(11, 118, 201, 0.15);
+  box-shadow: var(--focus-halo);
 }
 
 .adm-input {
   background: var(--figma-bg-input);
   border: 1px solid var(--figma-border);
-  border-radius: 4px;
+  border-radius: var(--radius-6);
   color: var(--figma-text);
   font-size: 0.8125rem;
   font-family: inherit;
@@ -2298,6 +2357,7 @@ fieldset legend {
   width: 100%;
   transition: border-color 0.15s, box-shadow 0.15s;
   outline: none;
+  min-height: var(--control-h);
 }
 
 .adm-input::placeholder {
@@ -2369,7 +2429,7 @@ fieldset legend {
 }
 
 .adm-summary__item--warn {
-  background: var(--color-warning-bg);
+  background: var(--color-warning-surface);
 }
 
 .adm-summary__item--muted {
@@ -2402,13 +2462,14 @@ fieldset legend {
   flex: 1;
   background: var(--figma-bg-input);
   border: 1px solid var(--figma-border);
-  border-radius: 4px;
+  border-radius: var(--radius-6);
   color: var(--figma-text);
   font-size: 0.8125rem;
   font-family: inherit;
   padding: 6px 10px;
   outline: none;
   transition: border-color 0.15s, box-shadow 0.15s;
+  min-height: var(--control-h);
 }
 
 .adm-search::placeholder {
@@ -2438,8 +2499,8 @@ fieldset legend {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0 5px;
-  font-weight: 700;
+  padding: 1px 6px;
+  font-weight: 600;
   vertical-align: middle;
 }
 
@@ -2465,7 +2526,7 @@ fieldset legend {
 }
 
 .adm-toggle-btn--off:hover:not(:disabled) {
-  background: var(--color-success-bg);
+  background: var(--color-success-surface);
   color: var(--color-success-2);
   border-color: var(--color-success-1);
 }
@@ -2533,7 +2594,7 @@ fieldset legend {
   width: auto;
   padding: 4px 10px;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-4);
   background: transparent;
   font-family: var(--font-sans);
   font-size: 0.75rem;
@@ -2568,7 +2629,7 @@ fieldset legend {
   padding: 8px;
   background: var(--figma-bg-input);
   border: 1px solid var(--figma-border);
-  border-radius: 6px;
+  border-radius: var(--radius-8);
 }
 
 /*
@@ -2600,7 +2661,7 @@ fieldset legend {
   color: var(--figma-text-muted);
   background: var(--figma-bg-panel);
   border: 1px solid var(--figma-border);
-  border-radius: 4px;
+  border-radius: var(--radius-4);
   cursor: pointer;
   white-space: nowrap;
 }
@@ -2644,7 +2705,7 @@ fieldset legend {
   font-family: var(--font-sans);
   background: var(--figma-bg-panel);
   border: 1px solid var(--figma-border);
-  border-radius: 4px;
+  border-radius: var(--radius-4);
   cursor: pointer;
   transition: border-color 0.15s, background-color 0.15s;
 }
@@ -2764,7 +2825,7 @@ fieldset legend {
   background: none;
   block-size: 22px;
   border: 1px solid var(--figma-border);
-  border-radius: 4px;
+  border-radius: var(--radius-4);
   cursor: pointer;
   flex: none;
   inline-size: 26px;
@@ -2773,7 +2834,7 @@ fieldset legend {
 .css-inspector__input {
   background: var(--figma-bg-input, rgba(255, 255, 255, 0.04));
   border: 1px solid var(--figma-border);
-  border-radius: 4px;
+  border-radius: var(--radius-4);
   color: var(--figma-text);
   font-family: var(--font-mono);
   font-size: 0.6875rem;
@@ -2782,8 +2843,9 @@ fieldset legend {
   width: 100%;
 }
 .css-inspector__input:focus-visible {
-  border-color: var(--figma-accent);
+  border-color: var(--figma-blue);
   outline: none;
+  box-shadow: var(--focus-halo);
 }
 /* A value the user set, so it is distinguishable from what was generated. */
 .css-inspector__input--changed {
@@ -2802,7 +2864,7 @@ fieldset legend {
 .css-inspector__textarea {
   background: var(--figma-bg-input, rgba(255, 255, 255, 0.04));
   border: 1px solid var(--figma-border);
-  border-radius: 4px;
+  border-radius: var(--radius-4);
   color: var(--figma-text);
   font-family: inherit;
   font-size: 0.75rem;
@@ -2811,8 +2873,9 @@ fieldset legend {
   width: 100%;
 }
 .css-inspector__textarea:focus-visible {
-  border-color: var(--figma-accent);
+  border-color: var(--figma-blue);
   outline: none;
+  box-shadow: var(--focus-halo);
 }
 .app__edit-status {
   color: var(--figma-text-dim);
@@ -3000,7 +3063,7 @@ fieldset legend {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 16px;
-  border-bottom: 1px solid #e6e6e6;
+  border-bottom: 1px solid var(--figma-border);
 }
 /*
  * Choosing projects to act on together. Quiet on purpose: this replaced the blue
@@ -3012,11 +3075,12 @@ fieldset legend {
   border-radius: var(--radius-6);
   background: #ffffff;
   color: var(--figma-text);
-  padding: 6px 14px;
+  padding: 4px 14px;
   font-size: 0.8125rem;
   cursor: pointer;
+  min-height: var(--control-h-lg);
 }
-.project-list__select-toggle:hover { border-color: #c8c8c8; }
+.project-list__select-toggle:hover { border-color: var(--figma-border-strong); }
 .project-list__select-toggle--on {
   border-color: var(--figma-blue-on-white-text);
   color: var(--figma-blue-on-white-text);
@@ -3030,7 +3094,7 @@ fieldset legend {
   margin-bottom: 16px;
   padding: 10px 14px;
   border: 1px solid var(--figma-border);
-  border-radius: 8px;
+  border-radius: var(--radius-8);
   background: var(--figma-bg-panel);
   font-size: 0.8125rem;
 }
@@ -3059,17 +3123,18 @@ fieldset legend {
   border-radius: var(--radius-6);
   background: #ffffff;
   color: var(--figma-text);
-  padding: 6px 14px;
+  padding: 4px 14px;
   font-size: 0.8125rem;
   cursor: pointer;
+  min-height: var(--control-h-lg);
 }
-.project-list__bulk-btn:hover:not(:disabled) { border-color: #c8c8c8; }
+.project-list__bulk-btn:hover:not(:disabled) { border-color: var(--figma-border-strong); }
 .project-list__bulk-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .project-list__bulk-btn--danger {
-  border-color: #fecaca;
+  border-color: var(--color-error-border);
   color: var(--color-error-1);
 }
-.project-list__bulk-btn--danger:hover:not(:disabled) { background: #fef2f2; border-color: var(--color-error-1); }
+.project-list__bulk-btn--danger:hover:not(:disabled) { background: var(--color-error-surface); border-color: var(--color-error-1); }
 /* The consequence, stated beside the button that has it. */
 .project-list__bulk-warn {
   color: var(--color-error-1);
@@ -3085,8 +3150,8 @@ fieldset legend {
   z-index: 2;
   width: 20px;
   height: 20px;
-  border-radius: 4px;
-  border: 1.5px solid #c8c8c8;
+  border-radius: var(--radius-4);
+  border: 1.5px solid var(--figma-border-strong);
   background: #ffffff;
   color: #ffffff;
   display: flex;
@@ -3099,15 +3164,15 @@ fieldset legend {
 }
 /* Selected by outline and not by colour alone: the tick carries it too. */
 .project-list__card--selected {
-  outline: 2px solid var(--figma-blue-on-white-text);
+  outline: 2px solid var(--figma-blue);
   outline-offset: -2px;
 }
 .project-list__error {
-  background: #fef2f2;
-  border: 1px solid #fecaca;
+  background: var(--color-error-surface);
+  border: 1px solid var(--color-error-border);
   color: var(--color-error-1);
   padding: 12px 16px;
-  border-radius: 8px;
+  border-radius: var(--radius-8);
   margin-bottom: 16px;
   display: flex;
   align-items: center;
@@ -3136,7 +3201,7 @@ fieldset legend {
 .project-list__skeleton-line {
   display: block;
   height: 10px;
-  border-radius: 3px;
+  border-radius: var(--radius-4);
   background: #ececec;
   width: 70%;
 }
@@ -3184,8 +3249,8 @@ fieldset legend {
 
 .project-list__card {
   background: #ffffff;
-  border: 1px solid #e6e6e6;
-  border-radius: 8px;
+  border: 1px solid var(--figma-border);
+  border-radius: var(--radius-8);
   overflow: hidden;
   cursor: pointer;
   /* `translate`, not `transform`: the layout animation (useFlip) moves cards
@@ -3209,7 +3274,7 @@ fieldset legend {
   justify-content: center;
   min-height: 180px;
   border-style: dashed;
-  border-color: #ccc;
+  border-color: var(--figma-border-strong);
 }
 
 .project-list__card--new:hover {
@@ -3218,22 +3283,22 @@ fieldset legend {
 }
 
 .project-list__card-icon {
-  color: #999999;
+  color: var(--figma-text-dim);
   margin-bottom: 8px;
 }
 
 .project-list__card-label {
   font-size: 0.75rem;
-  color: #666666;
+  color: var(--figma-text-muted);
 }
 
 .project-list__card-preview {
   width: 100%;
   height: 140px;
   overflow: hidden;
-  background: #f7f7f7;
+  background: var(--figma-bg-subtle);
   position: relative;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--figma-divider);
 }
 
 .project-list__card-iframe {
@@ -3280,7 +3345,7 @@ fieldset legend {
   font-family: inherit;
   font-size: 0.875rem;
   font-weight: 500;
-  color: #666666;
+  color: var(--figma-text-muted);
   cursor: pointer;
   transition: color 0.12s, border-color 0.12s;
 }
@@ -3297,16 +3362,16 @@ fieldset legend {
 .project-list__tab-count {
   margin-left: 6px;
   padding: 1px 6px;
-  border-radius: 9px;
-  background: #f0f0f0;
-  color: #666666;
+  border-radius: 999px;
+  background: var(--figma-bg-track);
+  color: var(--figma-text-muted);
   font-size: 0.6875rem;
   font-weight: 600;
 }
 
 .project-list__tab--on .project-list__tab-count {
-  background: #e6f4ff;
-  color: #0b6d94;
+  background: var(--figma-blue-tint);
+  color: var(--figma-blue-on-tint-text);
 }
 
 /* --- Search and framework filter ------------------------------------------ */
@@ -3340,9 +3405,9 @@ fieldset legend {
   font-family: inherit;
   color: #1e1e1e;
   background: #ffffff;
-  border: 1px solid #e0e0e0;
-  border-radius: 6px;
-  min-height: 34px;
+  border: 1px solid var(--figma-border);
+  border-radius: var(--radius-6);
+  min-height: var(--control-h-lg);
   padding: 6px 30px;
   transition: border-color 0.12s, box-shadow 0.12s;
 }
@@ -3353,8 +3418,8 @@ fieldset legend {
 
 .project-list__search-input:focus {
   outline: none;
-  border-color: #0d99ff;
-  box-shadow: 0 0 0 3px rgba(13, 153, 255, 0.12);
+  border-color: var(--figma-blue);
+  box-shadow: var(--focus-halo);
 }
 
 /* The browser own clear affordance would sit beside ours. */
@@ -3371,23 +3436,24 @@ fieldset legend {
   width: 20px;
   height: 20px;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-4);
   background: transparent;
   color: var(--figma-text-dim);
   cursor: pointer;
 }
 
 .project-list__search-clear:hover {
-  background: #f0f0f0;
+  background: var(--figma-bg-track);
   color: #1e1e1e;
 }
 
 .project-list__segmented {
   display: inline-flex;
   padding: 2px;
-  background: #f5f5f5;
-  border: 1px solid #ececec;
-  border-radius: 8px;
+  background: var(--figma-bg-track);
+  border: 1px solid var(--figma-border);
+  border-radius: var(--radius-6);
+  min-height: var(--control-h-lg);
 }
 
 .project-list__segment {
@@ -3395,13 +3461,13 @@ fieldset legend {
   align-items: center;
   gap: 6px;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-4);
   background: transparent;
-  padding: 5px 12px;
+  padding: 3px 12px;
   font-family: inherit;
   font-size: 0.8125rem;
   font-weight: 500;
-  color: #666666;
+  color: var(--figma-text-muted);
   cursor: pointer;
   transition: background-color 0.12s, color 0.12s, box-shadow 0.12s;
 }
@@ -3425,7 +3491,7 @@ fieldset legend {
 /* #0d99ff on white is 2.99:1 at 11px. This is the same blue the React badge
    already uses for its label, measured at 5.79:1. */
 .project-list__segment--on .project-list__segment-count {
-  color: #0b6d94;
+  color: var(--figma-blue-on-tint-text);
 }
 
 /* --- Favourites filter -----------------------------------------------------
@@ -3443,25 +3509,24 @@ fieldset legend {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  /* 7px, not the segment's 5px: the segments sit inside a container with 2px of
-     its own padding, so matching the segment would leave this control 2px short
-     of the row it stands in. Measured at 35px against the segmented control's
-     35px. */
-  padding: 7px 12px;
+  /* The row's height comes from --control-h-lg, not from matching paddings:
+     every control in it is 32px (2026-09-24). */
+  padding: 3px 12px;
   background: #ffffff;
-  border: 1px solid #ececec;
-  border-radius: 8px;
+  border: 1px solid var(--figma-border);
+  border-radius: var(--radius-6);
   font-family: inherit;
   font-size: 0.8125rem;
   font-weight: 500;
-  color: #666666;
+  color: var(--figma-text-muted);
   cursor: pointer;
   transition: background-color 0.12s, color 0.12s, border-color 0.12s;
+  min-height: var(--control-h-lg);
 }
 
 .project-list__favourite-filter:hover {
-  color: #1e1e1e;
-  background: #f5f5f5;
+  color: var(--figma-text);
+  background: var(--figma-bg-input);
 }
 
 .project-list__favourite-filter--on {
@@ -3481,7 +3546,7 @@ fieldset legend {
 
 .project-list__favourite-filter:focus-visible {
   outline: 2px solid var(--figma-blue);
-  outline-offset: 1px;
+  outline-offset: 2px;
 }
 
 .project-list__favourite-filter--on .project-list__segment-count {
@@ -3503,19 +3568,19 @@ fieldset legend {
   gap: 4px;
   font-family: inherit;
   font-size: 0.75rem;
-  color: #3d3d3d;
+  color: var(--figma-text);
   background: #ffffff;
-  border: 1px solid #e0e0e0;
-  border-radius: 6px;
-  min-height: 32px;
+  border: 1px solid var(--figma-border);
+  border-radius: var(--radius-6);
+  min-height: var(--control-h-lg);
   padding: 4px 10px;
   cursor: pointer;
   transition: background-color 0.12s, border-color 0.12s;
 }
 
 .project-list__sort-dir:hover {
-  background: #f5f5f5;
-  border-color: #999999;
+  background: var(--figma-bg-input);
+  border-color: var(--figma-border-strong);
 }
 
 /* --- The star -------------------------------------------------------------- */
@@ -3526,8 +3591,8 @@ fieldset legend {
   left: 6px;
   display: flex;
   background: rgba(255, 255, 255, 0.94);
-  border: 1px solid #e0e0e0;
-  border-radius: 4px;
+  border: 1px solid var(--figma-border);
+  border-radius: var(--radius-6);
   padding: 4px;
   cursor: pointer;
   color: #707070;
@@ -3556,7 +3621,7 @@ fieldset legend {
 
 .project-list__card-star:focus-visible {
   outline: 2px solid var(--figma-blue);
-  outline-offset: 1px;
+  outline-offset: 2px;
 }
 
 /* --- Account usage --------------------------------------------------------- */
@@ -3571,17 +3636,18 @@ fieldset legend {
   color: var(--figma-text-muted);
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--radius-6);
   padding: 4px 8px;
   cursor: pointer;
   transition: background-color 0.12s, color 0.12s, border-color 0.12s;
+  min-height: var(--control-h);
 }
 
 .usage-menu__email:hover,
 .usage-menu__email--on {
   color: #1e1e1e;
-  background: #f5f5f5;
-  border-color: #e0e0e0;
+  background: var(--figma-bg-input);
+  border-color: var(--figma-border);
 }
 
 .usage-menu__scrim {
@@ -3600,9 +3666,9 @@ fieldset legend {
   min-width: 268px;
   padding: 14px 16px;
   background: #ffffff;
-  border: 1px solid #e0e0e0;
-  border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+  border: 1px solid var(--figma-border);
+  border-radius: var(--radius-8);
+  box-shadow: var(--shadow-popover);
   text-align: left;
 }
 
@@ -3652,13 +3718,13 @@ fieldset legend {
 .usage-menu__figure + .usage-menu__allowance {
   margin-top: 10px;
   padding-top: 10px;
-  border-top: 1px solid #f5f5f5;
+  border-top: 1px solid var(--figma-divider);
 }
 
 .usage-menu__allowance ~ .usage-menu__limits-title {
   margin-top: 14px;
   padding-top: 12px;
-  border-top: 1px solid #f0f0f0;
+  border-top: 1px solid var(--figma-divider);
 }
 
 /* A count and its label, for the figures that are not measured against
@@ -3678,8 +3744,8 @@ fieldset legend {
 .usage-menu__group {
   margin-left: 6px;
   padding: 1px 6px;
-  border-radius: 9px;
-  background: var(--figma-bg-hover, #f0f0f0);
+  border-radius: var(--radius-4);
+  background: var(--figma-bg-track);
   color: var(--figma-text-muted);
   font-size: 0.625rem;
   font-weight: 500;
@@ -3765,7 +3831,7 @@ fieldset legend {
 .usage-menu__note {
   margin: 12px 0 0;
   padding-top: 10px;
-  border-top: 1px solid #f0f0f0;
+  border-top: 1px solid var(--figma-divider);
   font-size: 0.6875rem;
   line-height: 1.5;
   color: var(--figma-text-dim);
@@ -3788,13 +3854,14 @@ fieldset legend {
   top: 6px;
   right: 6px;
   background: rgba(255, 255, 255, 0.94);
-  border: 1px solid #e0e0e0;
-  border-radius: 4px;
+  border: 1px solid var(--figma-border);
+  border-radius: var(--radius-6);
   padding: 4px;
   cursor: pointer;
-  color: #666666;
+  color: var(--figma-text-muted);
   opacity: 0;
   transition: opacity 0.15s, color 0.12s, background-color 0.12s, border-color 0.12s;
+  display: flex;
 }
 
 /* Inside the two-button group they sit in flow rather than pinned. */
@@ -3813,8 +3880,8 @@ fieldset legend {
 /* Keyboard users never hover, so the control has to be reachable without it. */
 .project-list__card-action:focus-visible {
   opacity: 1;
-  outline: 2px solid #0d99ff;
-  outline-offset: 1px;
+  outline: 2px solid var(--figma-blue);
+  outline-offset: 2px;
 }
 
 .project-list__card-action:hover {
@@ -3822,14 +3889,14 @@ fieldset legend {
      itself blue, which costs the last tenth. The hover blue is what the rest of
      the product darkens to when a control is being pointed at. */
   color: var(--figma-blue-on-white-text-hover);
-  border-color: #bde3f5;
-  background: #f2faff;
+  border-color: var(--figma-blue-tint-strong);
+  background: var(--figma-blue-tint);
 }
 
 .project-list__card-action--danger:hover {
-  color: #c62828;
-  background: #fff5f5;
-  border-color: #f3c4c4;
+  color: var(--color-error-1);
+  background: var(--color-error-surface);
+  border-color: var(--color-error-border);
 }
 
 /* --- An archived card reads as put away ------------------------------------ */
@@ -3861,7 +3928,7 @@ fieldset legend {
   margin: 0;
   font-size: 0.75rem;
   line-height: 1.6;
-  color: #3d3d3d;
+  color: var(--figma-text);
 }
 
 .project-list__confirm-text strong {
@@ -3878,7 +3945,7 @@ fieldset legend {
 .project-list__confirm-delete {
   flex: 1;
   min-height: 32px;
-  border-radius: 6px;
+  border-radius: var(--radius-6);
   font-family: inherit;
   font-size: 0.75rem;
   font-weight: 500;
@@ -3888,24 +3955,24 @@ fieldset legend {
 
 .project-list__confirm-cancel {
   background: #ffffff;
-  border: 1px solid #d0d0d0;
-  color: #3d3d3d;
+  border: 1px solid var(--figma-border-strong);
+  color: var(--figma-text);
 }
 
 .project-list__confirm-cancel:hover {
-  background: #f5f5f5;
-  border-color: #999999;
+  background: var(--figma-bg-input);
+  border-color: var(--figma-border-strong);
 }
 
 .project-list__confirm-delete {
-  background: #c62828; /* 5.9:1 against white */
-  border: 1px solid #c62828;
+  background: var(--color-error-1); /* 5.9:1 against white */
+  border: 1px solid var(--color-error-1);
   color: #ffffff;
 }
 
 .project-list__confirm-delete:hover {
-  background: #a91f1f;
-  border-color: #a91f1f;
+  background: var(--color-error-hover);
+  border-color: var(--color-error-hover);
 }
 
 /* --- Nothing to show, for three different reasons -------------------------- */
@@ -3922,23 +3989,23 @@ fieldset legend {
 .project-list__empty-title {
   margin: 0;
   font-size: 0.8125rem;
-  color: #666666;
+  color: var(--figma-text-muted);
 }
 
 .project-list__empty-action {
   background: #ffffff;
-  border: 1px solid #d0d0d0;
-  border-radius: 6px;
+  border: 1px solid var(--figma-border-strong);
+  border-radius: var(--radius-6);
   padding: 6px 14px;
   font-family: inherit;
   font-size: 0.75rem;
-  color: #3d3d3d;
+  color: var(--figma-text);
   cursor: pointer;
 }
 
 .project-list__empty-action:hover {
-  background: #f5f5f5;
-  border-color: #999999;
+  background: var(--figma-bg-input);
+  border-color: var(--figma-border-strong);
 }
 
 /*
@@ -4509,12 +4576,12 @@ button.app__logo:hover {
 .adm-header {
   height: 44px;
   padding: 0 14px;
-  border-bottom: 1px solid #e6e6e6;
+  border-bottom: 1px solid var(--figma-border);
 }
 .adm-header__title {
   font-size: 0.8125rem;
   font-weight: 600;
-  letter-spacing: -0.01em;
+  letter-spacing: normal;
 }
 .adm-header__icon {
   color: var(--figma-blue-on-white-text);
@@ -4524,7 +4591,7 @@ button.app__logo:hover {
 .adm-tabs {
   padding: 8px 14px;
   gap: 4px;
-  border-bottom: 1px solid #e6e6e6;
+  border-bottom: 1px solid var(--figma-border);
 }
 .adm-tab {
   display: inline-flex;
@@ -4536,7 +4603,7 @@ button.app__logo:hover {
   transition: background 0.12s, color 0.12s, border-color 0.12s;
 }
 .adm-tab:hover {
-  background: #f5f5f5;
+  background: var(--figma-bg-input);
   color: #1e1e1e;
 }
 /*
@@ -4549,22 +4616,22 @@ button.app__logo:hover {
  */
 .adm-tab--active,
 .adm-tab--active:hover {
-  background: #eaf5ff;
+  background: var(--figma-blue-tint);
   color: var(--figma-blue-on-white-text-hover);
   border-color: var(--figma-blue-on-white-text);
 }
 .adm-tab-badge {
-  min-width: 16px;
-  height: 16px;
-  border-radius: 100px;
-  background: #ebebeb;
-  color: #666666;
-  font-size: 0.625rem;
+  min-width: 18px;
+  height: auto;
+  border-radius: 999px;
+  background: var(--figma-bg-track);
+  color: var(--figma-text-muted);
+  font-size: 0.6875rem;
   margin-left: 6px;
 }
 .adm-tab--active .adm-tab-badge {
-  background: rgba(13, 153, 255, 0.16);
-  color: var(--figma-blue-on-white-text);
+  background: var(--figma-blue-tint);
+  color: var(--figma-blue-on-tint-text);
 }
 
 /* Summary strip */
@@ -4579,7 +4646,7 @@ button.app__logo:hover {
 }
 .adm-summary__label {
   font-size: 0.625rem;
-  color: #999999;
+  color: var(--figma-text-dim);
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
@@ -4589,7 +4656,7 @@ button.app__logo:hover {
 .adm-users-toolbar {
   padding: 8px 14px;
   gap: 6px;
-  border-bottom: 1px solid #e6e6e6;
+  border-bottom: 1px solid var(--figma-border);
 }
 
 /* Buttons */
@@ -4597,11 +4664,13 @@ button.app__logo:hover {
   padding: 4px 10px;
   font-size: 0.6875rem;
   font-weight: 500;
-  border-radius: var(--radius-4);
+  border-radius: var(--radius-6);
+  min-height: var(--control-h);
 }
 .adm-btn--sm {
   padding: 3px 8px;
-  font-size: 0.625rem;
+  font-size: 0.6875rem;
+  min-height: var(--control-h-sm);
 }
 .adm-btn--primary {
   background: var(--figma-blue-on-white-text);
@@ -4614,15 +4683,15 @@ button.app__logo:hover {
 }
 .adm-btn--secondary {
   background: transparent;
-  border-color: #e6e6e6;
-  color: #666666;
+  border-color: var(--figma-border);
+  color: var(--figma-text-muted);
 }
 .adm-btn--secondary:hover:not(:disabled) {
-  background: #f5f5f5;
+  background: var(--figma-bg-input);
   color: #1e1e1e;
 }
 .adm-btn--ghost:hover:not(:disabled) {
-  background: #f0f0f0;
+  background: var(--figma-bg-track);
 }
 .adm-btn--link:hover:not(:disabled) {
   text-decoration-color: #0d99ff;
@@ -4632,15 +4701,15 @@ button.app__logo:hover {
 .adm-input,
 .adm-search {
   background: #ffffff;
-  border: 1px solid #e6e6e6;
-  border-radius: 4px;
+  border: 1px solid var(--figma-border);
+  border-radius: var(--radius-6);
   font-size: 0.75rem;
   padding: 5px 9px;
 }
 .adm-input:focus,
 .adm-search:focus {
-  border-color: #0d99ff;
-  box-shadow: 0 0 0 2px rgba(13, 153, 255, 0.18);
+  border-color: var(--figma-blue);
+  box-shadow: var(--focus-halo);
 }
 .adm-input--sm {
   width: 104px;
@@ -4651,18 +4720,18 @@ button.app__logo:hover {
 /* Create form */
 .adm-create-form {
   padding: 14px;
-  background: #fafafa;
-  border-bottom: 1px solid #e6e6e6;
+  background: var(--figma-bg-subtle);
+  border-bottom: 1px solid var(--figma-border);
 }
 .adm-create-form__title {
   font-size: 0.625rem;
-  color: #999999;
+  color: var(--figma-text-dim);
   letter-spacing: 0.07em;
   margin-bottom: 10px;
 }
 .adm-field__label {
   font-size: 0.6875rem;
-  color: #666666;
+  color: var(--figma-text-muted);
 }
 
 /* Table */
@@ -4676,23 +4745,23 @@ button.app__logo:hover {
      at 10px, uppercased and letter-spaced, which is the hardest thing to read
      the stylesheet contains. */
   color: var(--figma-text-dim);
-  background: #fafafa;
-  border-bottom: 1px solid #e6e6e6;
+  background: var(--figma-bg-subtle);
+  border-bottom: 1px solid var(--figma-border);
 }
 .adm-th--sortable:hover {
-  background: #f0f0f0;
+  background: var(--figma-bg-track);
   color: #1e1e1e;
 }
 .adm-td {
   font-size: 0.75rem;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--figma-divider);
 }
 .adm-tr:hover {
-  background: #fafafa;
+  background: var(--figma-bg-subtle);
 }
 .adm-uid {
   font-size: 0.625rem;
-  color: #999999;
+  color: var(--figma-text-dim);
 }
 .adm-sort-icon {
   color: var(--figma-blue-on-white-text);
@@ -4701,7 +4770,7 @@ button.app__logo:hover {
 /* Usage bars */
 .adm-bar-wrap {
   height: 4px;
-  background: #f0f0f0;
+  background: var(--figma-bg-track);
   border-radius: 2px;
 }
 .adm-bar-fill {
@@ -4718,25 +4787,25 @@ button.app__logo:hover {
   min-width: 44px;
   padding: 2px 9px;
   border-width: 1px;
-  border-radius: var(--radius-4);
+  border-radius: var(--radius-6);
   font-size: 0.6875rem;
 }
 
 /* Spinner */
 .adm-spinner {
-  border-color: #ebebeb;
+  border-color: var(--figma-border);
   border-top-color: #0d99ff;
 }
 .adm-loading {
   font-size: 0.75rem;
-  color: #999999;
+  color: var(--figma-text-dim);
 }
 
 /* ── Figma Make-style white shell ────────────────────────────────────────── */
 
 /* Canvas behind the preview: a light neutral so the artboard reads as a surface */
 .app__preview-pane {
-  background: #f5f5f5;
+  background: var(--figma-bg-input);
 }
 
 /* The artboard treatment that used to live here — a 16px grey mat with the
@@ -4761,15 +4830,16 @@ button.app__logo:hover {
 
 /* Segmented controls read as one unit, Figma-style */
 .app__preview-tabs {
-  background: #f0f0f0;
-  border-radius: 6px;
+  background: var(--figma-bg-track);
+  border-radius: var(--radius-6);
   padding: 2px;
   gap: 0;
+  min-height: var(--control-h);
 }
 
 .app__preview-tab {
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-4);
   padding: 4px 12px;
   font-size: 0.6875rem;
   color: var(--figma-text-muted);
@@ -4813,13 +4883,13 @@ button.app__logo:hover {
   gap: 8px;
   width: 100%;
   height: 100%;
-  color: var(--figma-text-muted, #8a8a8a);
-  background: #f7f8f9;
+  color: var(--figma-text-dim);
+  background: var(--figma-bg-subtle);
 }
 
 .project-list__card-empty span {
   font-size: 0.6875rem;
-  color: var(--figma-text-muted, #666);
+  color: var(--figma-text-muted);
 }
 
 /* ============================================================
@@ -4873,7 +4943,7 @@ button.app__logo:hover {
   margin-top: 1px;
   display: grid;
   place-items: center;
-  border-radius: 6px;
+  border-radius: var(--radius-6);
   color: #ffffff;
   background: linear-gradient(135deg, #0d99ff, #7b61ff);
 }
@@ -4943,7 +5013,7 @@ button.app__logo:hover {
 .app__findings {
   margin: 4px 0 10px;
   border: 1px solid var(--figma-border);
-  border-radius: 6px;
+  border-radius: var(--radius-8);
   background: var(--figma-bg-panel);
 }
 .app__findings:last-child { margin-bottom: 0; }
@@ -4956,7 +5026,7 @@ button.app__logo:hover {
   list-style-position: inside;
 }
 .app__findings-summary:hover { color: var(--figma-text); }
-.app__findings-summary:focus-visible { outline: 2px solid var(--figma-blue-on-white-text); outline-offset: -2px; }
+.app__findings-summary:focus-visible { outline: 2px solid var(--figma-blue); outline-offset: -2px; }
 .app__findings-list {
   margin: 0;
   padding: 0 10px 10px 2em;
@@ -5003,8 +5073,8 @@ button.app__logo:hover {
   color: var(--figma-blue-on-white-text);
 }
 .app__findings-fix:focus-visible {
-  outline: 2px solid var(--figma-blue-on-white-text);
-  outline-offset: 1px;
+  outline: 2px solid var(--figma-blue);
+  outline-offset: 2px;
 }
 .app__findings-fix:disabled { opacity: 0.5; cursor: default; }
 
@@ -5017,8 +5087,8 @@ button.app__logo:hover {
 .app__chat-transcript {
   margin-top: 10px;
   border: 1px solid var(--figma-border);
-  border-radius: 8px;
-  background: #fbfbfb;
+  border-radius: var(--radius-8);
+  background: var(--figma-bg-subtle);
 }
 
 .app__chat-transcript-summary {
@@ -5073,8 +5143,8 @@ button.app__logo:hover {
 .app__chat-msg--user .app__chat-msg-content {
   padding: 8px 12px;
   border-radius: 14px 14px 4px 14px;
-  background: #eaf5ff;
-  border: 1px solid #d3e9fb;
+  background: var(--figma-blue-tint);
+  border: 1px solid var(--figma-blue-tint-strong);
   color: var(--figma-text);
 }
 
@@ -5094,10 +5164,10 @@ button.app__logo:hover {
   display: block;
   margin: 0 0 14px;
   padding: 9px 12px;
-  border-radius: 10px;
-  background: #fff5f5;
-  border: 1px solid #ffd7d7;
-  color: #c22;
+  border-radius: var(--radius-8);
+  background: var(--color-error-surface);
+  border: 1px solid var(--color-error-border);
+  color: var(--color-error-1);
   font-size: 0.75rem;
   line-height: 1.6;
 }
@@ -5144,7 +5214,7 @@ button.app__logo:hover {
 
 .app__chat-score {
   background: rgba(37, 157, 99, 0.1);
-  color: #197a4b;
+  color: var(--color-success-2);
   font-weight: 600;
 }
 
@@ -5163,7 +5233,7 @@ button.app__logo:hover {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.92em;
   padding: 0 4px;
-  border-radius: 4px;
+  border-radius: var(--radius-4);
   background: var(--figma-bg-input);
 }
 
@@ -5199,7 +5269,7 @@ button.app__logo:hover {
 .app__chat-thumbnail {
   margin: 2px 0 0;
   border: 1px solid var(--figma-border);
-  border-radius: 10px;
+  border-radius: var(--radius-8);
   overflow: hidden;
   background: #ffffff;
   height: 132px;
@@ -5254,7 +5324,7 @@ button.app__logo:hover {
   box-sizing: border-box;
   margin: 2px 0 16px;
   padding: 10px 11px 11px;
-  border-radius: 12px;
+  border-radius: var(--radius-8);
   background: #ffffff;
   border: 1px solid var(--figma-border);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 6px 16px -10px rgba(0, 0, 0, 0.16);
@@ -5323,7 +5393,9 @@ button.app__logo:hover {
 
 /* --- dropdown ----------------------------------------------------------- */
 
-.dd { position: relative; }
+/* inline-flex: a block wrapper added a line box's descender under the trigger,
+   so a 28px trigger stood in a 30px box beside 28px neighbours. */
+.dd { position: relative; display: inline-flex; }
 
 .dd__trigger {
   display: inline-flex;
@@ -5331,7 +5403,7 @@ button.app__logo:hover {
   gap: 5px;
   max-width: 190px;
   padding: 4px 7px;
-  border-radius: 4px;
+  border-radius: var(--radius-6);
   border: 1px solid transparent;
   background: transparent;
   color: var(--figma-text);
@@ -5340,6 +5412,7 @@ button.app__logo:hover {
   line-height: 1.4;
   cursor: pointer;
   transition: background 120ms ease, border-color 120ms ease;
+  min-height: var(--control-h);
 }
 
 .dd__trigger:hover:not(:disabled) { background: var(--figma-bg-hover); }
@@ -5349,8 +5422,8 @@ button.app__logo:hover {
 }
 .dd__trigger:disabled { opacity: 0.45; cursor: not-allowed; }
 .dd__trigger:focus-visible {
-  outline: 2px solid #0d99ff;
-  outline-offset: 1px;
+  outline: 2px solid var(--figma-blue);
+  outline-offset: 2px;
 }
 
 .dd__trigger-label {
@@ -5367,12 +5440,13 @@ button.app__logo:hover {
 
 .dd__trigger-badge {
   flex: 0 0 auto;
-  padding: 0 4px;
-  border-radius: 3px;
+  padding: 0 5px;
+  border-radius: var(--radius-4);
   background: var(--figma-bg-active);
   color: var(--figma-text-muted);
   font-size: 0.625rem;
   font-variant-numeric: tabular-nums;
+  font-weight: 600;
 }
 
 .dd__chevron { flex: 0 0 auto; color: var(--figma-text-dim); }
@@ -5396,10 +5470,10 @@ button.app__logo:hover {
   margin: 0;
   padding: 4px;
   list-style: none;
-  border-radius: 8px;
+  border-radius: var(--radius-8);
   background: #ffffff;
   border: 1px solid var(--figma-border);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 12px 32px -12px rgba(0, 0, 0, 0.28);
+  box-shadow: var(--shadow-popover);
 }
 
 /* Placed in viewport coordinates from Dropdown.tsx — see the note there. The
@@ -5415,7 +5489,7 @@ button.app__logo:hover {
   width: 100%;
   padding: 6px 7px;
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--radius-4);
   background: transparent;
   color: var(--figma-text);
   font: inherit;
@@ -5447,15 +5521,15 @@ button.app__logo:hover {
   line-height: 1.35;
 }
 
-.dd__opt--selected .dd__opt-label { color: #0d6fbf; }
+.dd__opt--selected .dd__opt-label { color: var(--figma-blue-on-white-text); }
 
 .dd__opt-badge {
-  padding: 0 4px;
-  border-radius: 3px;
+  padding: 0 5px;
+  border-radius: var(--radius-4);
   background: var(--figma-bg-active);
   color: var(--figma-text-muted);
-  font-size: 0.5625rem;
-  font-weight: 500;
+  font-size: 0.625rem;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 
@@ -5486,7 +5560,7 @@ button.app__logo:hover {
   width: 100%;
   padding: 3px 4px;
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--radius-4);
   background: transparent;
   color: inherit;
   font: inherit;
@@ -5495,7 +5569,7 @@ button.app__logo:hover {
 }
 .rt__row:disabled { cursor: default; }
 .rt__row:hover:not(:disabled) { background: var(--figma-bg-hover); }
-.rt__row:focus-visible { outline: 2px solid #0d99ff; outline-offset: -1px; }
+.rt__row:focus-visible { outline: 2px solid var(--figma-blue); outline-offset: -1px; }
 
 .rt__marker {
   flex: 0 0 7px;
@@ -5573,7 +5647,7 @@ button.app__logo:hover {
 
 .rt__body::-webkit-scrollbar { width: 8px; height: 8px; }
 .rt__body::-webkit-scrollbar-track { background: transparent; }
-.rt__body::-webkit-scrollbar-thumb { background: #d4d4d4; border-radius: 4px; }
+.rt__body::-webkit-scrollbar-thumb { background: #d4d4d4; border-radius: var(--radius-4); }
 .rt__body::-webkit-scrollbar-thumb:hover { background: #bdbdbd; }
 
 /*
@@ -5602,13 +5676,13 @@ button.app__logo:hover {
 .rt__code {
   margin: 0;
   padding: 7px 8px;
-  border-radius: 6px;
-  background: #fafafa;
+  border-radius: var(--radius-6);
+  background: var(--figma-bg-subtle);
   border: 1px solid var(--figma-border);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.625rem;
   line-height: 1.55;
-  color: #555;
+  color: var(--figma-text);
   white-space: pre-wrap;
   word-break: break-all;
 }
@@ -5669,7 +5743,7 @@ button.app__logo:hover {
   background: var(--figma-blue-on-white-text);
   color: #ffffff;
 }
-.app__proposal-btn--primary:hover:not(:disabled) { background: #0b87e3; }
+.app__proposal-btn--primary:hover:not(:disabled) { background: var(--figma-blue-on-white-text-hover); }
 .app__proposal-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .app__proposal-hint {
@@ -6004,18 +6078,18 @@ button.app__logo:hover {
   white-space: nowrap;
 }
 .adm-badge--success {
-  background: #e3f5ec;
-  border: 1px solid #b7e2cc;
-  color: #146c45;
+  background: var(--color-success-surface);
+  border: 1px solid var(--color-success-border);
+  color: var(--color-success-2);
 }.adm-badge--warn {
-  background: #fdf2e0;
-  border: 1px solid #f3ddb3;
-  color: #8a5a06;
+  background: var(--color-warning-surface);
+  border: 1px solid var(--color-warning-border);
+  color: var(--color-warning-text);
 }
 .adm-badge--neutral {
-  background: #f0f0f0;
-  border: 1px solid #e0e0e0;
-  color: #4d4d4d;
+  background: var(--figma-bg-track);
+  border: 1px solid var(--figma-border);
+  color: var(--figma-text);
 }
 
 /* 編集: a bordered button. As a bare 10px link it was easy to miss entirely,
@@ -6023,7 +6097,7 @@ button.app__logo:hover {
 .adm-btn--link {
   padding: 3px 10px;
   border: 1px solid var(--figma-border);
-  border-radius: var(--radius-4);
+  border-radius: var(--radius-6);
   background: #ffffff;
   /* #0b7ad1 was a fourth blue, three digits from the token and 4.45:1 on
      white; the token is 4.72. */
@@ -6033,9 +6107,9 @@ button.app__logo:hover {
   text-decoration: none;
 }
 .adm-btn--link:hover:not(:disabled) {
-  background: #f0f7ff;
-  border-color: #a8d4f5;
-  color: #0a67b0;
+  background: var(--figma-blue-tint);
+  border-color: var(--figma-blue-tint-strong);
+  color: var(--figma-blue-on-white-text-hover);
   text-decoration: none;
 }
 
@@ -6043,17 +6117,17 @@ button.app__logo:hover {
    and unmistakably the destructive one. */
 .adm-btn--danger-ghost {
   padding: 3px 12px;
-  border: 1px solid #f0c4c4;
+  border: 1px solid var(--color-error-border);
   border-radius: var(--radius-4);
   background: #ffffff;
-  color: #b31d1d;
+  color: var(--color-error-1);
   font-size: 0.6875rem;
   font-weight: 600;
 }
 .adm-btn--danger-ghost:hover:not(:disabled) {
-  background: #fdeaea;
-  border-color: #e79a9a;
-  color: #8f1414;
+  background: var(--color-error-surface);
+  border-color: var(--color-error-1);
+  color: var(--color-error-hover);
 }
 
 .adm-limit-row {
@@ -6118,15 +6192,16 @@ button.app__logo:hover {
 
 .adm-toggle-btn {
   font-weight: 600;
+  min-height: var(--control-h-sm);
 }
 .adm-toggle-btn--on {
-  background: #e3f5ec;
-  border-color: #b7e2cc;
-  color: #146c45;
+  background: var(--color-success-surface);
+  border-color: var(--color-success-border);
+  color: var(--color-success-2);
 }
 .adm-toggle-btn--off {
-  background: #f5f5f5;
-  border-color: #e0e0e0;
+  background: var(--figma-bg-input);
+  border-color: var(--figma-border);
   /* 4.17:1 as #767676; the palette's own dim grey clears AA on this ground. */
   color: var(--figma-text-dim);
 }
@@ -6161,10 +6236,11 @@ button.app__logo:hover {
 }
 
 .adm-tab {
-  border-radius: 5px;
+  border-radius: var(--radius-6);
   font-size: 0.75rem;
   font-weight: 600;
   color: var(--figma-text-muted);
+  min-height: var(--control-h);
 }
 .adm-tab--active {
   background: #ffffff;
@@ -6173,7 +6249,7 @@ button.app__logo:hover {
 }
 
 .adm-summary {
-  background: #fafafa;
+  background: var(--figma-bg-subtle);
   border-bottom: 1px solid var(--figma-border);
 }
 
@@ -6187,7 +6263,7 @@ button.app__logo:hover {
   max-width: 520px;
   margin: 12px 16px 0;
   border: 1px solid var(--figma-border);
-  border-radius: 6px;
+  border-radius: var(--radius-8);
   overflow: hidden;
 }
 .adm-modeltotals__head {
@@ -6196,7 +6272,7 @@ button.app__logo:hover {
   justify-content: space-between;
   gap: 8px;
   padding: 8px 14px;
-  background: #fafafa;
+  background: var(--figma-bg-subtle);
   border-bottom: 1px solid var(--figma-border);
   font-size: 0.75rem;
   font-weight: 600;
@@ -6344,9 +6420,9 @@ button.app__logo:hover {
 .project-list__kind {
   flex: 0 0 auto;
   padding: 1px 6px;
-  border-radius: 4px;
-  font-size: 0.5625rem;
-  font-weight: 700;
+  border-radius: var(--radius-4);
+  font-size: 0.625rem;
+  font-weight: 600;
   letter-spacing: 0.04em;
   line-height: 1.6;
   border: 1px solid transparent;
@@ -6446,7 +6522,7 @@ button.app__logo:hover {
   justify-content: center;
   gap: 20px;
   padding: 24px;
-  background: #fafafa;
+  background: var(--figma-bg-subtle);
 }
 
 .generating__canvas {
@@ -6574,7 +6650,7 @@ button.app__logo:hover {
   gap: 10px;
   padding: 7px 8px;
   border-radius: var(--radius-4);
-  background: #fbfbfb;
+  background: var(--figma-bg-subtle);
 }
 
 .generating__line {
@@ -6910,10 +6986,10 @@ button.app__logo:hover {
  * Sized to the toolbar it now shares with the device chips and the selector.
  */
 .version-diff__open {
-  height: 24px;
+  height: var(--control-h);
   padding: 0 10px;
   border: 1px solid var(--figma-border);
-  border-radius: 5px;
+  border-radius: var(--radius-6);
   background: #ffffff;
   color: var(--figma-text);
   font-family: inherit;
@@ -6954,7 +7030,7 @@ button.app__logo:hover {
 
 .vc__title {
   font-size: 0.8125rem;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--figma-text);
 }
 
@@ -6962,11 +7038,11 @@ button.app__logo:hover {
   padding: 2px 8px;
   border-radius: 999px;
   font-size: 0.6875rem;
-  font-weight: 700;
+  font-weight: 600;
 }
 
-.vc__badge--changed { background: #fdf6ee; color: #8a5a20; }
-.vc__badge--same { background: #f1f5f2; color: #3f6b4c; }
+.vc__badge--changed { background: var(--color-warning-surface); color: var(--color-warning-text); }
+.vc__badge--same { background: var(--color-success-surface); color: var(--color-success-2); }
 
 .vc__lines {
   font-size: 0.6875rem;
@@ -6976,16 +7052,18 @@ button.app__logo:hover {
 
 .vc__tabs {
   display: flex;
-  gap: 2px;
+  gap: 0;
   padding: 2px;
-  border-radius: 7px;
-  background: #f1f2f3;
+  border-radius: var(--radius-6);
+  background: var(--figma-bg-track);
+  min-height: var(--control-h);
+  border: 1px solid var(--figma-border);
 }
 
 .vc__tab {
   padding: 3px 12px;
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--radius-4);
   background: transparent;
   color: var(--figma-text-muted);
   font-family: inherit;
@@ -7057,7 +7135,7 @@ button.app__logo:hover {
   gap: 8px;
   padding: 5px 10px;
   border-bottom: 1px solid var(--figma-border);
-  background: #fafafa;
+  background: var(--figma-bg-subtle);
 }
 
 .vc__side-status {
@@ -7124,7 +7202,7 @@ button.app__logo:hover {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  background: #f6f7f8;
+  background: var(--figma-bg-subtle);
 }
 
 /* What changed, before any of it is read — and a way into each one. */
@@ -7165,8 +7243,8 @@ button.app__logo:hover {
 
 .vc__filechip:hover { background: var(--figma-bg-hover); color: var(--figma-text); }
 
-.vc__filechip--added { border-color: #bfe0c7; }
-.vc__filechip--removed { border-color: #eec5c5; }
+.vc__filechip--added { border-color: var(--color-success-border); }
+.vc__filechip--removed { border-color: var(--color-error-border); }
 
 .vc__filechip-path {
   overflow: hidden;
@@ -7183,13 +7261,13 @@ button.app__logo:hover {
 }
 
 .vc__count { font-size: 0.6875rem; font-weight: 600; }
-.vc__count--add { color: #1a7f37; }
+.vc__count--add { color: var(--color-success-2); }
 .vc__count--del { color: var(--color-error-1); }
 
 .vc__file {
   margin: 10px 12px;
   border: 1px solid var(--figma-border);
-  border-radius: 8px;
+  border-radius: var(--radius-8);
   background: #ffffff;
 }
 
@@ -7207,8 +7285,8 @@ button.app__logo:hover {
   gap: 8px;
   padding: 6px 10px;
   border-bottom: 1px solid var(--figma-border);
-  border-radius: 8px 8px 0 0;
-  background: #f6f8fa;
+  border-radius: var(--radius-8) var(--radius-8) 0 0;
+  background: var(--figma-bg-subtle);
 }
 
 .vc__file-toggle {
@@ -7245,9 +7323,9 @@ button.app__logo:hover {
   font-weight: 700;
 }
 
-.vc__file-status--added { background: #e7f6ea; color: #1a7f37; }
-.vc__file-status--removed { background: #fdecec; color: var(--color-error-1); }
-.vc__file-status--modified { background: #f1f2f3; color: var(--figma-text-muted); }
+.vc__file-status--added { background: var(--color-success-surface); color: var(--color-success-2); }
+.vc__file-status--removed { background: var(--color-error-surface); color: var(--color-error-1); }
+.vc__file-status--modified { background: var(--figma-bg-track); color: var(--figma-text-muted); }
 
 .vc__file-body {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -7259,10 +7337,10 @@ button.app__logo:hover {
   margin: 0;
   padding: 6px 10px;
   border-bottom: 1px solid var(--figma-border);
-  background: #fdf6ee;
+  background: var(--color-warning-surface);
   font-family: var(--figma-font, inherit);
   font-size: 0.6875rem;
-  color: #8a5a20;
+  color: var(--color-warning-text);
 }
 
 /*
@@ -7293,18 +7371,18 @@ button.app__logo:hover {
 
 /* Removed on the left, added on the right — never both in one cell, which is
    what makes a replaced line read as one change rather than two. */
-.vc__cell--removed { background: #fdf0f0; }
-.vc__cell--added { background: #eef8f0; }
+.vc__cell--removed { background: var(--color-error-surface); }
+.vc__cell--added { background: var(--color-success-surface); }
 
 /* No counterpart on this side. Shaded rather than empty, so an insertion looks
    like one rather than like a blank line someone wrote. */
-.vc__cell--blank { background: #fafafa; }
+.vc__cell--blank { background: var(--figma-bg-subtle); }
 
 /* The collapsed run between changes, across both columns. Carries the line
    numbers the next row resumes at, the way a unified diff's header does. */
 .vc__skip {
   padding: 2px 12px;
-  background: #f4f6f8;
+  background: var(--figma-bg-subtle);
   color: var(--figma-text-dim);
   border-top: 1px solid var(--figma-border);
   border-bottom: 1px solid var(--figma-border);
@@ -7364,7 +7442,7 @@ button.app__logo:hover {
      taller line box than a Latin one, so ZIP・共有 measured 27px and Admin・
      Logout 25px with the same rules (2026-09-23). */
   box-sizing: border-box;
-  min-height: 27px;
+  min-height: var(--control-h);
 }
 
 .app__header-btn:disabled {
@@ -7391,9 +7469,9 @@ button.app__logo:hover {
   overflow-y: auto;
   padding: 4px 0;
   border: 1px solid var(--figma-border);
-  border-radius: 10px;
+  border-radius: var(--radius-8);
   background: #ffffff;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  box-shadow: var(--shadow-popover);
   text-align: left;
 }
 
@@ -7427,18 +7505,20 @@ button.app__logo:hover {
 .share-panel__search {
   box-sizing: border-box;
   width: 100%;
-  min-height: 30px;
+  min-height: var(--control-h);
   padding: 5px 8px;
   border: 1px solid var(--figma-border);
-  border-radius: 6px;
+  border-radius: var(--radius-6);
   font-family: inherit;
   font-size: 0.75rem;
   color: var(--figma-text);
   background: #ffffff;
 }
-.share-panel__search:focus-visible {
-  outline: 2px solid var(--figma-blue-on-white-text);
-  outline-offset: -1px;
+.share-panel__search:focus {
+  outline: none;
+  outline-offset: 0;
+  border-color: var(--figma-blue);
+  box-shadow: var(--focus-halo);
 }
 
 .share-panel__results,
@@ -7456,7 +7536,7 @@ button.app__logo:hover {
   width: 100%;
   padding: 6px 8px;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-6);
   background: transparent;
   font-family: inherit;
   font-size: 0.75rem;
@@ -7498,7 +7578,7 @@ button.app__logo:hover {
   min-height: 30px;
   padding: 4px 4px 4px 8px;
   border: 1px solid var(--figma-border);
-  border-radius: 6px;
+  border-radius: var(--radius-6);
   background: var(--figma-bg-input);
 }
 
@@ -7510,7 +7590,7 @@ button.app__logo:hover {
 }
 
 .share-panel__role {
-  min-height: 27px;
+  min-height: var(--control-h);
   padding: 3px 6px;
   border: 1px solid var(--figma-border);
   border-radius: var(--radius-6);
@@ -7548,7 +7628,7 @@ button.app__logo:hover {
   min-height: unset;
   padding: 0;
   border: none;
-  border-radius: var(--radius-4);
+  border-radius: var(--radius-6);
   background: transparent;
   font-size: 0.875rem;
   line-height: 1;
@@ -7630,7 +7710,7 @@ button.app__logo:hover {
   display: inline-block;
   width: 68px;
   height: 0.75em;
-  border-radius: 3px;
+  border-radius: var(--radius-4);
   background: var(--figma-bg-hover);
   vertical-align: middle;
 }
@@ -7689,7 +7769,7 @@ button.app__logo:hover {
   flex-direction: column;
   align-items: center;
   gap: 4px;
-  border-radius: 4px;
+  border-radius: var(--radius-4);
 }
 /* The hit target is bigger than the mark: the whole column answers the pointer,
    so a thin segment is still reachable. */
@@ -7775,7 +7855,7 @@ button.app__logo:hover {
   align-self: start;
   min-width: 0;
   padding: 10px 12px;
-  border-radius: 6px;
+  border-radius: var(--radius-6);
   background: var(--figma-bg-panel);
   border: 1px solid var(--figma-border);
 }
@@ -7860,19 +7940,24 @@ button.app__logo:hover {
   display: inline-flex;
   gap: 2px;
   padding: 2px;
-  border-radius: 6px;
-  background: var(--figma-bg-input);
+  border-radius: var(--radius-6);
+  background: var(--figma-bg-track);
+  min-height: var(--control-h);
+  border: 1px solid var(--figma-border);
 }
 .adm-metric {
-  padding: 3px 10px;
+  padding: 0 10px;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-4);
   background: transparent;
   font: inherit;
   font-size: 0.6875rem;
   font-weight: 500;
   color: var(--figma-text-muted);
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  min-height: calc(var(--control-h) - 6px);
 }
 .adm-metric:hover {
   color: var(--figma-text);
@@ -7932,7 +8017,7 @@ button.app__logo:hover {
   gap: 1px;
   padding: 8px 10px;
   border: 1px solid var(--figma-border);
-  border-radius: 6px;
+  border-radius: var(--radius-6);
   background: #ffffff;
   cursor: pointer;
   text-align: left;
@@ -7940,8 +8025,8 @@ button.app__logo:hover {
   min-width: 0;
 }
 .adm-userpick:hover {
-  background: #fafafa;
-  border-color: #c8c8c8;
+  background: var(--figma-bg-subtle);
+  border-color: var(--figma-border-strong);
 }
 .adm-userpick .adm-email,
 .adm-userpick .adm-uid {
@@ -8010,7 +8095,7 @@ button.app__logo:hover {
      somebody's name shouted back at them. The letter-spacing is enough to read
      as a heading. */
   color: var(--figma-text-muted);
-  background: #fafafa;
+  background: var(--figma-bg-subtle);
   border-bottom: 1px solid var(--figma-border);
   /* One line, whatever the project is called. A wrapping heading shifts the
      table under it and makes the two columns disagree about where rows start. */
@@ -8030,13 +8115,13 @@ button.app__logo:hover {
   cursor: pointer;
 }
 .adm-tr--click:hover {
-  background: #fafafa;
+  background: var(--figma-bg-subtle);
 }
 .adm-tr--active {
-  background: #f0f6ff;
+  background: var(--figma-blue-tint);
 }
 .adm-tr--active:hover {
-  background: #e8f1ff;
+  background: var(--figma-blue-tint);
 }
 
 .adm-th--num,
@@ -8310,17 +8395,18 @@ button.app__logo:hover {
 .adm-name__derived {
   flex-shrink: 0;
   padding: 0 4px;
-  border-radius: 3px;
-  background: #f0f0f0;
+  border-radius: var(--radius-4);
+  background: var(--figma-bg-track);
   color: var(--figma-text-muted);
   font-size: 0.625rem;
   font-weight: 600;
 }
 .adm-input--sm {
-  height: 24px;
+  height: var(--control-h-sm);
   padding: 0 6px;
   font-size: 0.75rem;
   min-width: 0;
+  min-height: var(--control-h-sm);
 }
 
 /* --- The bar that replaces the browser chrome on a device preview -------------
@@ -8354,7 +8440,7 @@ button.app__logo:hover {
   margin-top: 8px;
   padding: 10px 12px;
   border: 1px solid var(--figma-border);
-  border-radius: 8px;
+  border-radius: var(--radius-8);
   background: var(--figma-bg-panel);
 }
 .app__refine-head {
@@ -8391,7 +8477,7 @@ button.app__logo:hover {
   width: 22px;
   height: 22px;
   border: none;
-  border-radius: 5px;
+  border-radius: var(--radius-6);
   background: transparent;
   color: var(--figma-text-muted);
   font-size: 0.9rem;
@@ -8428,14 +8514,15 @@ button.app__logo:hover {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  width: var(--control-h);
+  height: var(--control-h);
   flex-shrink: 0;
   border: none;
   border-radius: var(--radius-6);
   background: transparent;
   color: var(--figma-text-muted);
   cursor: pointer;
+  font-size: 0.75rem;
 }
 .app__chat-refine-btn:hover:not(:disabled) {
   background: rgba(0, 0, 0, 0.06);
@@ -8494,9 +8581,9 @@ button.app__logo:hover {
 .adm-header__scope {
   margin-left: 8px;
   padding: 1px 7px;
-  border-radius: 10px;
-  background: #eef4ff;
-  color: #2b5fb8;
+  border-radius: var(--radius-4);
+  background: var(--figma-blue-tint);
+  color: var(--figma-blue-on-tint-text);
   font-size: 0.6875rem;
   font-weight: 600;
 }
@@ -8539,15 +8626,32 @@ button.app__logo:hover {
    a capsule that already reads as a control. Here it sits on white beside an
    input, so it needs the same outline the input has — the component is
    unchanged and only its skin in this context is. */
-.adm-subbar .dd__trigger {
-  max-width: 240px;
-  height: 26px;
-  padding: 0 8px;
+/*
+ * A menu standing among bordered controls wears their border: in the admin
+ * subbar, beside the project list's sort direction, and in the preview toolbar
+ * beside 比較 and the two segmented choosers. The composer's menus stay bare —
+ * there they are a quiet row of options under the prompt, not toolbar controls.
+ */
+.adm-subbar .dd__trigger,
+.project-list__sort .dd__trigger,
+.app__preview-toolbar .dd__trigger {
   border-color: var(--figma-border);
   background: #ffffff;
+}
+.adm-subbar .dd__trigger:hover:not(:disabled),
+.project-list__sort .dd__trigger:hover:not(:disabled),
+.app__preview-toolbar .dd__trigger:hover:not(:disabled) { border-color: var(--figma-border-strong); }
+.adm-subbar .dd__trigger {
+  max-width: 240px;
+  height: var(--control-h);
+  padding: 0 8px;
   font-size: 0.75rem;
 }
-.adm-subbar .dd__trigger:hover:not(:disabled) { border-color: #c8c8c8; }
+.project-list__sort .dd__trigger {
+  min-height: var(--control-h-lg);
+  padding: 4px 10px;
+  font-size: 0.75rem;
+}
 
 /* Two buttons in one action cell — 管理者にする and 外す. */
 /* A group name, not a model name: `adm-th--model` is 84px and was clipping
@@ -8607,10 +8711,10 @@ button.app__logo:hover {
   gap: 12px;
   flex-shrink: 0;
   padding: 8px 14px;
-  background: #fff4f4;
-  border-top: 1px solid #f3c9c9;
-  border-bottom: 1px solid #f3c9c9;
-  color: #96302f;
+  background: var(--color-error-surface);
+  border-top: 1px solid var(--color-error-border);
+  border-bottom: 1px solid var(--color-error-border);
+  color: var(--color-error-1);
   font-size: 0.75rem;
   line-height: 1.5;
 }
@@ -8618,16 +8722,16 @@ button.app__logo:hover {
   flex-shrink: 0;
   height: 24px;
   padding: 0 12px;
-  border: 1px solid #d98b8a;
-  border-radius: 5px;
+  border: 1px solid var(--color-error-border);
+  border-radius: var(--radius-6);
   background: #ffffff;
-  color: #96302f;
+  color: var(--color-error-1);
   font-family: inherit;
   font-size: 0.75rem;
   font-weight: 600;
   cursor: pointer;
 }
-.app__save-failed-retry:hover { background: #fdecec; }
+.app__save-failed-retry:hover { background: var(--color-error-surface); }
 
 /* What one attached picture shows, in the user's own words.
 
@@ -8646,7 +8750,9 @@ button.app__logo:hover {
   font: inherit;
   font-size: 0.75rem;
 }
-.app__attach-note:focus { outline: none; border-color: var(--figma-accent); }
+.app__attach-note:focus { outline: none; border-color: var(--figma-blue);
+  box-shadow: var(--focus-halo);
+}
 
 /* ===== Sharing (2026-09-23) =====
    Built from the list's and the header's own pieces: the meta line's size and
@@ -8670,8 +8776,8 @@ button.app__logo:hover {
   flex: 0 0 auto;
   padding: 1px 6px;
   border-radius: var(--radius-4);
-  font-size: 0.5625rem;
-  font-weight: 700;
+  font-size: 0.625rem;
+  font-weight: 600;
   letter-spacing: 0.04em;
   line-height: 1.6;
   border: 1px solid var(--figma-border);
@@ -8767,15 +8873,8 @@ button.app__logo:hover {
   border-radius: 0;
   box-shadow: inset 2px 0 0 #ffffff;
 }
-/* The viewport chips: a blue outline on a blue tint. */
-.motion-indicator--chip {
-  background: rgba(13, 153, 255, 0.1);
-  box-shadow: inset 0 0 0 1px var(--figma-blue);
-}
 
-.project-list__segmented > .motion-indicator { border-radius: var(--radius-6); }
-.adm-tabs > .motion-indicator,
-.vc__tabs > .motion-indicator { border-radius: 5px; }
+.adm-tabs > .motion-indicator { border-radius: var(--radius-6); }
 .prompt-templates__categories > .motion-indicator {
   background: var(--figma-blue-on-white-text);
   box-shadow: none;

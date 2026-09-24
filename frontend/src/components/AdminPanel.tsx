@@ -264,7 +264,7 @@ function BudgetEditor({
           {saving ? '…' : '保存'}
         </button>
         <button onClick={() => { setEditing(false); setError(null); }} className="adm-btn adm-btn--ghost adm-btn--sm" type="button">
-          取消
+          キャンセル
         </button>
         </span>
         {error && <span className="adm-inline-error" role="alert">{error}</span>}
@@ -422,13 +422,14 @@ function NameEditor({
             自動
           </span>
         )}
+        {/* The same control, and the same word, as the budget's 編集 in the same row. */}
         <button
-          className="adm-btn adm-btn--ghost adm-btn--sm"
+          className="adm-btn adm-btn--link adm-btn--sm"
           type="button"
           onClick={() => { setValue(user.displayName); setEditing(true); setError(null); }}
-          aria-label={`${user.displayName} のユーザー名を変更`}
+          aria-label={`${user.displayName} のユーザー名を編集`}
         >
-          変更
+          編集
         </button>
       </div>
     );
@@ -456,7 +457,7 @@ function NameEditor({
         {saving ? '…' : '保存'}
       </button>
       <button className="adm-btn adm-btn--ghost adm-btn--sm" type="button" onClick={() => { setEditing(false); setError(null); }} disabled={saving}>
-        取消
+        キャンセル
       </button>
       {error && <span className="adm-inline-error" role="alert">{error}</span>}
     </div>

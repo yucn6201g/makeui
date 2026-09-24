@@ -16,7 +16,7 @@ import { prefersReducedMotion } from '../utils/motion';
  * pointer is being scaled by the press feedback at the moment it is chosen, and
  * a measured box would carry that scale into the thumb.
  */
-export type IndicatorVariant = 'pill' | 'underline' | 'rail' | 'chip';
+export type IndicatorVariant = 'pill' | 'underline' | 'rail';
 
 interface SlidingIndicatorProps {
   /** Whatever identifies the chosen item. The thumb moves when this changes. */

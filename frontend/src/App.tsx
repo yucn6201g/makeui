@@ -2746,7 +2746,7 @@ function MainApp({ project, onBackToProjects, onUpdateProject, fetchProjectPrevi
               </button>
             </div>
             <div className="app__viewport-chips motion-track" role="group" aria-label="Viewport">
-              <SlidingIndicator active={device} variant="chip" />
+              <SlidingIndicator active={device} />
               {DEVICES.map((d) => (
                 <button
                   key={d.id}
