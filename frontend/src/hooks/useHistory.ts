@@ -8,6 +8,8 @@ export interface VersionEntry {
   score: number;
   preset: string;
   model: string;
+  /** Who ran it — recorded on runs since sharing, shown on a shared project. */
+  actorName?: string;
   createdAt: string;
 }
 
@@ -16,7 +18,7 @@ interface UseHistoryReturn {
   loading: boolean;
   error: string | null;
   fetchVersions: (projectId?: string) => void;
-  loadVersion: (versionId: string) => Promise<VersionEntry | null>;
+  loadVersion: (versionId: string, projectId?: string) => Promise<VersionEntry | null>;
 }
 
 export function useHistory(): UseHistoryReturn {
@@ -60,10 +62,11 @@ export function useHistory(): UseHistoryReturn {
       });
   }, [token]);
 
-  const loadVersion = useCallback(async (versionId: string): Promise<VersionEntry | null> => {
+  const loadVersion = useCallback(async (versionId: string, projectId?: string): Promise<VersionEntry | null> => {
     if (!token) return null;
     const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8080';
-    const res = await fetch(`${apiUrl}/versions/${encodeURIComponent(versionId)}`, {
+    // With the project, so a shared project's version is looked up in its owner's history.
+    const res = await fetch(`${apiUrl}/versions/${encodeURIComponent(versionId)}${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ''}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) return null;

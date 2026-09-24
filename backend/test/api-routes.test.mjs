@@ -135,7 +135,12 @@ function handlerRoutes(src) {
   return routes;
 }
 
-const handler = fs.readFileSync(path.join(root, 'src/handlers/lambda-handler.ts'), 'utf8');
+// The main handler, and the routes it hands to `handleShareRoutes` (2026-09-23),
+// which are served from the same function and declared in the same forms.
+const handler = [
+  fs.readFileSync(path.join(root, 'src/handlers/lambda-handler.ts'), 'utf8'),
+  fs.readFileSync(path.join(root, 'src/handlers/share-routes.ts'), 'utf8'),
+].join('\n');
 const routes = handlerRoutes(handler);
 const calls = sources.flatMap(([f, s]) => clientCalls(f, s));
 

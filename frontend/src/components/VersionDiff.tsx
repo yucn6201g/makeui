@@ -10,6 +10,8 @@ interface VersionDiffProps {
   versions: VersionEntry[];
   apiUrl: string;
   token: string;
+  /** The project, so a shared project's versions are read from its owner's history. */
+  projectId?: string;
 }
 
 function computeLineDiff(oldText: string, newText: string): { added: number; removed: number } {
@@ -37,7 +39,7 @@ function computeLineDiff(oldText: string, newText: string): { added: number; rem
   return { added, removed };
 }
 
-export function VersionDiff({ currentHtml, versions, apiUrl, token }: VersionDiffProps) {
+export function VersionDiff({ currentHtml, versions, apiUrl, token, projectId }: VersionDiffProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [diffTab, setDiffTab] = useState<'visual' | 'code'>('visual');
   /**
@@ -61,8 +63,8 @@ export function VersionDiff({ currentHtml, versions, apiUrl, token }: VersionDif
    * moment a regression is a few runs old — could not be expressed. Both are a
    * `VersionSide` now, and the live document is simply the choice with no id.
    */
-  const left = useVersionSide(apiUrl, token, currentHtml);
-  const right = useVersionSide(apiUrl, token, currentHtml);
+  const left = useVersionSide(apiUrl, token, currentHtml, projectId);
+  const right = useVersionSide(apiUrl, token, currentHtml, projectId);
 
   /**
    * How far down the app's own header reaches.

@@ -57,7 +57,26 @@ export interface StoredMessage {
    * it gets here; dropped entirely rather than costing the thread its history.
    */
   phases?: unknown[];
+  /**
+   * Who wrote it, on a shared project — the prompt's author, or the person whose
+   * run produced the reply. Set by the client that sent it; absent on messages
+   * from before sharing, which were all the owner's.
+   */
+  author?: { id: string; name: string };
   timestamp: number;
+}
+
+/**
+ * Two copies of one conversation, as one: every message either has, the
+ * incoming copy winning where both have the same id, in the order they were
+ * written. For a shared project, where two people saving the whole thread
+ * would otherwise each drop what the other just said.
+ */
+export function mergeThreads<T extends { id?: string; timestamp?: number }>(stored: readonly T[], incoming: readonly T[]): T[] {
+  const byId = new Map<string, T>();
+  for (const m of stored) if (m.id) byId.set(m.id, m);
+  for (const m of incoming) if (m.id) byId.set(m.id, m);
+  return [...byId.values()].sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
 }
 
 export async function saveChatMessages(userId: string, projectId: string, messages: StoredMessage[]): Promise<void> {

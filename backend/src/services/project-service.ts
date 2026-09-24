@@ -8,6 +8,7 @@ import {
 import { putDocument, readDocument, deleteDocument, projectDocumentKey } from './output-storage.js';
 import { deleteChatMessages } from './chat-history.js';
 import { deleteProjectVersions, getVersionHistory, getVersion } from './version-history.js';
+import { deleteAllShares } from './project-shares.js';
 import { logger } from '../utils/logger.js';
 import { detectKind } from '../tools/framework-compile.js';
 import { readProjectFiles } from '../tools/project-transport.js';
@@ -83,6 +84,11 @@ export interface ProjectRecord {
    * reads one has to decide what the other means. Archiving clears it.
    */
   favouritedAt?: string;
+  /**
+   * While the project has any share grant, when the first was made — the owner's
+   * list puts it on the 共有 tab. Maintained by services/project-shares.ts.
+   */
+  sharedAt?: string;
 }
 
 export async function createProject(userId: string, name: string): Promise<ProjectRecord> {
@@ -131,7 +137,7 @@ export async function listProjects(userId: string): Promise<ProjectRecord[]> {
       ProjectionExpression: [
         'projectId', '#name', 'createdAt', 'updatedAt', 'preset', '#model',
         'outputKind', 'totalTokens', 'requestCount', 'archivedAt', 'favouritedAt',
-        'lastHtmlS3Key',
+        'lastHtmlS3Key', 'sharedAt',
       ].join(', '),
       ExpressionAttributeNames: { '#name': 'projectName', '#model': 'model' },
       ScanIndexForward: false,
@@ -179,10 +185,16 @@ export async function listProjects(userId: string): Promise<ProjectRecord[]> {
     requestCount: item.requestCount?.N ? parseInt(item.requestCount.N, 10) : undefined,
     archivedAt: item.archivedAt?.S || undefined,
     favouritedAt: item.favouritedAt?.S || undefined,
+    sharedAt: item.sharedAt?.S || undefined,
   }));
 }
 
-export async function getProject(userId: string, projectId: string): Promise<ProjectRecord | null> {
+export async function getProject(
+  userId: string,
+  projectId: string,
+  /** False skips the S3 read: an access check needs the row, not an 87KB document. */
+  opts: { document?: boolean } = {}
+): Promise<ProjectRecord | null> {
   let lastKey: Record<string, any> | undefined;
 
   do {
@@ -208,7 +220,7 @@ export async function getProject(userId: string, projectId: string): Promise<Pro
        * two. It is read only for rows that predate the S3 key and have not been
        * saved since — see the note above `updateProject`.
        */
-      const stored = item.lastHtmlS3Key?.S ? (await readDocument(item.lastHtmlS3Key.S)) ?? undefined : undefined;
+      const stored = opts.document !== false && item.lastHtmlS3Key?.S ? (await readDocument(item.lastHtmlS3Key.S)) ?? undefined : undefined;
       const lastHtml = stored || item.lastHtml?.S;
       return {
         projectId: item.projectId?.S ?? '',
@@ -217,6 +229,7 @@ export async function getProject(userId: string, projectId: string): Promise<Pro
         createdAt: item.createdAt?.S ?? '',
         updatedAt: item.updatedAt?.S ?? '',
         lastHtml,
+        hasDocument: Boolean(item.lastHtmlS3Key?.S || item.lastHtml?.S),
         preset: item.preset?.S,
         model: item.model?.S,
         outputKind: readOutputKind(item.outputKind?.S),
@@ -224,6 +237,7 @@ export async function getProject(userId: string, projectId: string): Promise<Pro
         requestCount: item.requestCount?.N ? parseInt(item.requestCount.N, 10) : undefined,
         archivedAt: item.archivedAt?.S || undefined,
         favouritedAt: item.favouritedAt?.S || undefined,
+        sharedAt: item.sharedAt?.S || undefined,
       };
     }
 
@@ -485,6 +499,13 @@ export async function deleteProject(userId: string, projectId: string): Promise<
    */
   await deleteProjectVersions(userId, projectId).catch((error) => {
     logger.warn('Project deleted but its versions were not', { userId, projectId, error: String(error) });
+  });
+  /*
+   * And who it was shared with, on both sides — a grantee's index pointing at a
+   * project that no longer exists would list a card that opens on nothing.
+   */
+  await deleteAllShares(projectId).catch((error) => {
+    logger.warn('Project deleted but its shares were not', { userId, projectId, error: String(error) });
   });
   logger.info('Project deleted', { userId, projectId });
 }

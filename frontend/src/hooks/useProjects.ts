@@ -31,6 +31,25 @@ export interface Project {
   archivedAt?: string;
   /** When the project was favourited; absent means it is not. */
   favouritedAt?: string;
+  /** While the project has any share, when the first was made. Puts it on the 共有 tab. */
+  sharedAt?: string;
+  /**
+   * This account's relation to the project, from the server's list.
+   *
+   * `owner` for its own; for one shared with it, the role it was given and who
+   * owns it. Absent on a project created in this session before the list is
+   * refetched, which is always the caller's own.
+   */
+  access?: ProjectAccess;
+}
+
+export type ProjectRole = 'owner' | 'full' | 'edit' | 'view';
+export interface ProjectAccess {
+  role: ProjectRole;
+  ownerId: string;
+  ownerName: string;
+  /** 'group' when the project reached this account through its user group. */
+  via?: 'user' | 'group';
 }
 
 export function useProjects() {

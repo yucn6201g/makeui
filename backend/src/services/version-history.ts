@@ -57,6 +57,13 @@ export interface VersionEntry {
    * not a thing, and a column of honest zeros would be a column of lies.
    */
   tokens?: { input: number; output: number };
+  /**
+   * Who ran it, on a shared project. The row lives in the owner's partition
+   * whoever acted, so `userId` names the partition and these name the person.
+   * Absent on rows from before sharing, which were all the owner's own.
+   */
+  actorId?: string;
+  actorName?: string;
   createdAt: string;
   thumbnail?: string;
 }
@@ -129,6 +136,8 @@ export async function saveVersion(entry: Omit<VersionEntry, 'versionId' | 'creat
       ...(entry.openFindings === undefined ? {} : { openFindings: { N: String(entry.openFindings) } }),
       preset: { S: entry.preset },
       model: { S: entry.model },
+      ...(entry.actorId ? { actorId: { S: entry.actorId } } : {}),
+      ...(entry.actorName ? { actorName: { S: entry.actorName } } : {}),
       createdAt: { S: createdAt },
       // Same rule as scoreVerified: written only when known, so an older row
       // reads as "not recorded" rather than as a run that cost nothing.
@@ -293,7 +302,7 @@ export async function getVersionHistory(userId: string, limit: number = 20, proj
    */
   const PROJECTION = [
     'versionId', 'projectId', 'prompt', 'score', 'scoreVerified', 'scoreRubric', 'requirementsMet', 'requirementsChecked', 'openFindings',
-    'preset', 'model', 'inputTokens', 'outputTokens', 'createdAt',
+    'preset', 'model', 'inputTokens', 'outputTokens', 'createdAt', 'actorId', 'actorName',
   ].join(', ');
 
   const mapItem = (item: Record<string, any>): VersionEntry => ({
@@ -320,6 +329,8 @@ export async function getVersionHistory(userId: string, limit: number = 20, proj
           },
         }
       : {}),
+    actorId: item.actorId?.S || undefined,
+    actorName: item.actorName?.S || undefined,
     createdAt: item.createdAt?.S ?? '',
   });
 
@@ -447,6 +458,8 @@ export async function getVersion(userId: string, versionId: string): Promise<Ver
           },
         }
       : {}),
+    actorId: item.actorId?.S || undefined,
+    actorName: item.actorName?.S || undefined,
     createdAt: item.createdAt?.S ?? '',
   };
 }

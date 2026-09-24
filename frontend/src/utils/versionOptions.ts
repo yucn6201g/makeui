@@ -37,6 +37,8 @@ export function versionOptions(versions: VersionEntry[]): DropdownOption[] {
     badge: new Date(v.createdAt).toLocaleString('ja-JP', {
       month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit',
     }),
-    description: v.prompt || '(プロンプトなし)',
+    // Who made it, first, on the runs that record it: on a shared project that is
+    // the question the history is opened to answer.
+    description: `${v.actorName ? `${v.actorName}：` : ''}${v.prompt || '(プロンプトなし)'}`,
   }));
 }

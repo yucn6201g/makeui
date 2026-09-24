@@ -35,7 +35,9 @@ export interface VersionSide {
 export function useVersionSide(
   apiUrl: string,
   token: string,
-  liveHtml: string | null
+  liveHtml: string | null,
+  /** The project the versions belong to — a shared project's are in its owner's partition. */
+  projectId?: string
 ): { side: VersionSide; select: (versionId: string) => void } {
   const [versionId, setVersionId] = useState('');
   const [fetched, setFetched] = useState<string | null>(null);
@@ -59,7 +61,7 @@ export function useVersionSide(
     abortRef.current = controller;
     setLoading(true);
     try {
-      const res = await fetch(`${apiUrl}/versions/${encodeURIComponent(id)}`, {
+      const res = await fetch(`${apiUrl}/versions/${encodeURIComponent(id)}${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ''}`, {
         headers: { Authorization: `Bearer ${token}` },
         signal: controller.signal,
       });
@@ -73,7 +75,7 @@ export function useVersionSide(
     } finally {
       if (abortRef.current === controller) setLoading(false);
     }
-  }, [apiUrl, token]);
+  }, [apiUrl, token, projectId]);
 
   useEffect(() => () => abortRef.current?.abort(), []);
 

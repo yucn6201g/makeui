@@ -4,12 +4,15 @@ import { ProjectThumbnail } from './ProjectThumbnail';
 import {
   frameworkCounts,
   projectKind,
+  tabOf,
   visibleProjects,
+  type ProjectTab,
   type FrameworkFilter,
   type SortKey,
   type SortDirection,
 } from '../utils/projectFilter';
 import { useAuth } from '../auth/AuthProvider';
+import { ROLE_LABELS } from '../utils/shareRoles';
 import { AdminPanel } from './AdminPanel';
 import { UsageMenu } from './UsageMenu';
 import { useUsage } from '../hooks/useUsage';
@@ -69,7 +72,9 @@ export function ProjectList({ onOpenProject, onNewProject }: ProjectListProps) {
    * ask for a starred Vue project.
    */
   const [favouriteOnly, setFavouriteOnly] = useState(false);
-  const [showArchive, setShowArchive] = useState(false);
+  /** プロジェクト, 共有 or アーカイブ — see `tabOf` for which a project is on. */
+  const [tab, setTab] = useState<ProjectTab>('active');
+  const showArchive = tab === 'archive';
   /**
    * The project a second click would destroy.
    *
@@ -129,7 +134,8 @@ export function ProjectList({ onOpenProject, onNewProject }: ProjectListProps) {
     () => projects.filter((p) => p.archivedAt).length,
     [projects]
   );
-  const counts = useMemo(() => frameworkCounts(projects, showArchive), [projects, showArchive]);
+  const counts = useMemo(() => frameworkCounts(projects, tab), [projects, tab]);
+  const sharedCount = useMemo(() => projects.filter((p) => tabOf(p) === 'shared').length, [projects]);
   /*
    * Counted over the ACTIVE list only. Archiving clears the star — the service
    * enforces that an archived project is never a favourite — so including the
@@ -145,10 +151,10 @@ export function ProjectList({ onOpenProject, onNewProject }: ProjectListProps) {
         query,
         framework,
         favourite: favouriteOnly,
-        archived: showArchive,
+        tab,
         sort: { key: sortKey, direction: sortDir },
       }),
-    [projects, query, framework, favouriteOnly, showArchive, sortKey, sortDir]
+    [projects, query, framework, favouriteOnly, tab, sortKey, sortDir]
   );
   /*
    * A filter that hides everything is not the same as an empty account, and the
@@ -283,25 +289,33 @@ export function ProjectList({ onOpenProject, onNewProject }: ProjectListProps) {
             onOpen={refreshLedger}
           />
           {isAdmin && <AdminPanel />}
-          <button onClick={logout} className="project-list__logout" type="button">Logout</button>
+          <button onClick={logout} className="app__header-btn project-list__logout" type="button">Logout</button>
         </div>
       </header>
 
       <div className="project-list__body">
         <div className="project-list__toolbar">
           <div className="project-list__tabs" role="tablist" aria-label="表示するプロジェクト">
-            <button
-              className={`project-list__tab${showArchive ? '' : ' project-list__tab--on'}`}
-              onClick={() => { setShowArchive(false); setConfirmingDelete(null); leaveSelecting(); }}
-              role="tab"
-              aria-selected={!showArchive}
-              type="button"
-            >
-              プロジェクト
-            </button>
+            {([
+              ['active', 'プロジェクト', 0],
+              // Projects this account shared, and projects shared with it — both sides.
+              ['shared', '共有', sharedCount],
+            ] as const).map(([key, label, count]) => (
+              <button
+                key={key}
+                className={`project-list__tab${tab === key ? ' project-list__tab--on' : ''}`}
+                onClick={() => { setTab(key); setConfirmingDelete(null); leaveSelecting(); }}
+                role="tab"
+                aria-selected={tab === key}
+                type="button"
+              >
+                {label}
+                {count > 0 && <span className="project-list__tab-count">{count}</span>}
+              </button>
+            ))}
             <button
               className={`project-list__tab${showArchive ? ' project-list__tab--on' : ''}`}
-              onClick={() => { setShowArchive(true); setConfirmingDelete(null); leaveSelecting(); }}
+              onClick={() => { setTab('archive'); setConfirmingDelete(null); leaveSelecting(); }}
               role="tab"
               aria-selected={showArchive}
               type="button"
@@ -527,8 +541,8 @@ export function ProjectList({ onOpenProject, onNewProject }: ProjectListProps) {
             Rendering a loading line above a grid that already had the "new project"
             card in it left the page looking half-built. */}
         <div className="project-list__grid">
-          {/* New project card. Not in the archive — nothing is created there. */}
-          {!showArchive && !selecting && (
+          {/* New project card. Only on プロジェクト — nothing is created in the archive, and a new project is nobody else's yet. */}
+          {tab === 'active' && !selecting && (
             <button className="project-list__card project-list__card--new" onClick={handleNew} type="button" disabled={creating}>
               <div className="project-list__card-icon">
                 <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
@@ -560,6 +574,13 @@ export function ProjectList({ onOpenProject, onNewProject }: ProjectListProps) {
             const running = busyProjects.has(project.projectId);
             const archived = Boolean(project.archivedAt);
             const favourite = Boolean(project.favouritedAt);
+            /*
+             * What this account may do to it. A viewer gets neither the star nor
+             * the archive — both write the project, which is the owner's and the
+             * other members' as much as theirs.
+             */
+            const role = project.access?.role ?? 'owner';
+            const canWrite = role !== 'view';
             const confirming = confirmingDelete === project.projectId;
             const isSelected = selecting && selected.has(project.projectId);
             const activate = () => (selecting ? toggleSelected(project.projectId) : onOpenProject(project));
@@ -643,6 +664,18 @@ export function ProjectList({ onOpenProject, onNewProject }: ProjectListProps) {
                     </>
                   )}
                 </div>
+                {/*
+                  Whose it is and what this account may do, on the 共有 tab's
+                  cards — the tab holds both directions, and they look alike.
+                */}
+                {role !== 'owner' ? (
+                  <div className="project-list__card-share" title={project.access?.via === 'group' ? 'グループで共有されています' : undefined}>
+                    {project.access?.ownerName} さんから共有
+                    <span className={`project-list__role project-list__role--${role}`}>{ROLE_LABELS[role]}</span>
+                  </div>
+                ) : project.sharedAt ? (
+                  <div className="project-list__card-share">共有中</div>
+                ) : null}
               </div>
 
               {/*
@@ -651,7 +684,7 @@ export function ProjectList({ onOpenProject, onNewProject }: ProjectListProps) {
                 controls. An archived project has no star: putting something
                 away and marking it as wanted say opposite things.
               */}
-              {!archived && !selecting && (
+              {!archived && !selecting && canWrite && (
                 <button
                   className={`project-list__card-star${favourite ? ' project-list__card-star--on' : ''}`}
                   onClick={(e) => handleFavourite(e, project.projectId, !favourite)}
@@ -667,7 +700,7 @@ export function ProjectList({ onOpenProject, onNewProject }: ProjectListProps) {
               )}
 
               {/* The active list archives; only the archive destroys. */}
-              {selecting ? null : !archived ? (
+              {selecting || !canWrite ? null : !archived ? (
                 <button
                   className="project-list__card-action"
                   onClick={(e) => handleArchive(e, project.projectId, true)}
@@ -766,6 +799,10 @@ export function ProjectList({ onOpenProject, onNewProject }: ProjectListProps) {
               </>
             ) : showArchive ? (
               <p className="project-list__empty-title">アーカイブは空です</p>
+            ) : tab === 'shared' ? (
+              <p className="project-list__empty-title">
+                共有しているプロジェクトはありません。プロジェクトを開いて「共有」から、ユーザーやグループを追加できます。
+              </p>
             ) : (
               <p className="project-list__empty-title">
                 まだプロジェクトがありません。上の「新規プロジェクト」から始められます。

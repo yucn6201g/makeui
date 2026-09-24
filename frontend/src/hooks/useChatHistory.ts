@@ -47,6 +47,8 @@ interface StoredMessage {
    * `phases` on the way out, so nothing carrying one ever reached the server.
    */
   phases?: unknown[];
+  /** Who wrote it — shown on a shared project's thread. */
+  author?: { id: string; name: string };
   timestamp: number;
 }
 
@@ -92,8 +94,8 @@ export function useChatHistory(): UseChatHistoryReturn {
      * `StoredMessage`, because a comment saying "add it here on purpose" did not
      * stop the second occurrence.
      */
-    const stripped = messages.map(({ id, role, content, score, toolsUsed, tokenUsage, runInfo, phases, proposal, timestamp }) => ({
-      id, role, content, score, toolsUsed, tokenUsage, runInfo, phases, proposal, timestamp,
+    const stripped = messages.map(({ id, role, content, score, toolsUsed, tokenUsage, runInfo, phases, proposal, author, timestamp }) => ({
+      id, role, content, score, toolsUsed, tokenUsage, runInfo, phases, proposal, author, timestamp,
     }));
 
     /*

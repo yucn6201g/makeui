@@ -68,11 +68,28 @@ export interface ListSort {
   direction: SortDirection;
 }
 
+/**
+ * Which tab a project sits on.
+ *
+ * The archive wins: an archived project is put away, whoever it is shared with.
+ * Otherwise a project with any share — one the account shared, or one shared
+ * with it — is on 共有, for both sides, and everything else on プロジェクト.
+ */
+export type ProjectTab = 'active' | 'shared' | 'archive';
+
+export function tabOf(p: Project): ProjectTab {
+  if (p.archivedAt) return 'archive';
+  if (p.sharedAt || (p.access && p.access.role !== 'owner')) return 'shared';
+  return 'active';
+}
+
 export interface ListFilter {
   query: string;
   framework: FrameworkFilter;
-  /** Show the archive instead of the active list. */
-  archived: boolean;
+  /** The tab. Takes precedence over `archived`. */
+  tab?: ProjectTab;
+  /** Show the archive instead of the active list — the two-tab form of `tab`. */
+  archived?: boolean;
   /**
    * Show only starred projects.
    *
@@ -93,9 +110,13 @@ export interface ListFilter {
  * looked at rather than narrowing one: a project in the archive is out of the
  * way, and a search from the main list must not turn it up.
  */
+const tabFor = (filter: Pick<ListFilter, 'tab' | 'archived'>): ProjectTab =>
+  filter.tab ?? (filter.archived ? 'archive' : 'active');
+
 export function visibleProjects(projects: Project[], filter: ListFilter): Project[] {
+  const tab = tabFor(filter);
   const kept = projects.filter((p) => {
-    if (Boolean(p.archivedAt) !== filter.archived) return false;
+    if (tabOf(p) !== tab) return false;
     if (filter.favourite && !p.favouritedAt) return false;
     if (filter.framework !== 'all' && projectKind(p) !== filter.framework) return false;
     return matchesQuery(p.name, filter.query);
@@ -146,10 +167,11 @@ export function sortProjects(projects: Project[], sort?: ListSort): Project[] {
 }
 
 /** How many projects each framework filter would show, for the counts on the tabs. */
-export function frameworkCounts(projects: Project[], archived: boolean): Record<FrameworkFilter, number> {
+export function frameworkCounts(projects: Project[], tabOrArchived: ProjectTab | boolean): Record<FrameworkFilter, number> {
+  const tab = typeof tabOrArchived === 'boolean' ? tabFor({ archived: tabOrArchived }) : tabOrArchived;
   const counts: Record<FrameworkFilter, number> = { all: 0, react: 0, vue: 0 };
   for (const p of projects) {
-    if (Boolean(p.archivedAt) !== archived) continue;
+    if (tabOf(p) !== tab) continue;
     counts.all++;
     const kind = projectKind(p);
     if (kind === 'react' || kind === 'vue') counts[kind]++;

@@ -121,6 +121,15 @@ async function resolveJobPlan(input: Record<string, unknown>): Promise<string | 
   return plan.trim() ? plan : undefined;
 }
 
+/**
+ * Whose partition a run's project records go to: the owner the API resolved for
+ * a shared project, or the caller's own. Only the API sets `projectOwnerId` —
+ * it strips a client's copy before dispatch — and only with a projectId.
+ */
+function projectPartition(input: Record<string, unknown>, userId: string): string {
+  return input.projectId && typeof input.projectOwnerId === 'string' && input.projectOwnerId ? input.projectOwnerId : userId;
+}
+
 async function resolveJobRevision(input: Record<string, unknown>): Promise<{ spec: string; plan: string; prompt: string } | undefined> {
   if (typeof input.revisionPrompt !== 'string' || typeof input.revisionPlan !== 'string') return undefined;
   const spec = typeof input.revisionSpecS3Key === 'string'
@@ -322,7 +331,10 @@ export async function runJob(job: JobRequest): Promise<void> {
       });
       try {
         await saveVersion({
-          userId,
+          // The project's history, in its owner's partition, naming who ran it.
+          userId: projectPartition(input, userId),
+          actorId: userId,
+          ...(typeof input.actorName === 'string' ? { actorName: input.actorName } : {}),
           projectId: input.projectId,
           prompt: input.userPrompt || input.instruction,
           html: result.html,
@@ -358,7 +370,7 @@ export async function runJob(job: JobRequest): Promise<void> {
         logger.warn('Failed to save version', { error: String(e) });
       }
       if (input.projectId) {
-        await recordProjectRun(userId, input.projectId, {
+        await recordProjectRun(projectPartition(input, userId), input.projectId, {
           html: result.html,
           tokens: (result.tokenUsage?.inputTokens || 0) + (result.tokenUsage?.outputTokens || 0),
         }).catch((e) => logger.warn('Failed to record project run', { error: String(e) }));
@@ -428,7 +440,10 @@ export async function runJob(job: JobRequest): Promise<void> {
       });
       try {
         await saveVersion({
-          userId,
+          // The project's history, in its owner's partition, naming who ran it.
+          userId: projectPartition(input, userId),
+          actorId: userId,
+          ...(typeof input.actorName === 'string' ? { actorName: input.actorName } : {}),
           projectId: input.projectId,
           prompt: input.prompt,
           html: result.html,
@@ -448,7 +463,7 @@ export async function runJob(job: JobRequest): Promise<void> {
         logger.warn('Failed to save version', { error: String(e) });
       }
       if (input.projectId) {
-        await recordProjectRun(userId, input.projectId, {
+        await recordProjectRun(projectPartition(input, userId), input.projectId, {
           html: result.html,
           tokens: (tokenUsage?.inputTokens || 0) + (tokenUsage?.outputTokens || 0),
         }).catch((e) => logger.warn('Failed to record project run', { error: String(e) }));

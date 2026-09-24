@@ -79,6 +79,8 @@ function forwarded(src) {
   if (/\.\.\.htmlForPayload/.test(body)) names.add('html');
   if (/\.\.\.(?:planImagePayload|modifyImagePayload|imageForPayload)\b/.test(body)) names.add('image');
   if (/\.\.\.(?:planImagesPayload|modifyImagesPayload|imagesForPayload)\b/.test(body)) names.add('images');
+  // A shared project's owner and the actor's name, set by the route from its access check.
+  if (/\.\.\.projectOwner\b/.test(body)) { names.add('projectOwnerId'); names.add('actorName'); }
   const spread = /\.\.\.inputWithoutImage/.test(body);
   const stripped = spread
     ? [...(/const \{([^}]*)\.\.\.inputWithoutImage \}/.exec(src)?.[1] ?? '').matchAll(/([a-zA-Z]+):/g)].map((m) => m[1])

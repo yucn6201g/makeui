@@ -28,6 +28,8 @@ import {
 import { CognitoIdentityProviderClient, ListUsersCommand } from '@aws-sdk/client-cognito-identity-provider';
 import { deletePrefix, ownersUnder } from './output-storage.js';
 import { publishedSitesOf } from './published-sites.js';
+import { deleteAllShares, revokeShare, sharedWith } from './project-shares.js';
+import { listProjects } from './project-service.js';
 import { logger } from '../utils/logger.js';
 
 const client = new DynamoDBClient({
@@ -134,6 +136,23 @@ export async function purgeAccount(userId: string): Promise<PurgeResult> {
     objects += await deletePrefix(`published/${siteId}/`);
   }
 
+  /*
+   * Sharing, before the partition goes. The account's own projects are shared
+   * from rows outside its partition (`SHARE#<projectId>`, and each grantee's
+   * index), and its grants on other people's projects sit in those projects'
+   * rows — none of which the partition purge below would reach.
+   */
+  try {
+    for (const p of await listProjects(userId)) {
+      if (p.sharedAt) await deleteAllShares(p.projectId);
+    }
+    for (const ref of await sharedWith(userId, null)) {
+      if (ref.via === 'user') await revokeShare(ref.projectId, { type: 'user', id: userId });
+    }
+  } catch (error) {
+    logger.error("Failed to remove an account's shares", { userId, error: String(error) });
+  }
+
   for (const pk of [`USER#${userId}`, `RATE#${userId}`]) {
     try {
       rows += await purgePartition(pk);
@@ -158,6 +177,21 @@ export async function purgeAccount(userId: string): Promise<PurgeResult> {
  * and must never be a way to delete people or their work.
  */
 export async function purgeGroup(group: string): Promise<number> {
+  // The group's grants on projects, which live in the projects' rows and its own index.
+  try {
+    const { QueryCommand } = await import('@aws-sdk/client-dynamodb');
+    const res = await client.send(new QueryCommand({
+      TableName: TABLE_NAME,
+      KeyConditionExpression: 'pk = :pk',
+      ExpressionAttributeValues: { ':pk': { S: `GROUPSHARE#${group}` } },
+    }));
+    for (const item of res.Items ?? []) {
+      const projectId = item.projectId?.S;
+      if (projectId) await revokeShare(projectId, { type: 'group', id: group });
+    }
+  } catch (error) {
+    logger.error("Failed to remove a group's shares", { group, error: String(error) });
+  }
   try {
     const rows = await purgePartition(`GROUP#${group}`);
     logger.info('Group storage purged', { group, rows });

@@ -18,7 +18,7 @@ import { runJob, uploadHtmlIfNeeded, uploadImageIfNeeded, uploadContentImages, u
 import { createJob, updateJobStatus, getJob } from '../services/job-service.js';
 import { getModelConfig } from '../config/agentcore-config.js';
 import { createProject, listProjects, updateProject, deleteProject, getLatestProjectHtml } from '../services/project-service.js';
-import { saveChatMessages, getChatMessages } from '../services/chat-history.js';
+import { saveChatMessages, getChatMessages, mergeThreads } from '../services/chat-history.js';
 import { logger } from '../utils/logger.js';
 import { getModelInventory, describeModelId } from '../services/model-inventory.js';
 import { maskAccountId } from '../utils/mask-account.js';
@@ -26,6 +26,9 @@ import { MAX_ATTACHMENT_CHARS } from '../utils/data-attachment.js';
 import { canOpenAdminPanel, isSuperAdmin, mayActOn, membersOf, listUserGroups, groupByUsername, createUserGroup, deleteUserGroup, setUserGroup, GroupWouldLoseAdminError, setGroupAdmin, isValidGroupName, membershipOfSub } from '../services/user-groups.js';
 import { purgeAccount, purgeGroup, sweepOrphans } from '../services/account-purge.js';
 import { recordPublish } from '../services/published-sites.js';
+import { handleShareRoutes, listProjectsFor, type Caller } from './share-routes.js';
+import { projectAccess, type ProjectAccess } from '../services/project-access.js';
+import { CAN } from '../services/project-shares.js';
 
 /**
  * Whether this caller may act on the account identified by `sub`.
@@ -405,6 +408,34 @@ function jsonResponse(statusCode: number, body: unknown, extraHeaders?: Record<s
   };
 }
 
+/** The fields the sharing code needs from a verified token. */
+function callerOf(auth: { userId: string; email: string; name: string; membership: { group: string | null; role?: string } }): Caller {
+  return {
+    userId: auth.userId, email: auth.email, name: auth.name, group: auth.membership.group,
+    superAdmin: auth.membership.role === 'super-admin',
+  };
+}
+
+/**
+ * The caller's access to a project, or the response that refuses it.
+ *
+ * `need` is the capability the route requires — see `CAN` in project-shares.ts.
+ * A project the caller cannot see at all is a 404 rather than a 403, so the
+ * route does not confirm that someone else's project exists.
+ */
+async function requireProject(
+  auth: Parameters<typeof callerOf>[0],
+  projectId: string,
+  need: keyof typeof CAN
+): Promise<{ access: ProjectAccess } | { refused: APIGatewayProxyResultV2 }> {
+  const access = await projectAccess({ userId: auth.userId, group: auth.membership.group }, projectId);
+  if (!access) return { refused: jsonResponse(404, { error: 'Project not found' }) };
+  if (!CAN[need](access.role)) {
+    return { refused: jsonResponse(403, { error: need === 'read' ? 'Project not found' : 'この操作を行う権限がありません' }) };
+  }
+  return { access };
+}
+
 function getBodyString(event: APIGatewayProxyEventV2): string {
   if (!event.body) return '';
   if (event.isBase64Encoded) return Buffer.from(event.body, 'base64').toString('utf-8');
@@ -544,6 +575,18 @@ export const handler = async (
       if (input.approvedPlan !== undefined && (typeof input.approvedPlan !== 'string' || input.approvedPlan.length > 120_000)) {
         return jsonResponse(400, { error: 'approvedPlan must be a string of 120,000 characters or fewer' });
       }
+      /*
+       * A run against a shared project is the caller's run on the owner's project:
+       * tokens go to the caller (the job's userId), the document, the version and
+       * the project's totals to the owner, and the version names the caller.
+       * Viewers may not run anything against it.
+       */
+      let projectOwner: { projectOwnerId?: string; actorName?: string } = {};
+      if (input.projectId) {
+        const gate = await requireProject(auth, input.projectId, 'write');
+        if ('refused' in gate) return gate.refused;
+        projectOwner = { projectOwnerId: gate.access.ownerId, actorName: displayNameFor(auth.email, auth.name) };
+      }
       if (input.image) {
         const v = validateImage(input.image);
         if (!v.valid) return jsonResponse(400, { error: v.error });
@@ -577,8 +620,10 @@ export const handler = async (
       // 256KB, so it travels the same way the document does rather than inline.
       // `experiment` is dropped here: it switches pipeline stages for a measured
       // comparison, and only a direct Runtime invocation may set it.
-      const { image: _rawImage, images: _rawImages, approvedPlan: _rawPlan, experiment: _experiment, ...inputWithoutImage } =
-        input as typeof input & { images?: string[]; experiment?: unknown };
+      // `projectOwnerId` and `actorName` are the server's to set, from the access
+      // check above: sent by a client, they would aim the run at someone else's project.
+      const { image: _rawImage, images: _rawImages, projectOwnerId: _spoofedOwner, actorName: _spoofedActor, approvedPlan: _rawPlan, experiment: _experiment, ...inputWithoutImage } =
+        input as typeof input & { images?: string[]; experiment?: unknown; projectOwnerId?: unknown; actorName?: unknown };
       let imageForPayload: { image?: string; imageS3Key?: string };
       let imagesForPayload: { images?: string[]; imagesS3Key?: string };
       let planForPayload: { approvedPlan?: string; approvedPlanS3Key?: string } = {};
@@ -596,7 +641,7 @@ export const handler = async (
         jobId,
         userId: auth.userId,
         group: auth.membership.group,
-        input: { ...inputWithoutImage, ...imageForPayload, ...imagesForPayload, ...planForPayload },
+        input: { ...inputWithoutImage, ...imageForPayload, ...imagesForPayload, ...planForPayload, ...projectOwner },
       };
       const invokeErr = await dispatchJob(jobId, jobPayload);
       if (invokeErr) return invokeErr;
@@ -711,6 +756,18 @@ export const handler = async (
       if (input.effort !== undefined && !isEffort(input.effort)) {
         return jsonResponse(400, { error: 'effort must be "draft" or "checked"' });
       }
+      /*
+       * A run against a shared project is the caller's run on the owner's project:
+       * tokens go to the caller (the job's userId), the document, the version and
+       * the project's totals to the owner, and the version names the caller.
+       * Viewers may not run anything against it.
+       */
+      let projectOwner: { projectOwnerId?: string; actorName?: string } = {};
+      if (input.projectId) {
+        const gate = await requireProject(auth, input.projectId, 'write');
+        if ('refused' in gate) return gate.refused;
+        projectOwner = { projectOwnerId: gate.access.ownerId, actorName: displayNameFor(auth.email, auth.name) };
+      }
       if (input.image) {
         const v = validateImage(input.image);
         if (!v.valid) return jsonResponse(400, { error: v.error });
@@ -790,6 +847,7 @@ export const handler = async (
         input: {
           ...htmlForPayload, ...modifyImagePayload, ...modifyImagesPayload,
           instruction: finalInstruction, userPrompt: instruction, preset: input.preset, model: input.model, projectId: input.projectId, effort: input.effort,
+          ...projectOwner,
           ...(input.attachment ? { attachment: input.attachment } : {}),
           ...(input.imageCaptions ? { imageCaptions: input.imageCaptions } : {}),
         },
@@ -803,7 +861,14 @@ export const handler = async (
       const auth = await authenticateRequest(authorization);
       const queryParams = event.queryStringParameters || {};
       const projectId = queryParams.projectId;
-      const versions = await getVersionHistory(auth.userId, 20, projectId || undefined);
+      // A project's history lives with the project, in its owner's partition.
+      if (projectId) {
+        const gate = await requireProject(auth, projectId, 'read');
+        if ('refused' in gate) return gate.refused;
+        const versions = await getVersionHistory(gate.access.ownerId, 20, projectId);
+        return jsonResponse(200, { versions });
+      }
+      const versions = await getVersionHistory(auth.userId, 20);
       return jsonResponse(200, { versions });
     }
 
@@ -833,8 +898,17 @@ export const handler = async (
       if (input.html.length > MAX_EDITED_HTML) {
         return jsonResponse(413, { error: `html must be ${MAX_EDITED_HTML} characters or fewer` });
       }
+      // Into the project's history, under its owner, naming who made the edit.
+      let partition = auth.userId;
+      if (input.projectId) {
+        const gate = await requireProject(auth, input.projectId, 'write');
+        if ('refused' in gate) return gate.refused;
+        partition = gate.access.ownerId;
+      }
       const version = await saveVersion({
-        userId: auth.userId,
+        userId: partition,
+        actorId: auth.userId,
+        actorName: displayNameFor(auth.email, auth.name),
         prompt: (input.note || '直接編集').slice(0, 200),
         html: input.html,
         /**
@@ -852,7 +926,7 @@ export const handler = async (
         ...(input.projectId ? { projectId: input.projectId } : {}),
       });
       if (input.projectId) {
-        await updateProject(auth.userId, input.projectId, { lastHtml: input.html });
+        await updateProject(partition, input.projectId, { lastHtml: input.html });
       }
       return jsonResponse(201, { versionId: version.versionId, score: version.score });
     }
@@ -861,7 +935,17 @@ export const handler = async (
       const auth = await authenticateRequest(authorization);
       const versionId = decodeURIComponent(path.replace('/versions/', ''));
       if (!versionId) return jsonResponse(400, { error: 'versionId is required' });
-      const version = await getVersion(auth.userId, versionId);
+      // A shared project's versions are in its owner's partition; `projectId` says whose.
+      const forProject = (event.queryStringParameters || {}).projectId;
+      let partition = auth.userId;
+      if (forProject) {
+        const gate = await requireProject(auth, forProject, 'read');
+        if ('refused' in gate) return gate.refused;
+        partition = gate.access.ownerId;
+      }
+      const version = await getVersion(partition, versionId);
+      // Only that project's: the owner's other versions are not the collaborator's to read.
+      if (version && forProject && version.projectId !== forProject) return jsonResponse(404, { error: 'Version not found' });
       if (!version) return jsonResponse(404, { error: 'Version not found' });
       return jsonResponse(200, version);
     }
@@ -1740,10 +1824,21 @@ export const handler = async (
       }
     }
 
+    // --- Sharing: search, groups, a project's members — see handlers/share-routes.ts ---
+    if (path === '/users/search' || path === '/share-groups' || /^\/projects\/[^/]+\/shares(?:\/|$)/.test(path)) {
+      const auth = await authenticateRequest(authorization);
+      const handled = await handleShareRoutes(
+        method, path, event.queryStringParameters || {}, getBodyString(event), callerOf(auth),
+        (status, body) => jsonResponse(status, body)
+      );
+      if (handled) return handled as APIGatewayProxyResultV2;
+    }
+
     // --- Project management endpoints ---
     if (method === 'GET' && path === '/projects') {
       const auth = await authenticateRequest(authorization);
-      const projects = await listProjects(auth.userId);
+      // Owned and shared-with-me, each carrying the caller's role on it.
+      const projects = await listProjectsFor(callerOf(auth));
       return jsonResponse(200, { projects });
     }
 
@@ -1766,7 +1861,9 @@ export const handler = async (
     if (method === 'GET' && previewMatch) {
       const auth = await authenticateRequest(authorization);
       const projectId = decodeURIComponent(previewMatch[1]);
-      const html = await getLatestProjectHtml(auth.userId, projectId);
+      const gate = await requireProject(auth, projectId, 'read');
+      if ('refused' in gate) return gate.refused;
+      const html = await getLatestProjectHtml(gate.access.ownerId, projectId);
       return jsonResponse(200, { html });
     }
 
@@ -1776,17 +1873,36 @@ export const handler = async (
       const auth = await authenticateRequest(authorization);
       const projectId = decodeURIComponent(chatMatch[1]);
 
+      /*
+       * The conversation lives with the project, in the owner's partition, so
+       * everyone it is shared with reads and writes one thread.
+       */
       if (method === 'GET') {
-        const messages = await getChatMessages(auth.userId, projectId);
+        const gate = await requireProject(auth, projectId, 'read');
+        if ('refused' in gate) return gate.refused;
+        const messages = await getChatMessages(gate.access.ownerId, projectId);
         return jsonResponse(200, { messages });
       }
 
       if (method === 'PUT') {
+        const gate = await requireProject(auth, projectId, 'write');
+        if ('refused' in gate) return gate.refused;
         const body = getBodyString(event);
         let input: { messages: unknown[] };
         try { input = JSON.parse(body); } catch { return jsonResponse(400, { error: 'Invalid JSON body' }); }
         if (!Array.isArray(input.messages)) return jsonResponse(400, { error: 'messages must be an array' });
-        await saveChatMessages(auth.userId, projectId, input.messages as any);
+        /*
+         * On a shared project two people can have the thread open, and each save
+         * replaces it — the second would drop what the first just said. So a save
+         * there is merged by message id with what is stored. An empty list is
+         * still a clear: that is the 新しいチャット action, and it is explicit.
+         */
+        const shared = gate.access.role !== 'owner' || Boolean(gate.access.project.sharedAt);
+        const incoming = input.messages as any[];
+        const messages = shared && incoming.length > 0
+          ? mergeThreads(await getChatMessages(gate.access.ownerId, projectId), incoming)
+          : incoming;
+        await saveChatMessages(gate.access.ownerId, projectId, messages as any);
         return jsonResponse(200, { message: 'Messages saved' });
       }
     }
@@ -1810,9 +1926,10 @@ export const handler = async (
           return jsonResponse(400, { error: `${flag} must be a boolean` });
         }
       }
-      const existingProject = await import('../services/project-service.js').then(m => m.getProject(auth.userId, projectId));
-      if (!existingProject) return jsonResponse(404, { error: 'Project not found' });
-      await updateProject(auth.userId, projectId, input);
+      // Renaming, archiving, saving the document: writes, on the owner's row.
+      const gate = await requireProject(auth, projectId, 'write');
+      if ('refused' in gate) return gate.refused;
+      await updateProject(gate.access.ownerId, projectId, input);
       return jsonResponse(200, { message: 'Project updated' });
     }
 
@@ -1820,8 +1937,9 @@ export const handler = async (
       const auth = await authenticateRequest(authorization);
       const projectId = decodeURIComponent(path.replace('/projects/', ''));
       if (!projectId) return jsonResponse(400, { error: 'projectId is required' });
-      const existingProject = await import('../services/project-service.js').then(m => m.getProject(auth.userId, projectId));
-      if (!existingProject) return jsonResponse(404, { error: 'Project not found' });
+      const gate = await requireProject(auth, projectId, 'delete');
+      if ('refused' in gate) return gate.refused;
+      const existingProject = gate.access.project;
       /*
        * Deletion is an archive operation.
        *
@@ -1837,7 +1955,7 @@ export const handler = async (
           error: 'Project must be archived before it can be deleted',
         });
       }
-      await deleteProject(auth.userId, projectId);
+      await deleteProject(gate.access.ownerId, projectId);
       return jsonResponse(200, { message: 'Project deleted' });
     }
 

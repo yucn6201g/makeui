@@ -36,7 +36,7 @@ check('and past the threshold that sends things to S3', Buffer.byteLength('あ'.
 const generate = handler.slice(handler.indexOf('const jobPayload = {') - 2500, handler.indexOf('const jobPayload = {') + 400);
 check('the generate route strips the inline plan', /approvedPlan: _rawPlan, experiment: _experiment, \.\.\.inputWithoutImage/.test(generate), true);
 check('and sends it through the upload helper', /planForPayload = await uploadPlanIfNeeded\(jobId, input\.approvedPlan\)/.test(generate), true);
-check('which the payload carries', /input: \{ \.\.\.inputWithoutImage, \.\.\.imageForPayload, \.\.\.imagesForPayload, \.\.\.planForPayload \}/.test(generate), true);
+check('which the payload carries', /input: \{ \.\.\.inputWithoutImage, \.\.\.imageForPayload, \.\.\.imagesForPayload, \.\.\.planForPayload(?:, \.\.\.projectOwner)? \}/.test(generate), true);
 
 // The job: whichever way it came.
 check('the job reads it from either place', /approvedPlan: await resolveJobPlan\(input\)/.test(runner), true);

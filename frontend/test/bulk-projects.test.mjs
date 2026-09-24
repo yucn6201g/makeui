@@ -95,8 +95,9 @@ check('and is announced as a checkbox', /role=\{selecting \? 'checkbox' : 'butto
 check('with its state', /aria-checked=\{selecting \? isSelected : undefined\}/.test(list), true);
 check('Space toggles it from the keyboard', /selecting && e\.key === ' '/.test(list), true);
 check('the per-card star steps aside', /!archived && !selecting &&/.test(list), true);
-check('and so do the per-card archive and delete', /\{selecting \? null : !archived \? \(/.test(list), true);
-check('the new-project card is not selectable', /!showArchive && !selecting &&/.test(list), true);
+// And for a viewer of a shared project, who may not archive or delete either (2026-09-23).
+check('and so do the per-card archive and delete', /\{selecting \|\| !canWrite \? null : !archived \? \(/.test(list), true);
+check('the new-project card is not selectable', /tab === 'active' && !selecting &&/.test(list), true);
 check('Escape leaves the mode', /e\.key === 'Escape'\) leaveSelecting\(\)/.test(list), true);
 // Selected by outline AND the tick, not by colour alone.
 check('a selected card is marked by more than colour',

@@ -307,6 +307,8 @@ interface ChatMessage {
    * the prompt.
    */
   proposal?: { plan: string; spec: string; prompt: string };
+  /** Who wrote it — shown on a shared project's thread. */
+  author?: { id: string; name: string };
   /**
    * What produced this reply: the tier that actually ran and the design system
    * it was bound to.
@@ -668,6 +670,16 @@ function MainApp({ project, onBackToProjects, onUpdateProject, fetchProjectPrevi
   const { modifiedHtml, runInfo: modifyRunInfo, toolsUsed, tokenUsage: modifyTokenUsage, isModifying, plan: modifyPlan, streamPhase: modifyStreamPhase, phases: modifyPhases, error: modifyError, modify, reset: resetModify, stop: stopModify, resume: resumeModify, jobId: modifyJobId } = useModify();
   const { result: planResult, isPlanning, phases: planPhases, error: planError, plan: proposePlan, resume: resumePlan, reset: resetPlan, stop: stopPlan, jobId: planJobId } = usePlan();
   const { usage, answered: usageAnswered, refresh: refreshUsage } = useUsage();
+  /*
+   * This account's role on the project — its own, or one shared with it. A
+   * viewer reads and does nothing else; the server refuses anything more, and
+   * the workspace does not offer it. On a shared project each message says who
+   * wrote it.
+   */
+  const projectRole = project.access?.role ?? 'owner';
+  const readOnly = projectRole === 'view';
+  const isSharedProject = projectRole !== 'owner' || Boolean(project.sharedAt);
+  const selfAuthor = { id: userEmail ?? '', name: usage?.displayName || localPartOf(userEmail) };
   const { versions, fetchVersions, loadVersion } = useHistory();
   const { loadMessages, saveMessages, saveFailed } = useChatHistory();
   // The selected version's id, or '' for the live document. An id rather than an
@@ -1040,10 +1052,12 @@ function MainApp({ project, onBackToProjects, onUpdateProject, fetchProjectPrevi
   const messagesLenRef = useRef(0);
   useEffect(() => {
     if (!chatLoadedRef.current) return;  // don't save before initial load completes
+    // A viewer's copy of the thread is read-only; the server would refuse the save.
+    if (readOnly) return;
     if (messages.length === messagesLenRef.current) return;
     messagesLenRef.current = messages.length;
     saveMessages(project.projectId, messages);
-  }, [messages, project.projectId, saveMessages]);
+  }, [messages, project.projectId, saveMessages, readOnly]);
 
   // Add assistant message when generation completes
   useEffect(() => {
@@ -1410,6 +1424,8 @@ function MainApp({ project, onBackToProjects, onUpdateProject, fetchProjectPrevi
       id: crypto.randomUUID(),
       role: 'user',
       content: rawText,
+      // Always recorded: a project shared later still says who asked what before.
+      author: selfAuthor,
       timestamp: Date.now(),
     };
     setMessages((prev) => [...prev, userMessage]);
@@ -1660,7 +1676,7 @@ function MainApp({ project, onBackToProjects, onUpdateProject, fetchProjectPrevi
 
     setVersionLoading(true);
     try {
-      const full = await loadVersion(versionId);
+      const full = await loadVersion(versionId, project.projectId);
       // A failed fetch must leave the canvas alone: showing the previous document
       // is wrong, but blanking it is worse and looks like data loss.
       if (full?.html) handleLoadVersion(full.html);
@@ -2054,10 +2070,12 @@ function MainApp({ project, onBackToProjects, onUpdateProject, fetchProjectPrevi
             value={projectTitle}
             onChange={(e) => setProjectTitle(e.target.value)}
             onBlur={() => {
-              if (projectTitle !== project.name) {
+              if (!readOnly && projectTitle !== project.name) {
                 onUpdateProject(project.projectId, { name: projectTitle });
               }
             }}
+            // Renaming is a change to the project, which a viewer may not make.
+            readOnly={readOnly}
             aria-label="プロジェクト名"
           />
         </div>
@@ -2082,7 +2100,11 @@ function MainApp({ project, onBackToProjects, onUpdateProject, fetchProjectPrevi
             settings drawer: both are ways of taking the finished project out,
             and only one of them was findable.
           */}
-          {displayHtml && <ShareButton html={displayHtml} title={projectTitle} />}
+          {/*
+            Always there: sharing with people needs no screen yet, only the
+            public link does, and the panel says so.
+          */}
+          <ShareButton html={displayHtml ?? null} title={projectTitle} projectId={project.projectId} role={project.access?.role ?? 'owner'} />
         </div>
         <div className="app__user">
           {/*
@@ -2115,7 +2137,7 @@ function MainApp({ project, onBackToProjects, onUpdateProject, fetchProjectPrevi
             onOpen={refreshUsage}
           />
           {isAdmin && <AdminPanel />}
-          <button onClick={logout} className="app__logout" aria-label="ログアウト">
+          <button onClick={logout} className="app__header-btn app__logout" aria-label="ログアウト" type="button">
             Logout
           </button>
         </div>
@@ -2182,6 +2204,9 @@ function MainApp({ project, onBackToProjects, onUpdateProject, fetchProjectPrevi
                   </span>
                 )}
                 <div className="app__chat-msg-body">
+                  {isSharedProject && msg.role === 'user' && msg.author?.name && (
+                    <span className="app__message-author">{msg.author.name}</span>
+                  )}
                   <div className="app__chat-msg-content">
                     {msg.role === 'assistant'
                       ? formatReply(msg.content).map((block, i) =>
@@ -2433,6 +2458,15 @@ function MainApp({ project, onBackToProjects, onUpdateProject, fetchProjectPrevi
           )}
 
           {/* Chat Input */}
+          {readOnly ? (
+            /*
+              A viewer's project: the history reads as usual, and there is no
+              box to type an instruction into rather than one that fails.
+            */
+            <p className="app__readonly-note" role="note">
+              閲覧権限で共有されたプロジェクトです。表示と履歴の確認だけができます（{project.access?.ownerName} さんが所有）。
+            </p>
+          ) : (
           <div className="app__chat-input-area">
             <div className="app__chat-input-capsule">
               <div className="app__chat-input-row">
@@ -2667,6 +2701,7 @@ function MainApp({ project, onBackToProjects, onUpdateProject, fetchProjectPrevi
               </div>
             </div>
           </div>
+          )}
         </div>
 
         {/* Resize handle */}
@@ -2759,6 +2794,7 @@ function MainApp({ project, onBackToProjects, onUpdateProject, fetchProjectPrevi
                 versions={versions}
                 apiUrl={apiUrl}
                 token={token ?? ''}
+                projectId={project.projectId}
               />
             )}
             {score && <span className="app__preview-score">{score}/100</span>}
@@ -2826,7 +2862,7 @@ function MainApp({ project, onBackToProjects, onUpdateProject, fetchProjectPrevi
                 the preview updates from the source and the two cannot disagree
                 about what the document is.
               */}
-              <CodeEditor html={displayHtml} onEditFile={directEdit.editSource} />
+              <CodeEditor html={displayHtml} onEditFile={readOnly ? undefined : directEdit.editSource} />
             </div>
           </div>
 
@@ -2865,8 +2901,8 @@ function MainApp({ project, onBackToProjects, onUpdateProject, fetchProjectPrevi
               <CSSInspector
                 selector={selectedSelector}
                 html={displayHtml}
-                onEdit={directEdit.editStyle}
-                onEditText={directEdit.canEditText ? directEdit.editText : undefined}
+                onEdit={readOnly ? undefined : directEdit.editStyle}
+                onEditText={!readOnly && directEdit.canEditText ? directEdit.editText : undefined}
               />
               {/*
                 Shown only when the preview could trace this element back to a

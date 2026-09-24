@@ -2738,7 +2738,7 @@ export function AdminPanel() {
     return (
       <button
         onClick={() => { setVisible(true); }}
-        className="admin-panel__toggle"
+        className="app__header-btn admin-panel__toggle"
         aria-label="管理画面を開く"
         title="Admin"
         type="button"

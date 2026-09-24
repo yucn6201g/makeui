@@ -231,7 +231,6 @@ a:active {
 
 .app__logout {
   font-weight: 400;
-  line-height: 1;
   letter-spacing: 0.02em;
   cursor: pointer;
   transition: background-color 0.15s, color 0.15s;
@@ -1404,18 +1403,16 @@ fieldset {
   box-shadow: 0 0 0 1.5px var(--figma-border);
 }
 
-.app__logout {
-  padding: 3px 10px;
-  font-size: 0.6875rem;
-  border: 1px solid var(--figma-border);
-  border-radius: 4px;
-  background: transparent;
-  color: var(--figma-text-muted);
-  min-height: unset;
-}
-.app__logout:hover {
-  background: var(--figma-bg-input);
-  color: var(--figma-text);
+/* Admin and Logout are header buttons like ZIP and 共有, and take their size from
+   .app__header-btn — they had their own smaller padding and type, and sat off the
+   line the others share (2026-09-23). Only the reset of the global button
+   minimums stays here. */
+.app__logout,
+.admin-panel__toggle.app__header-btn,
+.project-list__logout.app__header-btn {
+  min-width: unset;
+  width: auto;
+  height: auto;
 }
 
 /* Body layout */
@@ -1938,26 +1935,7 @@ fieldset legend {
 }
 /* ===== Admin toggle — matches the other header buttons ===== */
 
-.admin-panel__toggle {
-  padding: 3px 10px;
-  font-size: 0.6875rem;
-  font-weight: 500;
-  background: transparent;
-  border: 1px solid var(--figma-border);
-  border-radius: var(--radius-4);
-  cursor: pointer;
-  color: var(--figma-text-muted);
-  min-height: unset;
-  min-width: unset;
-  width: auto;
-  height: auto;
-  transition: background 0.12s, color 0.12s;
-}
-
-.admin-panel__toggle:hover {
-  background: var(--figma-bg-input);
-  color: var(--figma-text);
-}
+/* Sized by .app__header-btn, like the buttons beside it — see .app__logout. */
 
 /* ===== Admin Panel — Light Theme (adm-*) ===== */
 
@@ -3007,22 +2985,7 @@ fieldset legend {
   align-items: center;
   gap: 12px;
 }
-.project-list__logout {
-  font-size: 0.6875rem;
-  color: #666666;
-  background: transparent;
-  border: 1px solid #d0d0d0;
-  border-radius: 4px;
-  padding: 4px 10px;
-  cursor: pointer;
-  transition: all 0.12s;
-}
-
-.project-list__logout:hover {
-  color: #1e1e1e;
-  border-color: #999;
-  background: #f0f0f0;
-}
+/* Sized by .app__header-btn, as in the workspace's bar — see .app__logout. */
 
 .project-list__body {
   flex: 1;
@@ -7390,6 +7353,11 @@ button.app__logo:hover {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  /* One height whatever the label: a Japanese label's fallback font makes a
+     taller line box than a Latin one, so ZIP・共有 measured 27px and Admin・
+     Logout 25px with the same rules (2026-09-23). */
+  box-sizing: border-box;
+  min-height: 27px;
 }
 
 .app__header-btn:disabled {
@@ -7403,48 +7371,221 @@ button.app__logo:hover {
  * The link exists by then — publishing already spent the upload — so it is put
  * where it can be taken by hand rather than thrown away and asked for again.
  */
-.app__share-pop {
+/* The share panel: people and groups, and the public link. The popover is the
+   one the publish fallback used (the same width, radius and shadow), grown into
+   two sections; its controls are the header's own button and the app's inputs. */
+.share-panel {
   position: absolute;
   top: calc(100% + 6px);
   right: 0;
   z-index: 40;
-  width: 320px;
-  padding: 12px;
+  width: 360px;
+  max-height: min(70vh, 560px);
+  overflow-y: auto;
+  padding: 4px 0;
   border: 1px solid var(--figma-border);
   border-radius: 10px;
   background: #ffffff;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  text-align: left;
 }
 
-.app__share-note {
+.share-panel__section {
+  padding: 12px 14px;
+}
+.share-panel__section + .share-panel__section {
+  border-top: 1px solid var(--figma-border);
+}
+
+.share-panel__heading {
   margin: 0 0 8px;
-  font-size: 0.6875rem;
-  color: var(--figma-text-muted);
-}
-
-.app__share-url {
-  width: 100%;
-  padding: 5px 8px;
-  border: 1px solid var(--figma-border);
-  border-radius: 6px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
+  font-weight: 600;
   color: var(--figma-text);
 }
 
-.app__share-close {
-  margin-top: 8px;
-  padding: 3px 10px;
+.share-panel__note {
+  margin: 6px 0 0;
+  font-size: 0.6875rem;
+  color: var(--figma-text-muted);
+  list-style: none;
+}
+
+.share-panel__error {
+  margin: 8px 0 0;
+  font-size: 0.6875rem;
+  color: var(--color-error-1);
+}
+
+.share-panel__search {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 30px;
+  padding: 5px 8px;
   border: 1px solid var(--figma-border);
   border-radius: 6px;
+  font-family: inherit;
+  font-size: 0.75rem;
+  color: var(--figma-text);
+  background: #ffffff;
+}
+.share-panel__search:focus-visible {
+  outline: 2px solid var(--figma-blue-on-white-text);
+  outline-offset: -1px;
+}
+
+.share-panel__results,
+.share-panel__members {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.share-panel__result {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  font-family: inherit;
+  font-size: 0.75rem;
+  color: var(--figma-text);
+  text-align: left;
+  cursor: pointer;
+}
+.share-panel__result:hover:not(:disabled) { background: var(--figma-bg-input); }
+.share-panel__result:disabled { cursor: default; opacity: 0.55; }
+
+.share-panel__result-name,
+.share-panel__member-name,
+.share-panel__picked-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 0.75rem;
+  color: var(--figma-text);
+}
+
+.share-panel__detail {
+  font-size: 0.6875rem;
+  color: var(--figma-text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.share-panel__group-icon { flex: 0 0 auto; color: var(--figma-text-muted); }
+
+.share-panel__picked {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 30px;
+  padding: 4px 4px 4px 8px;
+  border: 1px solid var(--figma-border);
+  border-radius: 6px;
+  background: var(--figma-bg-input);
+}
+
+.share-panel__add-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.share-panel__role {
+  min-height: 27px;
+  padding: 3px 6px;
+  border: 1px solid var(--figma-border);
+  border-radius: var(--radius-6);
   background: #ffffff;
   font-family: inherit;
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
+  color: var(--figma-text);
+  cursor: pointer;
+}
+.share-panel__add-row .share-panel__role { flex: 1; }
+
+.share-panel__member {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 34px;
+  border-bottom: 1px solid var(--figma-border);
+}
+.share-panel__member:last-child { border-bottom: none; }
+
+.share-panel__member-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.share-panel__icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  min-height: unset;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-4);
+  background: transparent;
+  font-size: 0.875rem;
+  line-height: 1;
   color: var(--figma-text-muted);
   cursor: pointer;
 }
+.share-panel__icon-btn:hover:not(:disabled) { background: var(--figma-bg-input); color: var(--figma-text); }
 
-.app__share-close:hover { background: var(--figma-bg-hover); color: var(--figma-text); }
+.share-panel__text-btn {
+  min-height: unset;
+  padding: 2px 4px;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: 0.6875rem;
+  color: var(--figma-blue-on-white-text);
+  cursor: pointer;
+}
+.share-panel__text-btn:hover:not(:disabled) { text-decoration: underline; }
+
+.share-panel__manual { margin-top: 8px; }
+
+.app__header-btn--on {
+  background: var(--figma-bg-input);
+  color: var(--figma-text);
+}
+
+/* A viewer's workspace: the composer says why it is not there. */
+.app__readonly-note {
+  margin: 0;
+  padding: 10px 12px;
+  border-top: 1px solid var(--figma-border);
+  font-size: 0.75rem;
+  color: var(--figma-text-muted);
+  background: var(--figma-bg-input);
+}
+
+/* Who said it, on a shared project's thread. */
+.app__message-author {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 0.625rem;
+  color: var(--figma-text-dim);
+}
 
 /* --- Projects tab -----------------------------------------------------------
    Two lists side by side: a user's projects, and the chosen project's history.
@@ -8499,3 +8640,36 @@ button.app__logo:hover {
   font-size: 0.75rem;
 }
 .app__attach-note:focus { outline: none; border-color: var(--figma-accent); }
+
+/* ===== Sharing (2026-09-23) =====
+   Built from the list's and the header's own pieces: the meta line's size and
+   colour, the framework badge's shape, the header buttons, the usage menu's
+   popover. Nothing here introduces a colour the app did not already use. */
+
+.project-list__card-share {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  font-size: 0.625rem;
+  color: var(--figma-text-dim);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.project-list__role,
+.share-panel__role-badge {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: var(--radius-4);
+  font-size: 0.5625rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.6;
+  border: 1px solid var(--figma-border);
+  color: var(--figma-text-muted);
+  background: transparent;
+}
+.project-list__role--full { border-color: var(--figma-blue-on-white-text); color: var(--figma-blue-on-white-text); }
+.project-list__role--edit { border-color: var(--figma-text-muted); color: var(--figma-text); }
