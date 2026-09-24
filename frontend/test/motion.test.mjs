@@ -120,12 +120,16 @@ const check = (name, got, want) => {
   check('entrances were found', entrances.length >= 8, true);
   check('and every one fills backwards only', entrances.filter((a) => !/ backwards;$/.test(a)), []);
   check('a chat message too', /animation: chat-msg-in [^;]* backwards;/.test(css), true);
+  check('but only one said after the project opened', /\.app__chat-msg--new,\s*\.app__chat-msg--error \{\s*animation: chat-msg-in/.test(css) && /msg\.timestamp >= openedAt \? ' app__chat-msg--new'/.test(read('src/App.tsx')), true);
 }
 
 // --- lists that travel ------------------------------------------------------------------------
 {
   const list = read('src/components/ProjectList.tsx');
-  check('the project grid animates its layout', /useFlip\(gridRef\)/.test(list) && /className="project-list__grid" ref=\{gridRef\}/.test(list), true);
+  check('the project grid animates its layout', /useFlip\(gridRef, gridSignature\)/.test(list) && /className="project-list__grid" ref=\{gridRef\}/.test(list), true);
+  // Measured when the list changes, not on every render: the list re-renders on a poll and on every keystroke.
+  check('and measures only when what is in it changes', /\}, \[signature\]\);/.test(read('src/hooks/useFlip.ts')), true);
+  check('a change of page arrives as one, not card by card', /const bulk = leaving\.length \+ arriving\.length > BULK;/.test(read('src/hooks/useFlip.ts')), true);
   check('and keeps a removed card long enough to leave', /const cards = usePresenceList\(shown, \(p\) => p\.projectId\)/.test(list), true);
   check('a leaving card is marked for useFlip and out of the tab order',
     /tabIndex=\{exiting \? -1 : 0\}[\s\S]{0,120}\[EXITING_ATTR\]: ''/.test(list), true);
@@ -138,7 +142,7 @@ const check = (name, got, want) => {
   check('a leaving item keeps its place, so its iframe is not moved and reloaded',
     /After the nearest earlier entry that is still in the list being built/.test(presence), true);
   check('the switch to closing happens while rendering, not a frame late', /if \(wasOpen !== open\) \{/.test(presence), true);
-  check('the share panel\'s members travel too', /useFlip\(membersRef\)/.test(read('src/components/ShareButton.tsx')), true);
+  check('the share panel\'s members travel too', /useFlip\(membersRef, /.test(read('src/components/ShareButton.tsx')), true);
   check('and the templates when a category narrows them', /useFlip\(listRef/.test(read('src/components/PromptTemplates.tsx')), true);
 }
 

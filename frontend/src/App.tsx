@@ -565,6 +565,12 @@ interface MainAppProps {
 }
 
 function MainApp({ project, onBackToProjects, onUpdateProject, fetchProjectPreview }: MainAppProps) {
+  /*
+   * Only what is said after the project opens rises into the thread. The history
+   * loaded with it is already there: animating forty messages at once on every
+   * open was one of the heavier moments in the app (2026-09-24).
+   */
+  const [openedAt] = useState(() => Date.now());
   const { userEmail, isAdmin, logout, token } = useAuth();
   const { refinement, refining, message: refineMessage, refine, clear: clearRefinement } = useRefinePrompt();
   const [inputText, setInputText] = useState('');
@@ -2197,7 +2203,7 @@ function MainApp({ project, onBackToProjects, onUpdateProject, fetchProjectPrevi
               </div>
             )}
             {messages.map((msg) => (
-              <div key={msg.id} className={`app__chat-msg app__chat-msg--${msg.role}`}>
+              <div key={msg.id} className={`app__chat-msg app__chat-msg--${msg.role}${msg.timestamp >= openedAt ? ' app__chat-msg--new' : ''}`}>
                 {msg.role === 'assistant' && (
                   <span className="app__chat-avatar" aria-hidden="true">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">

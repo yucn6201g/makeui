@@ -3255,8 +3255,9 @@ fieldset legend {
   cursor: pointer;
   /* `translate`, not `transform`: the layout animation (useFlip) moves cards
      with their transform, and the lift has to compose with it, not replace it. */
-  transition: border-color 0.15s, box-shadow var(--spring-smooth-ms) var(--spring-smooth),
-    translate var(--spring-smooth-ms) var(--spring-smooth);
+  /* Short and plain: a pointer crossing the grid starts one of these on every
+     card it passes, and each card carries an iframe. */
+  transition: border-color 0.15s, box-shadow 0.15s ease-out, translate 0.15s ease-out;
   position: relative;
 }
 
@@ -3370,8 +3371,10 @@ fieldset legend {
 }
 
 .project-list__tab--on .project-list__tab-count {
-  background: var(--figma-blue-tint);
-  color: var(--figma-blue-on-tint-text);
+  /* Grey like the others, with darker figures. A pale-blue pill beside the
+     blue underline read as the underline bleeding sideways — and only on
+     アーカイブ, the one tab that carried a count (2026-09-24). */
+  color: var(--figma-text);
 }
 
 /* --- Search and framework filter ------------------------------------------ */
@@ -4630,8 +4633,7 @@ button.app__logo:hover {
   margin-left: 6px;
 }
 .adm-tab--active .adm-tab-badge {
-  background: var(--figma-blue-tint);
-  color: var(--figma-blue-on-tint-text);
+  color: var(--figma-text);
 }
 
 /* Summary strip */
@@ -4916,18 +4918,27 @@ button.app__logo:hover {
   background: transparent;
   border: 0;
   border-radius: 0;
-  /* Backwards only: a transform left filling after the entrance would make
-     every message a containing block for the fixed menus inside it. */
-  animation: chat-msg-in var(--spring-smooth-ms) var(--spring-smooth) backwards;
+}
+
+/*
+ * Only a message said after the project opened rises in (App.tsx marks it
+ * --new); the history loaded with the project is simply there. Backwards only:
+ * a transform left filling after the entrance would make every message a
+ * containing block for the fixed menus inside it.
+ */
+.app__chat-msg--new,
+.app__chat-msg--error {
+  animation: chat-msg-in var(--spring-quick-ms) var(--spring-quick) backwards;
 }
 
 @keyframes chat-msg-in {
-  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  from { opacity: 0; transform: translateY(6px); }
   to   { opacity: 1; transform: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .app__chat-msg { animation: none; }
+  .app__chat-msg--new,
+  .app__chat-msg--error { animation: none; }
 }
 
 /* The assistant speaks as prose, the user as a bubble — the same asymmetry
@@ -8819,6 +8830,8 @@ button.app__logo:hover {
   --spring-snappy-ms: 467ms;
   --spring-bouncy: linear(0, 0.0275, 0.0986, 0.198, 0.3132, 0.4339, 0.5523, 0.6629, 0.762, 0.8473, 0.9182, 0.9746, 1.0174, 1.0481, 1.0681, 1.0793, 1.0834, 1.0821, 1.0768, 1.0689, 1.0595, 1.0494, 1.0394, 1.03, 1.0215, 1.0142, 1.008, 1.003, 0.9992, 0.9964, 0.9946, 0.9935, 0.9931, 0.9931, 0.9935, 0.9941, 0.9949, 0.9957, 0.9965, 0.9973, 1);
   --spring-bouncy-ms: 629ms;
+  --spring-quick: linear(0, 0.0195, 0.0678, 0.1334, 0.2079, 0.2854, 0.3622, 0.4357, 0.5044, 0.5673, 0.6243, 0.6753, 0.7205, 0.7603, 0.795, 0.8252, 0.8514, 0.8739, 0.8933, 0.9098, 0.9239, 0.9359, 0.9461, 0.9548, 0.9621, 0.9682, 0.9734, 0.9778, 0.9815, 0.9845, 0.9871, 0.9893, 0.9911, 0.9926, 0.9938, 0.9949, 0.9958, 0.9965, 0.9971, 0.9976, 1);
+  --spring-quick-ms: 404ms;
   --spring-swap-ms: 320ms;
   --motion-exit-ms: 180ms;
   --ease-exit: cubic-bezier(0.4, 0, 1, 1);
@@ -8829,6 +8842,7 @@ button.app__logo:hover {
 @supports not (transition-timing-function: linear(0, 1)) {
   :root {
     --spring-smooth: cubic-bezier(0.22, 1, 0.36, 1);
+    --spring-quick: cubic-bezier(0.22, 1, 0.36, 1);
     --spring-snappy: cubic-bezier(0.3, 1.15, 0.5, 1);
     --spring-bouncy: cubic-bezier(0.34, 1.5, 0.64, 1);
   }
@@ -8959,7 +8973,9 @@ button.app__logo:hover {
 /* Full-screen views rise like a sheet and sink away. */
 .adm-panel,
 .vc {
-  animation: motion-sheet-in var(--spring-smooth-ms) var(--spring-smooth) backwards;
+  /* The quick spring: these cover the screen, and the admin panel and the
+     comparison both hold iframes that ride the animated layer. */
+  animation: motion-sheet-in var(--spring-quick-ms) var(--spring-quick) backwards;
 }
 .adm-panel[data-state="closing"],
 .vc[data-state="closing"] {
@@ -8984,9 +9000,17 @@ button.app__logo:hover {
  * What appears inside a view without being asked for by a toggle: a tab's
  * content, an expanded step, a folder's files, a message that something went
  * wrong. Entrance only; they leave with the view they belong to.
+ *
+ * The large ones — a whole pane, the comparison's two frames, an admin tab —
+ * only fade, briefly: moving a pane that holds an iframe moves the iframe's
+ * whole layer, and that was felt as weight rather than as motion.
  */
-.motion-swap,
 .app__pane,
+.vc__pair,
+.adm-body {
+  animation: motion-fade-in 160ms ease-out backwards;
+}
+.motion-swap:not(.vc__pair):not(.adm-body),
 .rt__body,
 .vc__file-body,
 .vsc__sidebar,
@@ -9037,19 +9061,23 @@ button.app__logo:hover {
 
 /* --- navigation: a push into a project, a pop back to the list ---------------- */
 
-@keyframes motion-nav-in-from-right { from { opacity: 0; transform: translateX(48px); } }
-@keyframes motion-nav-out-to-left { to { opacity: 0; transform: translateX(-24px); } }
-@keyframes motion-nav-in-from-left { from { opacity: 0; transform: translateX(-48px); } }
-@keyframes motion-nav-out-to-right { to { opacity: 0; transform: translateX(24px); } }
+@keyframes motion-nav-in-from-right { from { opacity: 0; transform: translateX(32px); } }
+@keyframes motion-nav-out-to-left { to { opacity: 0; transform: translateX(-16px); } }
+@keyframes motion-nav-in-from-left { from { opacity: 0; transform: translateX(-32px); } }
+@keyframes motion-nav-out-to-right { to { opacity: 0; transform: translateX(16px); } }
 
+/*
+ * Short: the page cannot be clicked while a view transition runs, so its length
+ * is time the app feels stuck. 260ms in, 160ms out (it was 567ms).
+ */
 ::view-transition-old(root),
 ::view-transition-new(root) {
-  animation-duration: var(--spring-smooth-ms);
-  animation-timing-function: var(--spring-smooth);
+  animation-duration: 260ms;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
 }
 html[data-nav="forward"]::view-transition-old(root),
 html[data-nav="back"]::view-transition-old(root) {
-  animation-duration: var(--spring-swap-ms);
+  animation-duration: 160ms;
   animation-timing-function: var(--ease-exit);
 }
 html[data-nav="forward"]::view-transition-old(root) { animation-name: motion-nav-out-to-left; }
@@ -9064,6 +9092,7 @@ html[data-nav="back"]::view-transition-new(root) { animation-name: motion-nav-in
     --spring-smooth-ms: 1ms;
     --spring-snappy-ms: 1ms;
     --spring-bouncy-ms: 1ms;
+    --spring-quick-ms: 1ms;
     --spring-swap-ms: 1ms;
     --motion-exit-ms: 1ms;
   }

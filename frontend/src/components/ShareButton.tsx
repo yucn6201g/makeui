@@ -88,8 +88,8 @@ function PeopleSection({ projectId, role }: { projectId: string; role: ProjectRo
   const [newRole, setNewRole] = useState<ShareRole>('edit');
   /* Someone added slides in, someone removed folds away and the rest close up. */
   const membersRef = useRef<HTMLUListElement>(null);
-  useFlip(membersRef);
   const members = usePresenceList(s.shares, (g) => `${g.type}:${g.id}`);
+  useFlip(membersRef, members.map((m) => (m.exiting ? '-' : '') + m.key).join(','));
 
   const add = async () => {
     if (!picked) return;

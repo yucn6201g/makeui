@@ -20,7 +20,7 @@ export function PromptTemplates({ onSelect }: PromptTemplatesProps) {
   const panel = usePresence(isOpen);
   // A category narrows the list by moving what stays, not by redrawing it.
   const listRef = useRef<HTMLUListElement>(null);
-  useFlip(listRef, { stagger: 18 });
+  useFlip(listRef, `${panel.mounted}|${activeCategory}`, { stagger: 18 });
 
   return (
     <div className="prompt-templates">

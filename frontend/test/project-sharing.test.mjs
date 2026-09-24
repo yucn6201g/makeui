@@ -45,7 +45,7 @@ const check = (name, got, want) => {
 // --- the list ----------------------------------------------------------------------------
 {
   const list = read('src/components/ProjectList.tsx');
-  check('the tabs are プロジェクト, 共有, アーカイブ', /\['active', 'プロジェクト', 0\][\s\S]{0,200}\['shared', '共有', sharedCount\][\s\S]*アーカイブ/.test(list), true);
+  check('the tabs are プロジェクト, 共有, アーカイブ', /\['active', 'プロジェクト', activeCount\][\s\S]{0,200}\['shared', '共有', sharedCount\][\s\S]*アーカイブ/.test(list), true);
   check('a shared card says whose it is and the role', /\{project\.access\?\.ownerName\} さんから共有[\s\S]{0,200}ROLE_LABELS\[role\]/.test(list), true);
   check('and the owner\'s says it is shared', /project\.sharedAt \? \(\s*<div className="project-list__card-share">共有中<\/div>/.test(list), true);
   check('a viewer gets no star', /!archived && !selecting && canWrite &&/.test(list), true);

@@ -21,10 +21,12 @@ export interface Spring {
   damping: number;
 }
 
-/** The three springs the app uses. */
+/** The springs the app uses. */
 export const SPRINGS = {
-  /** Things that travel: cards to their new places, panels opening. No overshoot. */
+  /** Things that travel: panels opening, popovers. No overshoot. */
   smooth: { response: 0.42, damping: 1 },
+  /** Cards finding their new places — many at once, so over sooner. No overshoot. */
+  quick: { response: 0.3, damping: 1 },
   /** Selection thumbs and underlines: quick, with the slightest settle. */
   snappy: { response: 0.36, damping: 0.82 },
   /** Small things that should feel alive: a star being set, a press released. */
@@ -97,6 +99,7 @@ function supportsLinear(): boolean {
 
 const FALLBACK: Record<SpringName, string> = {
   smooth: 'cubic-bezier(0.22, 1, 0.36, 1)',
+  quick: 'cubic-bezier(0.22, 1, 0.36, 1)',
   snappy: 'cubic-bezier(0.3, 1.15, 0.5, 1)',
   bouncy: 'cubic-bezier(0.34, 1.5, 0.64, 1)',
 };

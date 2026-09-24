@@ -139,6 +139,8 @@ export function ProjectList({ onOpenProject, onNewProject }: ProjectListProps) {
   );
   const counts = useMemo(() => frameworkCounts(projects, tab), [projects, tab]);
   const sharedCount = useMemo(() => projects.filter((p) => tabOf(p) === 'shared').length, [projects]);
+  // Every tab says how many it holds, プロジェクト included.
+  const activeCount = useMemo(() => projects.filter((p) => tabOf(p) === 'active').length, [projects]);
   /*
    * Counted over the ACTIVE list only. Archiving clears the star — the service
    * enforces that an archived project is never a favourite — so including the
@@ -171,9 +173,11 @@ export function ProjectList({ onOpenProject, onNewProject }: ProjectListProps) {
    * tab, a framework, a search, a sort or a deletion alike. See useFlip.
    */
   const gridRef = useRef<HTMLDivElement>(null);
-  useFlip(gridRef);
   const cards = usePresenceList(shown, (p) => p.projectId);
   const newCard = usePresence(tab === 'active' && !selecting);
+  // What is in the grid and in what order: the layout is measured when this changes, not on every render.
+  const gridSignature = `${newCard.mounted}${newCard.closing}|${loading && projects.length === 0}|${cards.map((c) => (c.exiting ? '-' : '') + c.key).join(',')}`;
+  useFlip(gridRef, gridSignature);
   const bulkBar = usePresence(selecting);
 
   const handleNew = async () => {
@@ -312,7 +316,7 @@ export function ProjectList({ onOpenProject, onNewProject }: ProjectListProps) {
           <div className="project-list__tabs motion-track" role="tablist" aria-label="表示するプロジェクト">
             <SlidingIndicator active={tab} variant="underline" />
             {([
-              ['active', 'プロジェクト', 0],
+              ['active', 'プロジェクト', activeCount],
               // Projects this account shared, and projects shared with it — both sides.
               ['shared', '共有', sharedCount],
             ] as const).map(([key, label, count]) => (
