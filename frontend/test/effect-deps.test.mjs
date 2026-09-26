@@ -34,13 +34,15 @@
 import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
 import path from 'node:path';
+import { ADMIN_FILES, readAdminPanel } from './lib/admin-source.mjs';
+import { APP_FILES, readApp } from './lib/app-source.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const FILES = [
-  'src/components/AdminPanel.tsx',
-  'src/App.tsx',
-  'src/components/Preview.tsx',
-  'src/components/ProjectList.tsx',
+  ...ADMIN_FILES,
+  ...APP_FILES,
+  'src/components/workspace/Preview.tsx',
+  'src/components/project-list/ProjectList.tsx',
 ];
 
 let pass = 0, fail = 0;
@@ -150,7 +152,7 @@ for (const rel of FILES) {
 
 check('the scan found effects to look at', effectCount > 20, true);
 check('and state pairs to check them against',
-  statePairs(fs.readFileSync(path.join(root, 'src/components/AdminPanel.tsx'), 'utf8')).size > 5, true);
+  statePairs(readAdminPanel()).size > 5, true);
 check('no effect strands itself on state it sets', offenders, []);
 
 // --- the scanner itself, against the four shapes it has to tell apart ------
@@ -224,7 +226,7 @@ check('nor a setter merely passed along', flagged(`
 `), []);
 
 // --- and the effect that shipped broken, specifically ----------------------
-const panel = fs.readFileSync(path.join(root, 'src/components/AdminPanel.tsx'), 'utf8');
+const panel = readAdminPanel();
 const inv = effects(panel).find((e) => e.body.includes('fetchModelInventory('));
 check('the inventory effect was found', Boolean(inv), true);
 check('it no longer guards on its own busy flag', /inventoryBusy/.test(inv.body), false);

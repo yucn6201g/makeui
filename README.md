@@ -15,18 +15,20 @@ Knowledge Base、Guardrails、Cognito、CloudFront）。
 ├── backend/            AgentCore Runtime と API Lambda（TypeScript）
 │   ├── src/
 │   │   ├── handlers/       API Lambda・Runtime・ジョブ実行
-│   │   ├── orchestration/  生成パイプライン、Strands マルチエージェント、要件の照合、監査、修復と判定
+│   │   ├── orchestration/  生成・編集の手順（generate / edit / repair / audit / presets / prompts）
 │   │   ├── services/       プロジェクト・バージョン履歴・チャット・使用量・S3 保存
-│   │   ├── tools/          AgentCore Memory / Browser / KB、転送形式、コンパイラ、決定的修復
-│   │   └── config/         フレームワーク表、効果プロファイル、モデル、SSM
+│   │   ├── tools/          転送形式とコンパイラ、決定的修復、写真、AgentCore Browser / Memory / KB
+│   │   ├── config/         フレームワーク表、effort、モデル、料金、SSM
+│   │   └── utils/          画像入力、添付データ、ログなど
 │   ├── scripts/        運用・計測スクリプト（一覧は scripts/README.md）
-│   └── test/           107スイート（`npm test` がディレクトリを走査）
+│   └── test/           単体テスト（`npm test` がディレクトリを走査）
 ├── frontend/           React SPA（Vite）
 │   ├── src/
-│   │   ├── components/     エディタ、プレビュー、プロジェクト一覧、管理者パネル
+│   │   ├── auth/           Cognito とログイン画面
+│   │   ├── components/     画面ごとのフォルダ（project-list / workspace / version-diff / admin / common）
 │   │   ├── hooks/          生成・編集・履歴・使用量・管理
-│   │   └── utils/          プレビューのコンパイル、仮想ファイル、直接編集、返答の整形
-│   └── test/           46スイート
+│   │   └── utils/          役割ごとのフォルダ（preview / editing / chat / projects / requests / motion …）
+│   └── test/           単体テスト（`npm test`）
 ├── infrastructure/     CloudFormation、CI/CD、セットアップスクリプト
 │   └── buildspec/          CodeBuild の4ステージ
 └── docs/               設計・構成・運用の説明資料
@@ -95,7 +97,7 @@ CodePipeline が ビルド → テスト → バックエンド配備 → フロ
 
 そのため次の層を重ねています。
 
-1. **決定的修復**（`backend/src/tools/framework-fixups.ts`）— モデル呼び出しなしで
+1. **決定的修復**（`backend/src/tools/fixups/framework-fixups.ts`）— モデル呼び出しなしで
    直せる既知の書き方を直す。実測で真っ白な画面を出した書き方だけが入っています。
    生成の組み立て後・修復候補の判定前・編集の後の3か所で走ります
 2. **コンパイル関門** — 生成物を実際にビルドする

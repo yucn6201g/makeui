@@ -27,7 +27,7 @@ import path from 'node:path';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const out = path.join(root, 'dist/runaway.test.mjs');
 await esbuild.build({
-  entryPoints: [path.join(root, 'src/orchestration/strands-design.ts')],
+  entryPoints: [path.join(root, 'src/orchestration/generate/strands-design.ts')],
   bundle: true, platform: 'node', format: 'esm', outfile: out,
   external: ['@aws-sdk/*', '@smithy/*', '@strands-agents/*'],
   logLevel: 'error',
@@ -93,7 +93,7 @@ check('a repeated newline pair is cut', withoutRunaway(`${REAL}${'\n-'.repeat(20
 }
 
 // --- the wiring ---------------------------------------------------------------
-const src = fs.readFileSync(path.join(root, 'src/orchestration/strands-design.ts'), 'utf8');
+const src = fs.readFileSync(path.join(root, 'src/orchestration/generate/strands-design.ts'), 'utf8');
 check('the streamed backfill cuts it before the spec is assembled',
   /const \{ text: usable, cut \} = withoutRunaway\(text\.trim\(\)\)/.test(src), true);
 check('a specialist that produced nothing is asked again, once',

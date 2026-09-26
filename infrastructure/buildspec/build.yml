@@ -6,7 +6,7 @@ version: 0.2
 
 env:
   variables:
-    # The vendor step downloads nothing; it copies React/Vue/Svelte browser
+    # The vendor step downloads nothing; it copies the React/Vue browser
     # builds out of node_modules into backend/src/vendor as .txt so esbuild can
     # inline them. It has to run before any bundling.
     NODE_OPTIONS: '--max-old-space-size=3072'

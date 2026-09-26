@@ -25,7 +25,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const APP = path.join(root, 'src/App.tsx');
+const APP = path.join(root, 'src/components/workspace/Workspace.tsx');
 const lines = fs.readFileSync(APP, 'utf8').split('\n');
 
 let pass = 0, fail = 0;

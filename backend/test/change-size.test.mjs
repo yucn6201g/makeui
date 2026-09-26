@@ -68,8 +68,8 @@ check('a very large middle is estimated', big.estimated, true);
 check('and never under-states the change', big.changedShare >= 2 / 3000, true);
 
 // --- wired into both rewrite paths ---------------------------------------------------
-const repair = read('src/orchestration/repair-files.ts');
-const edit = read('src/orchestration/edit-files.ts');
+const repair = read('src/orchestration/repair/repair-files.ts');
+const edit = read('src/orchestration/edit/edit-files.ts');
 check('an accepted repair logs its change size', /logger\.info\('File repair change size'/.test(repair), true);
 check('measured on the lean bodies, so embedded pictures do not count',
   /changeSize\(leaned\.text, lean\(body\)\.text\)/.test(repair), true);

@@ -25,7 +25,7 @@ import fs from 'node:fs';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const out = path.join(root, 'dist/dead-action-walk.test.mjs');
 await esbuild.build({
-  entryPoints: [path.join(root, 'src/tools/browser-verify.ts')],
+  entryPoints: [path.join(root, 'src/tools/browser/browser-verify.ts')],
   bundle: true, platform: 'node', format: 'esm', outfile: out,
   external: ['@aws-sdk/*', '@smithy/*', '@strands-agents/*', 'esbuild'],
   loader: { '.txt': 'text' }, logLevel: 'error',
@@ -86,7 +86,7 @@ check('recorded before the press, since the press can re-render the list',
   check('only a content region that shows nothing moves the fill, and to 0', /if \(!contentShows && fill > 0\) \{\s*\n\s*fill = 0;/.test(measure), true);
   check('what hid it is named', /hiddenBy = outer\s*\n?\s*\? describe\(outer\)/.test(measure), true);
   check('the measurement returns it', /return \{ id, fill, emptyBoxes: empties\.slice\(0, 4\), fields, broken, hiddenBy, unstyledNav, oversizedIcons, layout \};/.test(measure), true);
-  check('and the facts carry it', /\.\.\.\(m\.hiddenBy \? \{ hiddenBy: m\.hiddenBy \} : \{\}\)/.test(fs.readFileSync(path.join(root, 'src/tools/browser-verify.ts'), 'utf8')), true);
+  check('and the facts carry it', /\.\.\.\(m\.hiddenBy \? \{ hiddenBy: m\.hiddenBy \} : \{\}\)/.test(fs.readFileSync(path.join(root, 'src/tools/browser/browser-verify.ts'), 'utf8')), true);
 }
 
 // --- styling that never arrived, as it shows on screen -------------------------------------
@@ -96,7 +96,7 @@ check('recorded before the press, since the press can re-render the list',
     /lcs\.display === 'list-item' && lcs\.listStyleType !== 'none'/.test(measure), true);
   check('an icon is a small viewBox rendered past 96px', /vb\[2\] > 48 \|\| vb\[3\] > 48/.test(measure) && /r\.width > 96 \|\| r\.height > 96/.test(measure), true);
   check('both are returned', /hiddenBy, unstyledNav, oversizedIcons, layout \};/.test(measure), true);
-  const src = fs.readFileSync(path.join(root, 'src/tools/browser-verify.ts'), 'utf8');
+  const src = fs.readFileSync(path.join(root, 'src/tools/browser/browser-verify.ts'), 'utf8');
   check('and carried into the facts, once each', /unstyledNav: \[\.\.\.new Set\(/.test(src) && /oversizedIcons: \[\.\.\.new Set\(/.test(src), true);
 }
 

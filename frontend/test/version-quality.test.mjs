@@ -11,12 +11,13 @@ import * as esbuild from 'esbuild';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import fs from 'node:fs';
 import path from 'node:path';
+import { ADMIN_FILES, readAdminPanel } from './lib/admin-source.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
 const out = path.join(root, 'dist-test/version-quality.test.mjs');
 fs.mkdirSync(path.dirname(out), { recursive: true });
-await esbuild.build({ entryPoints: [path.join(root, 'src/utils/versionQuality.ts')], bundle: true, platform: 'node', format: 'esm', outfile: out });
+await esbuild.build({ entryPoints: [path.join(root, 'src/utils/projects/versionQuality.ts')], bundle: true, platform: 'node', format: 'esm', outfile: out });
 const { versionQualityLabel, versionQualityTitle } = await import(pathToFileURL(out).href);
 
 let pass = 0, fail = 0;
@@ -35,7 +36,7 @@ check('an edit records its checklist but no findings', versionQualityLabel({ req
 check('the tooltip says it in words', versionQualityTitle({ requirementsMet: 4, requirementsChecked: 6, openFindings: 5 }),
   '依頼の要件のうち、自動で確認できる6件中4件を満たしています\n未解決の指摘が5件あります');
 
-const panel = read('src/components/AdminPanel.tsx');
+const panel = readAdminPanel();
 check('the version list has the column', panel.includes('<th className="adm-th adm-th--num adm-th--quality">要件・指摘</th>'), true);
 check('and fills it from the row', /title=\{versionQualityTitle\(v\)\}[\s\S]*?\{versionQualityLabel\(v\)\}/.test(panel), true);
 check('the admin type carries the fields',

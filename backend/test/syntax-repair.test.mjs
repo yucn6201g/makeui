@@ -29,10 +29,10 @@ const build = (src, out) => {
 };
 
 const { repairFileSyntax, repairSyntax, syntaxDefects, unterminatedStrings } =
-  await build('src/orchestration/syntax-repair.ts', 'dist/synrep.test.mjs');
-const { reactFiles } = await build('src/orchestration/interaction-audit.ts', 'dist/ia2.test.mjs');
-const { writeFile } = await build('src/orchestration/repair-files.ts', 'dist/rf2.test.mjs');
-const { toRunnableDocument } = await build('src/tools/react-bundle.ts', 'dist/rb3.test.mjs');
+  await build('src/orchestration/repair/syntax-repair.ts', 'dist/synrep.test.mjs');
+const { reactFiles } = await build('src/orchestration/audit/interaction-audit.ts', 'dist/ia2.test.mjs');
+const { writeFile } = await build('src/orchestration/repair/repair-files.ts', 'dist/rf2.test.mjs');
+const { toRunnableDocument } = await build('src/tools/project/react-bundle.ts', 'dist/rb3.test.mjs');
 
 let pass = 0, fail = 0;
 const check = (name, got, want) => {

@@ -199,7 +199,7 @@ check('haiku asked for by an opus-only user is the only tier there is',
    * definition is not a use. Anything reached through `ResolvedModel` counts,
    * since that is what the resolvers actually hand back.
    */
-  const consumers = ['src/orchestration/graph.ts', 'src/orchestration/meta-orchestrator.ts', 'src/handlers/lambda-handler.ts']
+  const consumers = ['src/orchestration/generate/graph.ts', 'src/orchestration/edit/meta-orchestrator.ts', 'src/handlers/lambda-handler.ts']
     .map((f) => fs.readFileSync(path.join(root, f), 'utf8'))
     .join('\n');
   const unread = fields.filter((f) => !new RegExp(`\\.${f}\\b`).test(consumers));

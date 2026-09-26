@@ -599,7 +599,7 @@ aws ssm put-parameter \
 | 生成が途中で止まる | Runtime のログを確認: `aws logs tail /aws/bedrock-agentcore/runtimes/makeuiBackend-XXXXXXXXXX-DEFAULT --since 15m` |
 | 「変更を適用できませんでした」 | `fullHtmlModify` の例外メッセージを確認。出力トークン上限が原因なら `MAX_OUTPUT_TOKENS` を確認（現在64000） |
 | 変更が一部だけ反映されない | **4つの宛先すべてにデプロイしたか確認**（makeui-backend / makeui-worker / AgentCore Runtime / フロントエンド） |
-| プロジェクトにサムネイルが出ない | React 出力は `sandbox=""` では描画されない。`utils/thumbnail.ts` のコンパイル経路を通っているか確認 |
+| プロジェクトにサムネイルが出ない | React 出力は `sandbox=""` では描画されない。`utils/preview/thumbnail.ts` のコンパイル経路を通っているか確認 |
 | 既存プロジェクトのプレビューが空白 | `project.lastHtml` が存在するか DynamoDB で確認 |
 | React プレビューが白画面 | ブラウザコンソールで未解決 import の例外を確認（`resolve()` はスタブで例外を投げる） |
 | 403 使用量超過 | `GET /usage` で残量確認 |
@@ -621,7 +621,7 @@ aws ssm put-parameter \
 | バージョンを切り替えるとプレビューとコードが空になる | `GET /versions` は本文を返しません（`entry.html` は常に空文字）。ドロップダウンがそれを表示に渡していないか確認してください。本文は `GET /versions/:id` で個別に取得します |
 | 一覧から開くとプレビューが出ない | 復旧の判定を `project.lastHtml`（一覧のスナップショット）でしていないか確認してください。判定は「いま描けるものがあるか」で行います。サーバ側は `GET /projects/:id/preview` がプロジェクト自身の文書 → バージョン履歴の順に見ます |
 | タブレット / モバイル表示でレイアウトが崩れる | デバイス枠に `max-width: 100%` が付いていないか確認してください。枠が縮むと iframe も縮み、ページのブレークポイントが実機と違う幅で発火します。**実寸を保ち `transform: scale()` で収める**のが正解です。確認は枠幅を変えながら iframe 内の `innerWidth` を測り、常に 393 / 820 であること |
-| 変更指示が「Failed to fetch」で失敗する | ブラウザは「完了しなかったリクエスト」をすべてこう報告します（ステータスがありません）。`utils/request.ts` が 8MB 超を送信前に拒否し、ネットワーク起因の失敗のみ1回再試行します。添付画像を外して再現するか確認してください |
+| 変更指示が「Failed to fetch」で失敗する | ブラウザは「完了しなかったリクエスト」をすべてこう報告します（ステータスがありません）。`utils/requests/request.ts` が 8MB 超を送信前に拒否し、ネットワーク起因の失敗のみ1回再試行します。添付画像を外して再現するか確認してください |
 | スコアが毎回同じ値になる | 加点の合計に上限を被せた指標は飽和します。`Rubric` が「取り得た点」も数えているか（`award()` / `partial()` 経由か）確認してください。素点で上限を大きく超えていれば、その差分がすべて不可視になっています |
 | 生成が異様に遅い（+2〜3分） | `Preset drift detected` の直後に `Preset repair accepted` が出ていて **violations が減っていない**場合、補正パスが何も直さずに全文を書き直しています。`details` が空なら補正パスは走らないはずです（空＝指示文が空） |
 | 保存系が「たまに」失敗する（プレビュー・トークン集計・チャット履歴） | **文字数とバイト数の取り違え**を疑ってください。UTF-8 の日本語は1文字3バイトで、DynamoDB の 400KB と Lambda 非同期 invoke の 256KB はバイト基準です。`Buffer.byteLength(s,'utf8')` で測っているか確認 |

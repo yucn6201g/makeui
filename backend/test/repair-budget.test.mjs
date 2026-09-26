@@ -16,7 +16,7 @@ import path from 'node:path';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 execSync(
-  `npx esbuild "${path.join(root, 'src/orchestration/repair-budget.ts')}" --bundle --platform=node ` +
+  `npx esbuild "${path.join(root, 'src/orchestration/repair/repair-budget.ts')}" --bundle --platform=node ` +
     `--format=esm --outfile="${path.join(root, 'dist/rb.test.mjs')}"`,
   { stdio: 'pipe', cwd: root }
 );

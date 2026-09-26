@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../auth/AuthProvider';
 
-export interface UsageData {
+interface UsageData {
   /**
    * The name this account is shown by. Sign-in is still the email address.
    *

@@ -32,7 +32,7 @@ import path from 'node:path';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 execSync(
-  `npx esbuild "${path.join(root, 'src/orchestration/interaction-audit.ts')}" --bundle --platform=node --format=esm ` +
+  `npx esbuild "${path.join(root, 'src/orchestration/audit/interaction-audit.ts')}" --bundle --platform=node --format=esm ` +
     `--outfile="${path.join(root, 'dist/fa.test.mjs')}" --external:@aws-sdk/* --external:@smithy/*`,
   { stdio: 'inherit', cwd: root }
 );

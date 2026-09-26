@@ -527,7 +527,7 @@ HTML と同じく **S3 経由で渡します**（`uploadImageIfNeeded` / `resolv
 - 画像が1枚のとき、説明欄に書いた内容が送られていなかった。いまは参照画像の指示文と alt に使います
 - `/modify` と `/plan` はデータファイルと画像の説明を**検証してからジョブに入れずに捨てていた**（上の「かつての不具合」と同じ形）
 
-共通の手順は `orchestration/supplied-images.ts`（プランと編集）にあり、生成は同じ手順を `graph.ts` に持っています。
+共通の手順は `orchestration/generate/supplied-images.ts`（プランと編集）にあり、生成は同じ手順を `graph.ts` に持っています。
 
 #### 添付画像を「参照」ではなく「中身」として表示する
 

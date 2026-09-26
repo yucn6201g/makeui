@@ -18,7 +18,7 @@ import vm from 'node:vm';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 execSync(
-  `npx esbuild "${path.join(root, 'src/tools/react-bundle.ts')}" --bundle --platform=node --format=esm ` +
+  `npx esbuild "${path.join(root, 'src/tools/project/react-bundle.ts')}" --bundle --platform=node --format=esm ` +
     `--outfile="${path.join(root, 'dist/storage-fallback.test.mjs')}" --external:@aws-sdk/* --external:@smithy/*`,
   { stdio: 'pipe', cwd: root }
 );
@@ -80,7 +80,7 @@ check('the stand-in is in the head', head.includes('<script data-makeui-storage>
 check('before any runtime or module script', runnable.html.indexOf('data-makeui-storage') < runnable.html.indexOf('<body>'), true);
 
 // --- one stand-in, two copies ---------------------------------------------------------------
-const guard = fs.readFileSync(path.join(root, '../frontend/src/utils/previewGuard.ts'), 'utf8').split(String.fromCharCode(13)).join('');
+const guard = fs.readFileSync(path.join(root, '../frontend/src/utils/preview/previewGuard.ts'), 'utf8').split(String.fromCharCode(13)).join('');
 const start = guard.indexOf('(function() {\n    var _stores');
 const end = guard.indexOf('})();', start) + '})();'.length;
 const squash = (s) => s.replace(/\s+/g, ' ').trim();

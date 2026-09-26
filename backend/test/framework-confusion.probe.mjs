@@ -50,8 +50,8 @@ const MODEL = 'arn:aws:bedrock:ap-northeast-1:123456789012:inference-profile/jp.
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const entry = path.join(root, 'dist/fc-probe-entry.mjs');
 fs.writeFileSync(entry, [
-  "export { frameworkConfusionDefects } from '../src/tools/react-bundle.js'",
-  "export { planFileRepairs, repairFiles, sourceFiles, parses } from '../src/orchestration/repair-files.js'",
+  "export { frameworkConfusionDefects } from '../src/tools/project/react-bundle.js'",
+  "export { planFileRepairs, repairFiles, sourceFiles, parses } from '../src/orchestration/repair/repair-files.js'",
 ].join('\n'));
 execSync(
   `npx esbuild "${entry}" --bundle --platform=node --format=esm --target=node22 ` +

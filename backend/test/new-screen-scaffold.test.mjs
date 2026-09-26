@@ -35,7 +35,7 @@ const check = (name, got, want) => {
 // path — so it is lifted out of the source and run. Reading it back this way is
 // the same trade the other source-reading tests make: the alternative is
 // widening a module's surface for a test.
-const src = fs.readFileSync(path.join(root, 'src/orchestration/edit-files.ts'), 'utf8');
+const src = fs.readFileSync(path.join(root, 'src/orchestration/edit/edit-files.ts'), 'utf8');
 const at = src.indexOf('function newScreenScaffold');
 check('the scaffold was found', at > 0, true);
 const body = src.slice(at, src.indexOf('\n}', at) + 2);
@@ -69,7 +69,7 @@ const newScreenScaffold = new Function(
 // missing screen for a broken project, which is the worse of the two.
 {
   execSync(
-    `npx esbuild "${path.join(root, 'src/tools/framework-compile.ts')}" --bundle --platform=node --format=esm ` +
+    `npx esbuild "${path.join(root, 'src/tools/project/framework-compile.ts')}" --bundle --platform=node --format=esm ` +
       `--outfile="${path.join(root, 'dist/fc.test.mjs')}" --external:@aws-sdk/* --external:@smithy/*`,
     { stdio: 'pipe', cwd: root }
   );

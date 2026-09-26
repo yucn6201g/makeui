@@ -21,7 +21,7 @@ import path from 'node:path';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 await esbuild.build({
-  entryPoints: [path.join(root, 'src/tools/picture-frames.ts')],
+  entryPoints: [path.join(root, 'src/tools/fixups/picture-frames.ts')],
   bundle: true, platform: 'node', format: 'esm', outfile: path.join(root, 'dist/iop.test.mjs'),
   external: ['@aws-sdk/*', '@smithy/*'], logLevel: 'error',
 });

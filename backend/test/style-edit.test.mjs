@@ -25,8 +25,8 @@ import path from 'node:path';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 for (const [src, out] of [
-  ['src/tools/react-bundle.ts', 'dist/se-rb.test.mjs'],
-  ['src/tools/project-transport.ts', 'dist/se-pt.test.mjs'],
+  ['src/tools/project/react-bundle.ts', 'dist/se-rb.test.mjs'],
+  ['src/tools/project/project-transport.ts', 'dist/se-pt.test.mjs'],
 ]) {
   execSync(
     `npx esbuild "${path.join(root, src)}" --bundle --platform=node --format=esm ` +

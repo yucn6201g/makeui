@@ -13,6 +13,7 @@ import * as esbuild from 'esbuild';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import fs from 'node:fs';
+import { fixupsEntry, readFixups } from './lib/fixups-source.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const bundle = async (entry, out) => {
@@ -22,9 +23,9 @@ const bundle = async (entry, out) => {
   });
   return import(pathToFileURL(path.join(root, out)).href);
 };
-const sc = await bundle('src/tools/source-consistency.ts', 'dist/source-consistency.test.mjs');
-const audit = await bundle('src/orchestration/interaction-audit.ts', 'dist/source-consistency.audit.test.mjs');
-const fixups = await bundle('src/tools/framework-fixups.ts', 'dist/source-consistency.fixups.test.mjs');
+const sc = await bundle('src/tools/fixups/source-consistency.ts', 'dist/source-consistency.test.mjs');
+const audit = await bundle('src/orchestration/audit/interaction-audit.ts', 'dist/source-consistency.audit.test.mjs');
+const fixups = await bundle(fixupsEntry(), 'dist/source-consistency.fixups.test.mjs');
 
 let pass = 0, fail = 0;
 const check = (name, got, want) => {
@@ -138,9 +139,9 @@ const doc = (files) => Object.entries(files).map(([p, b]) => `@@@makeui:file ${p
 
 // --- all run with every build, edit and repair ------------------------------------------------------
 {
-  const src = fs.readFileSync(path.join(root, 'src/tools/framework-fixups.ts'), 'utf8');
+  const src = readFixups();
   check('registered in fixupProject', /apply\(fixSourceConsistency\(files\)\)/.test(src), true);
-  const chained = fs.readFileSync(path.join(root, 'src/tools/source-consistency.ts'), 'utf8');
+  const chained = fs.readFileSync(path.join(root, 'src/tools/fixups/source-consistency.ts'), 'utf8');
   check('and all of them run, in order', /\[fixUnsizedSvg, fixLiteralRecordImages, fixUnhandledDispatch, fixHashScreenList, fixScrollOnNavigate\]/.test(chained), true);
   check('fixupProject is exported for the edit path too', typeof fixups.fixupProject, 'function');
 }

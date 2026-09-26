@@ -23,7 +23,7 @@ import path from 'node:path';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const out = path.join(root, 'dist/spec-overlap.test.mjs');
 await esbuild.build({
-  entryPoints: [path.join(root, 'src/orchestration/strands-design.ts')],
+  entryPoints: [path.join(root, 'src/orchestration/generate/strands-design.ts')],
   bundle: true, platform: 'node', format: 'esm', outfile: out,
   external: ['@aws-sdk/*', '@smithy/*', '@strands-agents/*'],
   logLevel: 'error',
@@ -79,7 +79,7 @@ const headings = new Map([
 ]);
 check('short heading lines do not count as repetition', specOverlap(headings).fromArchitect, {});
 
-const src = fs.readFileSync(path.join(root, 'src/orchestration/strands-design.ts'), 'utf8');
+const src = fs.readFileSync(path.join(root, 'src/orchestration/generate/strands-design.ts'), 'utf8');
 check('the overlap is logged once per design phase', (src.match(/logSpecOverlap\(byNode\)/g) ?? []).length, 1);
 check('from the texts the phase already assembled', src.indexOf('logSpecOverlap(byNode)') > src.indexOf('const byNode = new Map'), true);
 

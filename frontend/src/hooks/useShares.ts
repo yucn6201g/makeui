@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '../auth/AuthProvider';
 import type { ProjectRole } from './useProjects';
-import type { ShareRole } from '../utils/shareRoles';
-import { requestErrorMessage } from '../utils/request';
+import type { ShareRole } from '../utils/projects/shareRoles';
+import { requestErrorMessage } from '../utils/requests/request';
 
 /** One grant on a project, as `GET /projects/:id/shares` returns it. */
 export interface ShareGrant {

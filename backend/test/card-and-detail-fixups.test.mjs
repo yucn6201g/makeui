@@ -16,11 +16,12 @@
 import * as esbuild from 'esbuild';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
+import { fixupsEntry } from './lib/fixups-source.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const out = path.join(root, 'dist/cdf.test.mjs');
 await esbuild.build({
-  entryPoints: [path.join(root, 'src/tools/framework-fixups.ts')],
+  entryPoints: [path.join(root, fixupsEntry())],
   bundle: true, platform: 'node', format: 'esm', outfile: out,
   external: ['@aws-sdk/*', '@smithy/*'], logLevel: 'error',
 });

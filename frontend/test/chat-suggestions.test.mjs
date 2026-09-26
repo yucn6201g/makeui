@@ -20,7 +20,7 @@ import path from 'node:path';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 execSync(
-  `npx esbuild "${path.join(root, 'src/components/PromptTemplates.tsx')}" --bundle --platform=node --format=esm ` +
+  `npx esbuild "${path.join(root, 'src/data/promptTemplates.ts')}" --bundle --platform=node --format=esm ` +
     `--jsx=automatic --external:react --external:react/* ` +
     `--outfile="${path.join(root, 'dist/cs.test.mjs')}"`,
   { stdio: 'inherit', cwd: root }

@@ -24,13 +24,15 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ADMIN_FILES, readAdminPanel } from './lib/admin-source.mjs';
+import { APP_FILES, readApp } from './lib/app-source.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
-const activeJob = read('src/utils/activeJob.ts');
-const app = read('src/App.tsx');
-const list = read('src/components/ProjectList.tsx');
-const admin = read('src/components/AdminPanel.tsx');
+const activeJob = read('src/utils/requests/activeJob.ts');
+const app = readApp();
+const list = read('src/components/project-list/ProjectList.tsx');
+const admin = readAdminPanel();
 const css = read('src/index.css');
 const hooks = ['useGenerate', 'useModify', 'usePlan'].map((h) => [h, read(`src/hooks/${h}.ts`)]);
 

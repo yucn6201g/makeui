@@ -55,11 +55,11 @@ const entry = path.join(root, 'dist/replay-walk-entry.ts');
 const bundle = path.join(root, 'dist/replay-walk.probe.mjs');
 fs.mkdirSync(path.dirname(entry), { recursive: true });
 fs.writeFileSync(entry, [
-  "export { toRunnableDocument } from '../src/tools/react-bundle.js'",
-  "export { walkExpression } from '../src/tools/browser-verify.js'",
-  "export { declaredScreenIds } from '../src/orchestration/interaction-audit.js'",
-  "export { readProjectFiles } from '../src/tools/project-transport.js'",
-  "export { detectKind } from '../src/tools/framework-compile.js'",
+  "export { toRunnableDocument } from '../src/tools/project/react-bundle.js'",
+  "export { walkExpression } from '../src/tools/browser/browser-verify.js'",
+  "export { declaredScreenIds } from '../src/orchestration/audit/interaction-audit.js'",
+  "export { readProjectFiles } from '../src/tools/project/project-transport.js'",
+  "export { detectKind } from '../src/tools/project/framework-compile.js'",
 ].join('\n'));
 execSync(`npx esbuild "${entry}" --bundle --platform=node --format=esm --outfile="${bundle}" --external:@aws-sdk/* --external:@smithy/* --external:@strands-agents/* --loader:.txt=text --log-level=error`, { cwd: root, stdio: 'inherit' });
 const m = await import(pathToFileURL(bundle).href);

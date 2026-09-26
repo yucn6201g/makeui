@@ -52,7 +52,7 @@ function safeModelKey(model: string): string {
 /** How long a per-request usage event is kept. 13 months — see `recordUsage`. */
 const EVENT_RETENTION_DAYS = 400;
 
-export interface UsageLimitResult {
+interface UsageLimitResult {
   allowed: boolean;
   /**
    * Whether `currentUsage` is weighted by price rather than a plain token count.
@@ -130,7 +130,7 @@ export interface UsageLimitResult {
   } | null;
 }
 
-export interface UsageRecord {
+interface UsageRecord {
   inputTokens: number;
   outputTokens: number;
   /**
@@ -157,7 +157,7 @@ export interface UsageRecord {
   group?: string | null;
 }
 
-export interface UsageHistoryEntry {
+interface UsageHistoryEntry {
   month: string;
   totalInputTokens: number;
   totalOutputTokens: number;
@@ -1159,7 +1159,7 @@ function mergeMonths(items: Record<string, any>[]): Record<string, any> {
  * that has to render either way, and the callers below treat a missing entry as
  * zero — which is also the honest answer for an account with no projects.
  */
-export async function getProjectCounts(): Promise<Map<string, number>> {
+async function getProjectCounts(): Promise<Map<string, number>> {
   const counts = new Map<string, number>();
   try {
     let lastKey: Record<string, any> | undefined;
@@ -1184,7 +1184,7 @@ export async function getProjectCounts(): Promise<Map<string, number>> {
 }
 
 /** One month of the whole account, for a chart with time along the bottom. */
-export interface MonthTotals {
+interface MonthTotals {
   /** `2026-09`. */
   month: string;
   totalTokens: number;

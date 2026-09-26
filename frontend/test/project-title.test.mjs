@@ -19,6 +19,7 @@ import * as esbuild from 'esbuild';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import fs from 'node:fs';
 import path from 'node:path';
+import { APP_FILES, readApp } from './lib/app-source.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
@@ -26,7 +27,7 @@ const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
 const out = path.join(root, 'dist-test/project-title.test.mjs');
 fs.mkdirSync(path.dirname(out), { recursive: true });
 await esbuild.build({
-  entryPoints: [path.join(root, 'src/utils/projectTitle.ts')],
+  entryPoints: [path.join(root, 'src/utils/projects/projectTitle.ts')],
   bundle: true, platform: 'node', format: 'esm', outfile: out,
 });
 const { titleFromResult, isUnnamed } = await import(pathToFileURL(out).href);
@@ -145,7 +146,7 @@ check('a long title is cut', long.length, 32);
 check('and is still the beginning of it', long.startsWith('在庫在庫'), true);
 
 // --- the composer wires it -----------------------------------------------------
-const app = read('src/App.tsx');
+const app = readApp();
 check('the name is set when a generation finishes', /titleFromResult\(result, genPromptRef\.current\)/.test(app), true);
 /*
  * Both the stored name and the box in the header. The box is what the user is

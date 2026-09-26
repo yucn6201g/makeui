@@ -22,7 +22,7 @@ import path from 'node:path';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 execSync(
-  `npx esbuild "${path.join(root, 'src/utils/previewGuard.ts')}" --bundle --platform=node --format=esm ` +
+  `npx esbuild "${path.join(root, 'src/utils/preview/previewGuard.ts')}" --bundle --platform=node --format=esm ` +
     `--outfile="${path.join(root, 'node_modules/.cache/pg.test.mjs')}"`,
   { stdio: 'inherit', cwd: root }
 );
@@ -102,7 +102,7 @@ check('the guard answers the watchdog ping', /makeui-preview-ping/.test(PREVIEW_
  * against a built artifact.
  */
 execSync(
-  `npx esbuild "${path.join(root, 'src/utils/previewGuard.ts')}" --bundle --minify --platform=node --format=esm ` +
+  `npx esbuild "${path.join(root, 'src/utils/preview/previewGuard.ts')}" --bundle --minify --platform=node --format=esm ` +
     `--outfile="${path.join(root, 'node_modules/.cache/pg.min.test.mjs')}"`,
   { stdio: 'inherit', cwd: root }
 );

@@ -38,7 +38,7 @@ export function isOutputKind(value: unknown): value is OutputKind {
  */
 export const DEFAULT_OUTPUT_KIND: OutputKind = 'react';
 
-export interface FrameworkSpec {
+interface FrameworkSpec {
   id: OutputKind;
   /** Shown in the composer. */
   label: string;

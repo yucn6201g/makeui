@@ -24,7 +24,7 @@ import path from 'node:path';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 execSync(
-  `npx esbuild "${path.join(root, 'src/utils/modelTotals.ts')}" --bundle --platform=node --format=esm ` +
+  `npx esbuild "${path.join(root, 'src/utils/admin/modelTotals.ts')}" --bundle --platform=node --format=esm ` +
     `--outfile="${path.join(root, 'node_modules/.cache/mt.test.mjs')}"`,
   { stdio: 'pipe', cwd: root }
 );
@@ -121,7 +121,7 @@ check('a zero price is not a missing one', free.partialCost, false);
  * worth pinning from here is that the join starts from this function rather than
  * from a second copy of the two rules above.
  */
-const rowsSrc = fs.readFileSync(path.join(root, 'src/utils/modelRows.ts'), 'utf8');
+const rowsSrc = fs.readFileSync(path.join(root, 'src/utils/admin/modelRows.ts'), 'utf8');
 check('the row builder starts from these totals', /const totals = modelTotals\(users\)/.test(rowsSrc), true);
 check('and does not re-derive the split itself', /inputTokens \+ [a-z.]*outputTokens/.test(rowsSrc), false);
 

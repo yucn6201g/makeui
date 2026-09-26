@@ -28,8 +28,8 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const entry = path.join(root, 'dist-test/se-entry.ts');
 fs.mkdirSync(path.dirname(entry), { recursive: true });
 fs.writeFileSync(entry, [
-  "export * from '../src/utils/sourceAnchors'",
-  "export * from '../src/utils/structuralEdit'",
+  "export * from '../src/utils/editing/sourceAnchors'",
+  "export * from '../src/utils/editing/structuralEdit'",
 ].join('\n'));
 execSync(
   `npx esbuild "${entry}" --bundle --platform=node --format=esm ` +

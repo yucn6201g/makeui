@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef } from 'react';
 import { useAuth } from '../auth/AuthProvider';
 
-export interface Refinement {
+interface Refinement {
   /** The rewritten brief, ready to replace what is in the composer. */
   prompt: string;
   /** What the rewrite added or made explicit, one short line each. */

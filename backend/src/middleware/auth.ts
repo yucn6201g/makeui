@@ -3,7 +3,7 @@ import { logger } from '../utils/logger.js';
 import { getParameter } from '../config/agentcore-config.js';
 import { membershipOf, type Membership } from '../services/user-groups.js';
 
-export interface AuthResult {
+interface AuthResult {
   userId: string;
   email: string;
   /**

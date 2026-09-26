@@ -33,7 +33,7 @@ const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
 const out = path.join(root, 'dist/deterministic-partial.test.mjs');
 fs.mkdirSync(path.dirname(out), { recursive: true });
 await esbuild.build({
-  entryPoints: [path.join(root, 'src/orchestration/deterministic-fixes.ts')],
+  entryPoints: [path.join(root, 'src/orchestration/repair/deterministic-fixes.ts')],
   bundle: true, platform: 'node', format: 'esm', outfile: out,
   external: ['@aws-sdk/*', '@smithy/*', '@strands-agents/*'],
 });
@@ -145,7 +145,7 @@ export default function AlertsScreen() { return <p className="filter-legend">x</
  * no longer contained.
  */
 {
-  const g = read('src/orchestration/graph.ts');
+  const g = read('src/orchestration/generate/graph.ts');
   check('the measured document is recorded with the first render',
     /let facts = await verify\(finalHtml\)\s*\n\s*measuredHtml = finalHtml/.test(g), true);
   check('and when an empty-container fill is adopted with its render',
@@ -164,7 +164,7 @@ export default function AlertsScreen() { return <p className="filter-legend">x</
  * Stated against the source: the property is that adopting the document and
  * claiming the defect are two conditions. Collapsing them again is the bug.
  */
-const graph = read('src/orchestration/graph.ts');
+const graph = read('src/orchestration/generate/graph.ts');
 const site = graph.slice(graph.indexOf('const settled = applyDeterministicFixes'),
   graph.indexOf('scoredFacts = facts'));
 check('the caller adopts on change, not on a claim',

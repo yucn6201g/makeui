@@ -21,10 +21,11 @@ import { execSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import fs from 'node:fs';
 import path from 'node:path';
+import { ADMIN_FILES, readAdminPanel, adminSection } from './lib/admin-source.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 execSync(
-  `npx esbuild "${path.join(root, 'src/utils/modelRows.ts')}" --bundle --platform=node --format=esm ` +
+  `npx esbuild "${path.join(root, 'src/utils/admin/modelRows.ts')}" --bundle --platform=node --format=esm ` +
     `--outfile="${path.join(root, 'node_modules/.cache/mr.test.mjs')}"`,
   { stdio: 'pipe', cwd: root }
 );
@@ -149,8 +150,8 @@ check('and no configuration lists only what ran',
 check('with nothing at all, there is nothing to draw', modelRows([], []), []);
 
 // --- and it is what the panel draws -----------------------------------------
-const panel = fs.readFileSync(path.join(root, 'src/components/AdminPanel.tsx'), 'utf8');
-const tab = panel.slice(panel.indexOf('function ModelsTab('), panel.indexOf('// --- Main AdminPanel ---'));
+const panel = readAdminPanel();
+const tab = adminSection('ModelsTab.tsx', 'function ModelsTab(');
 check('the tab draws one table', (tab.match(/<table className="adm-table"/g) ?? []).length, 1);
 check('with the five columns asked for',
   ['>モデル<', '>推論プロファイル<', '>トークン数<', '>リクエスト数<', '>金額<'].filter((h) => !tab.includes(h)), []);

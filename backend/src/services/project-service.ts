@@ -10,8 +10,8 @@ import { deleteChatMessages } from './chat-history.js';
 import { deleteProjectVersions, getVersionHistory, getVersion } from './version-history.js';
 import { deleteAllShares } from './project-shares.js';
 import { logger } from '../utils/logger.js';
-import { detectKind } from '../tools/framework-compile.js';
-import { readProjectFiles } from '../tools/project-transport.js';
+import { detectKind } from '../tools/project/framework-compile.js';
+import { readProjectFiles } from '../tools/project/project-transport.js';
 
 /**
  * A stored `outputKind` value, kept only if it is one this build understands.

@@ -24,7 +24,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const src = fs.readFileSync(path.join(root, 'src/orchestration/graph.ts'), 'utf8');
+const src = fs.readFileSync(path.join(root, 'src/orchestration/generate/graph.ts'), 'utf8');
 
 let pass = 0, fail = 0;
 const check = (name, got, want) => {

@@ -19,8 +19,8 @@ import path from 'node:path';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 for (const [src, out] of [
-  ['src/utils/scaffold.ts', 'dist-test/scaffold.test.mjs'],
-  ['src/utils/virtualFs.ts', 'dist-test/vfs-scaffold.test.mjs'],
+  ['src/utils/preview/scaffold.ts', 'dist-test/scaffold.test.mjs'],
+  ['src/utils/preview/virtualFs.ts', 'dist-test/vfs-scaffold.test.mjs'],
 ]) {
   execSync(
     `npx esbuild "${path.join(root, src)}" --bundle --platform=node --format=esm ` +

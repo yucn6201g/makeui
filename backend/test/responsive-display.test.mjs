@@ -11,10 +11,11 @@ import * as esbuild from 'esbuild';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import fs from 'node:fs';
+import { readFixups } from './lib/fixups-source.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 await esbuild.build({
-  entryPoints: [path.join(root, 'src/tools/responsive-display.ts')], bundle: true, platform: 'node', format: 'esm',
+  entryPoints: [path.join(root, 'src/tools/fixups/responsive-display.ts')], bundle: true, platform: 'node', format: 'esm',
   outfile: path.join(root, 'dist/responsive-display.test.mjs'), logLevel: 'error',
 });
 const { fixResponsiveDisplay } = await import(pathToFileURL(path.join(root, 'dist/responsive-display.test.mjs')).href);
@@ -86,7 +87,7 @@ const SCREEN = `<button className="da-btn da-btn--text da-filter-toggle" onClick
   const collapse = `.panel { display: flex; }\n@media (max-width: 767px) { .panel { display: none; } .panel--open { display: flex; } }`;
   check('a collapse that wins is left alone', fixResponsiveDisplay(new Map([['src/styles/globals.css', collapse]])).fixed, []);
 }
-const fx = fs.readFileSync(path.join(root, 'src/tools/framework-fixups.ts'), 'utf8');
+const fx = readFixups();
 check('fixupProject runs it', /apply\(fixResponsiveDisplay\(files\)\)/.test(fx), true);
 
 console.log(`\n${pass} passed, ${fail} failed`);

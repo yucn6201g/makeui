@@ -20,7 +20,7 @@ import path from 'node:path';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 execSync(
-  `npx esbuild "${path.join(root, 'src/orchestration/preset-conformance.ts')}" --bundle --platform=node ` +
+  `npx esbuild "${path.join(root, 'src/orchestration/presets/preset-conformance.ts')}" --bundle --platform=node ` +
     `--format=esm --outfile="${path.join(root, 'dist/rs.test.mjs')}"`,
   { stdio: 'pipe', cwd: root }
 );

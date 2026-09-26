@@ -1,5 +1,5 @@
 /**
- * Copies React's UMD builds into src/vendor as text, for esbuild to inline.
+ * Writes the React and Vue browser runtimes into src/vendor as text, for esbuild to inline.
  *
  * Browser verification runs the generated React project for real, and the page it
  * runs needs React in it. It cannot come from a CDN: the point of rendering inside
@@ -8,8 +8,9 @@
  * silently renders blank the day the fetch is blocked — which is exactly the
  * failure this whole change exists to remove.
  *
- * So the runtime is inlined at build time. React is a devDependency here: nothing
- * in the backend imports it, this script only reads two files out of it.
+ * So the runtime is inlined at build time. React and Vue are devDependencies here:
+ * nothing in the backend imports them. Vue's build is copied as it ships; React has
+ * no browser build since 19, so one is bundled (BUNDLES below).
  *
  *   node scripts/vendor-react.mjs
  */
@@ -23,31 +24,23 @@ const require = createRequire(import.meta.url);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const out = path.join(root, 'src/vendor');
 
-// React 19 dropped the UMD builds. The pin is ^18.3 for that reason, and this
-// message is what a future upgrade will read when it breaks.
-//
-// Located via the package manifest rather than the file itself: React's "exports"
-// map does not expose ./umd/*, so require.resolve on the UMD path fails even
-// though the file is sitting right there. ./package.json is always exported.
+// Files copied as they ship. Located via the package manifest rather than the
+// file itself, because a package's "exports" map need not expose its dist files;
+// ./package.json is always exported.
 const SOURCES = {
   // The FULL Vue build, not the runtime-only one: a generated .vue file is
   // compiled here and the result still needs Vue's own template runtime.
   'vue.global.txt': ['vue', 'dist/vue.global.prod.js'],
 };
 
-/**
- *
- * The legacy flag is imported for its side effect: the compiler emits
- * `import 'svelte/internal/flags/legacy'` for any component that does not use
- * runes, which includes a shell that only composes other components.
- */
+// Runtimes that have no browser build to copy, bundled into one.
 const BUNDLES = {
   /**
    * React, in ONE bundle that sets both globals.
    *
    * React 19 dropped the UMD builds, so the two files this used to copy do not
    * exist. esbuild can produce the same thing — an IIFE that puts React on the
-   * window — and the mechanism was already here for Svelte.
+   * window.
    *
    * One bundle, not two, and that is the whole trick. Bundling react-dom on its
    * own inlines its own private copy of react, so the hook dispatcher react-dom

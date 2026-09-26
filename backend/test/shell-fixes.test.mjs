@@ -7,10 +7,11 @@ import * as esbuild from 'esbuild';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import fs from 'node:fs';
+import { readFixups } from './lib/fixups-source.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 await esbuild.build({
-  entryPoints: [path.join(root, 'src/tools/shell-fixes.ts')], bundle: true, platform: 'node', format: 'esm',
+  entryPoints: [path.join(root, 'src/tools/fixups/shell-fixes.ts')], bundle: true, platform: 'node', format: 'esm',
   outfile: path.join(root, 'dist/shell-fixes.test.mjs'), logLevel: 'error',
 });
 const { fixFlowScreensInNav, fixCountBadges, COUNT_BADGE_MARKER } = await import(pathToFileURL(path.join(root, 'dist/shell-fixes.test.mjs')).href);
@@ -165,15 +166,15 @@ const VUE_ROUTES = `export const NAV_ITEMS: NavItem[] = [
     unguardedCheckouts(new Map([store, ['src/screens/PaymentCompleteScreen.tsx', '<p>ありがとうございました</p>']])), []);
   check('an app with no cart is not asked',
     unguardedCheckouts(new Map([['src/store/index.ts', 'export const state = { loans: [] }'], ['src/screens/CheckoutScreen.tsx', '<form />']])), []);
-  const audit = fs.readFileSync(path.join(root, 'src/orchestration/interaction-audit.ts'), 'utf8');
+  const audit = fs.readFileSync(path.join(root, 'src/orchestration/audit/interaction-audit.ts'), 'utf8');
   check('the shell audit reports it, naming the files', /id: 'flow-unguarded'[\s\S]{0,700}paths: unguarded/.test(audit), true);
 }
 
 // --- wiring and the contract that used to say the opposite ---------------------------
-const fx = fs.readFileSync(path.join(root, 'src/tools/framework-fixups.ts'), 'utf8');
+const fx = readFixups();
 check('all three run in fixupProject',
   [/apply\(fixFlowScreensInNav\(files\)\)/.test(fx), /apply\(fixCountBadges\(files\)\)/.test(fx), /apply\(fixIconBaseline\(files\)\)/.test(fx)], [true, true, true]);
-const contracts = fs.readFileSync(path.join(root, 'src/orchestration/prompt-contracts.ts'), 'utf8');
+const contracts = fs.readFileSync(path.join(root, 'src/orchestration/prompts/prompt-contracts.ts'), 'utf8');
 check('the contract no longer asks for every screen in the menu',
   /and every screen is reachable from it\. /.test(contracts), false);
 check('and names the screens that stay out of it', /A screen that needs something\s+first is NOT in it/.test(contracts), true);

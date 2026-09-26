@@ -18,7 +18,7 @@ import { isWithdrawnModel, WITHDRAWN_MODELS } from '../config/withdrawn.js';
  * per-name reads.
  */
 
-export interface TierInventory {
+interface TierInventory {
   /** `haiku` | `sonnet` | `opus`. */
   id: string;
   label: string;

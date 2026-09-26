@@ -13,50 +13,43 @@
 
 ```text
 backend/src/
-├── handlers/
-│   ├── lambda-handler.ts      # API Lambda エントリポイント（本番）
-│   ├── runtime-handler.ts     # AgentCore Runtime エントリポイント（本番）
-│   └── job-runner.ts          # ジョブ実行の唯一の実装（両者が共有）
-├── middleware/
-│   ├── auth.ts                # Cognito JWT 認証
-│   ├── guardrails.ts          # Bedrock Guardrails (入力フィルタ)
-│   └── rate-limiter.ts        # DynamoDB Rate Limiter
-├── orchestration/
-│   ├── graph.ts               # メイン生成パイプライン
-│   ├── workflow-router.ts     # 依頼内容からエージェント構成を決定
-│   ├── strands-design.ts      # デザイン設計 Graph（Strands Agents SDK）
-│   ├── interaction-audit.ts   # 「実際に動くか」の機械検査
-│   ├── design-audit.ts        # 「AI っぽさ」の機械検査（絵文字・既定パレット等）
-│   ├── design-system-audit.ts # 「一つの設計として通っているか」の計測（型・余白・色の体系）
-│   ├── preset-conformance.ts  # プリセット拘束の検査（var/rem を解決してから照合）
-│   ├── preset-foundation.ts   # プリセットのトークン・書体・フォーカスを公式値からコードで書き込む
-│   └── meta-orchestrator.ts   # 修正パイプライン
-├── tools/
-│   ├── memory-tool.ts         # AgentCore Memory
-│   ├── knowledge-base-tool.ts # Bedrock Knowledge Base
-│   ├── project-transport.ts   # 行フェンス（@@@makeui:file）の読み書き
-│   ├── framework-compile.ts   # 1ファイル → CommonJS。React / Vue の各コンパイラ
-│   ├── react-bundle.ts        # 生成プロジェクトを実行可能な1文書へ束ねる
-│   ├── stock-images.ts        # 写真の選定（被写体一致・品質順・重複排除）
-│   ├── subject-terms.ts       # 日本語 → 被写体（butter / warehouse …）の対応表
-│   ├── assign-images.ts       # 生成後に、写真を「その品目そのもの」へ機械的に割り当てる
-│   ├── subject-resolve.ts     # 用語表で引けない品名を Haiku 1回で被写体へ（閉じた一覧で検証）
-│   └── placeholder-art.ts     # 写真が無い枠に描く抽象パネル（決定的・ページの色に追従）
-├── services/
-│   ├── job-service.ts         # 非同期ジョブ管理・進捗・ストリーム断片 (DynamoDB)
-│   ├── project-service.ts     # プロジェクト管理 CRUD（メタは DynamoDB・本文は S3）
-│   ├── chat-history.ts        # プロジェクト別チャット履歴 (DynamoDB)
-│   ├── token-tracker.ts       # 応答からトークン数収集
-│   ├── token-usage.ts         # DynamoDB 使用量追跡
-│   ├── version-history.ts     # バージョン履歴（メタは DynamoDB・本文は S3）
-│   └── output-storage.ts      # S3 生成物保存 + 文書ストア（versions/ projects/ jobs/）
-├── config/
-│   ├── agentcore-config.ts    # SSM Parameter Store (5分キャッシュ)
-│   ├── frameworks.ts          # React / Vue の差分を集約（生成・編集・修復すべてがここを読む）
-│   └── model-config.ts        # Bedrock モデル設定 + resolveModel()
-└── utils/
-    ├── image-input.ts         # 添付画像を Bedrock の画像ブロックに変換する唯一の場所
-    └── logger.ts              # JSON 構造化ログ
+├── handlers/                     # 入口
+│   ├── lambda-handler.ts         #   API Lambda（認証・入力検証・ジョブ登録。LLM は呼ばない）
+│   ├── share-routes.ts           #   プロジェクト共有（メンバー・グループ）のルート
+│   ├── runtime-handler.ts        #   AgentCore Runtime の入口
+│   └── job-runner.ts             #   ジョブ実行の唯一の実装（Runtime と worker Lambda が共有）
+├── middleware/                   # 認証（Cognito JWT）・Guardrails・レート制限
+├── orchestration/                # 生成と編集の手順
+│   ├── generate/                 #   生成
+│   │   ├── graph.ts              #     生成パイプライン本体（generateUI）
+│   │   ├── plan.ts               #     プランモード（提案 + 設計仕様）
+│   │   ├── model-calls.ts        #     Bedrock 呼び出し（ストリーミング・画像・モデルの代替）
+│   │   ├── types.ts              #     進捗イベント・オプション・生成結果の型
+│   │   ├── strands-design.ts     #     デザイン設計 Graph（Strands Agents SDK）
+│   │   ├── workflow-router.ts    #     依頼内容からエージェント構成を決める
+│   │   ├── build-files.ts        #     ファイル単位の組み立て
+│   │   ├── requirements.ts       #     依頼を照合できる要件の一覧にする
+│   │   └── ……                    #     leaf-modules / signature / supplied-images / image-captions
+│   ├── edit/                     #   編集
+│   │   ├── meta-orchestrator.ts  #     編集パイプライン本体（modifyUI）
+│   │   ├── edit-files.ts         #     ファイル単位の編集
+│   │   └── ……                    #     change-diagnosis / plan-revision / refine-prompt
+│   ├── repair/                   #   修復（ファイル単位の修復、予算、決定的な修正、構文修復）
+│   ├── audit/                    #   検査と採点（scoring / interaction / design / runtime / visual-critic）
+│   ├── presets/                  #   デザインシステム（定義・準拠の計測・トークンの書き込み）
+│   └── prompts/                  #   プロンプトの契約・キャッシュ分割・返答文
+├── tools/                        # パイプラインが使う部品
+│   ├── project/                  #   転送形式（@@@makeui:file）、コンパイラ、実行可能な1文書への束ね
+│   ├── fixups/                   #   モデルを呼ばない決定的修復（framework-fixups が入口）
+│   ├── images/                   #   写真の選定・品目への割り当て・代替の図版
+│   ├── browser/                  #   AgentCore Browser での実行検査
+│   └── agent/                    #   AgentCore Memory・Knowledge Base
+├── services/                     # 永続化（DynamoDB / S3）：ジョブ、プロジェクト、バージョン、
+│                                 #   チャット、共有、グループ、使用量、トークン台帳
+├── config/                       # フレームワーク表、モデル、料金、effort、SSM、提供を止めているもの
+├── utils/                        # 画像入力、添付データ、ログ、失敗メッセージなど
+├── types/                        # .txt の import 宣言
+└── vendor/                       # React / Vue のブラウザ用ビルド（npm run vendor が node_modules から複製。git 管理外）
 ```
 
 ---
@@ -152,7 +145,7 @@ API Lambda に残っていた同名の環境変数は、読むコードが無く
 |---------|------|------|------|
 | GET | `/health` | 不要 | ヘルスチェック |
 | GET | `/models` | Cognito JWT | Haiku/Sonnet/Opus の実バージョンを Parameter Store から取得（推論プロファイル ARN のアカウント ID はマスクして返す） |
-| POST | `/refine-prompt` | Cognito JWT | 入力中のプロンプトを Haiku で添削し、画面の一覧（5つ以上）・各画面の中身・画面をまたぐ状態と操作・空／読み込み中／エラー・データの性格・製品固有の決まりごとの6点で具体化した案を返す（見た目・技術スタックは足さない）（`orchestration/refine-prompt.ts`） |
+| POST | `/refine-prompt` | Cognito JWT | 入力中のプロンプトを Haiku で添削し、画面の一覧（5つ以上）・各画面の中身・画面をまたぐ状態と操作・空／読み込み中／エラー・データの性格・製品固有の決まりごとの6点で具体化した案を返す（見た目・技術スタックは足さない）（`orchestration/edit/refine-prompt.ts`） |
 | POST | `/generate` | Cognito JWT | UI 生成 → 202 + jobId を即時返却 |
 | POST | `/plan` | Cognito JWT | プランモード。設計フェーズのみ実行し、提案文と設計仕様を返す。`image`・`images`・`imageCaptions`・`attachment` を受け付ける（2026-09-14 から `images` を読み、`imageCaptions` と `attachment` をジョブに渡す） |
 | — | — | — | Bedrock 呼び出しは `config/bedrock-client.ts` で生成し、**requestTimeout=10分**を必ず持ちます。以前は4モジュールが個別に生成し全て無制限で、1回の呼び出しが32分間無応答のままジョブが停止しました |
@@ -271,7 +264,7 @@ POST /generate { prompt, ..., approvedPlan: spec }
 以前は**その一文だけを新しい依頼として**設計フェーズ全体（専門家4体、約4.2万トークン）をやり直していました。前の提案は送られず、
 出来上がるのは「何もない製品に画面を1つ足す」プランでした。
 
-いまはフロントが、直前のアシスタント発言が提案であれば `revision: { spec, plan, prompt }` を添えます（`utils/planRevision.ts`）。
+いまはフロントが、直前のアシスタント発言が提案であれば `revision: { spec, plan, prompt }` を添えます（`utils/chat/planRevision.ts`）。
 `runPlan` は設計フェーズを回さず、**1回の呼び出し**（`plan:revise`、`plan-revision.ts`）で次の2つを書かせます:
 
 - `<<<REVISIONS>>>` — 仕様のどこがどう変わるか（画面・操作・状態・値）。これを**仕様の先頭**に「下の仕様より優先」として積みます。
@@ -604,7 +597,7 @@ tool({
 > **現状.** モードは `draft`（下書き）と `checked`（仕上げ）の2つで、どちらも
 > `perFileBuild: false` です。コード生成は Step 2b の単一呼び出しで行います（理由は後述の
 > 「少ないトークンで品質を出す」）。以下は、1ファイルずつ生成する経路
-> （`orchestration/build-files.ts`）の設計と、それを試したときの実測です。経路自体は残してあり、
+> （`orchestration/generate/build-files.ts`）の設計と、それを試したときの実測です。経路自体は残してあり、
 > `effort.ts` の `perFileBuild` で切り替えられます。
 
 有効にしたときは、プロジェクトを**1文書まとめてではなく1ファイルずつ**生成します。
@@ -1887,7 +1880,7 @@ import するには改名するしかない。これで `imagery-missing` は 15
 （ビルド契約にも、修復指示にも、その言葉で書かれていました）。
 
 Tab は「クリックで反応する要素が、すべてマウス無しで辿れるか」として検査するようにしました。
-判定は `tools/keyboard-reach.ts` にあり、同じモジュールが決定的な修復も出すので、
+判定は `tools/fixups/keyboard-reach.ts` にあり、同じモジュールが決定的な修復も出すので、
 以前はモデル呼び出しが要った要件が、たいていそもそも指摘として現れなくなります。
 
 **触らない形が2つ**あり、素朴な走査が見つける54件のうち22件がそれです。
@@ -1927,7 +1920,7 @@ Tab は「クリックで反応する要素が、すべてマウス無しで辿�
 元の宣言がファイルに残るので監査が読んでまた報告します — 描画は直って報告は残る修復は、
 動かなかった修復と見分けがつきません。
 
-「入力欄のCSS規則はどれか」の定義は `tools/form-controls.ts` に1つだけ置き、監査と修復で共有しています。
+「入力欄のCSS規則はどれか」の定義は `tools/fixups/form-controls.ts` に1つだけ置き、監査と修復で共有しています。
 
 #### はみ出し 3px は、直せる階級ではなかった
 
@@ -2081,7 +2074,7 @@ src/data/products.ts   ストック写真の URL 11本
 実行時監査は `nav-unstyled` としてこれを報告し続けており、その注記自体が原因を書いています
 —「every one used nav classes that no stylesheet defines」。モデルに書かせています。**それでも57%です。**
 
-そこで規則のほうを書きます（`tools/nav-css.ts`）。**リストではなく `<nav>` から下る**セレクタにするのが要点です:
+そこで規則のほうを書きます（`tools/fixups/nav-css.ts`）。**リストではなく `<nav>` から下る**セレクタにするのが要点です:
 リストにはクラスが無いことが多いので、`.app-nav ul` / `.app-nav a` と書きます。クラスすら無ければ `nav ul` です。
 これで2つの形が1つの生成器で済み、かつ安全です — `.app-nav` の下の規則は、ナビゲーションの外には届きません。
 
@@ -2107,7 +2100,7 @@ src/data/products.ts   ストック写真の URL 11本
 監査（`utility-classes`）はこれを何週間も報告し続け、モデルに「部品のクラスに書き換えろ」と指示していました。
 **それでも24%です。** 報告では閉じませんでした。
 
-そこで **クラスのほうを効かせます**（`tools/utility-css.ts`）。使われているクラスにだけ CSS を書きます。
+そこで **クラスのほうを効かせます**（`tools/fixups/utility-css.ts`）。使われているクラスにだけ CSS を書きます。
 
 | 種類 | 値の決め方 |
 |---|---|

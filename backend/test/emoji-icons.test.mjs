@@ -13,10 +13,11 @@ import { execSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import fs from 'node:fs';
 import path from 'node:path';
+import { readFixups } from './lib/fixups-source.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 execSync(
-  `npx esbuild "${path.join(root, 'src/tools/emoji-icons.ts')}" --bundle --platform=node --format=esm ` +
+  `npx esbuild "${path.join(root, 'src/tools/fixups/emoji-icons.ts')}" --bundle --platform=node --format=esm ` +
     `--outfile="${path.join(root, 'dist/emoji-icons.test.mjs')}"`,
   { stdio: 'pipe', cwd: root }
 );
@@ -66,7 +67,7 @@ const mixed = replaceEmoji('src/screens/DealScreen.tsx', '<div class="toast"> âœ
 check('no emoji survive a mixed file', EMOJI.test(mixed.body), false);
 
 // --- wiring ---------------------------------------------------------------------------------
-const fixups = read('src/tools/framework-fixups.ts');
+const fixups = readFixups();
 check('it runs inside fixupProject, so after the build, before judging a repair, and after an edit',
   /export function fixupProject[\s\S]*for \(const \[path, body\] of readProjectFiles\(out\)\) \{\s*const e = replaceEmoji\(path, body, kind\)/.test(fixups), true);
 check('last, on the files as the other fixups left them', fixups.lastIndexOf('replaceEmoji(path, body, kind)') > fixups.lastIndexOf('const r = fixupFile(kind, path, body)'), true);

@@ -26,18 +26,18 @@ const check = (name, got, want) => {
   ok ? pass++ : fail++;
 };
 
-const frame = read('src/components/LiveFrame.tsx');
-check('the comparison frame carries the preview\'s navigation guard', /import \{ PREVIEW_GUARD_SCRIPT \} from '\.\.\/utils\/previewGuard'/.test(frame), true);
+const frame = read('src/components/version-diff/LiveFrame.tsx');
+check('the comparison frame carries the preview\'s navigation guard', /import \{ PREVIEW_GUARD_SCRIPT \} from '\.\.\/\.\.\/utils\/preview\/previewGuard'/.test(frame), true);
 check('ahead of the sync script, in every document it writes', /const FRAME_SCRIPTS = PREVIEW_GUARD_SCRIPT \+ SYNC_SCRIPT;/.test(frame), true);
 check('head, body or neither', (frame.match(/FRAME_SCRIPTS/g) ?? []).length, 4);
 check('nothing writes SYNC_SCRIPT alone any more', /\+ SYNC_SCRIPT\)|SYNC_SCRIPT \+ doc/.test(frame), false);
 check('still sandboxed to an opaque origin', /sandbox="allow-scripts"/.test(frame), true);
 
-const guard = read('src/utils/previewGuard.ts');
+const guard = read('src/utils/preview/previewGuard.ts');
 check('the guard performs a fragment link in place', /if \(verdict === 'hash'\) \{\s*e\.preventDefault\(\);[\s\S]{0,300}location\.hash = frag;/.test(guard), true);
 
 // Every frame that runs a generated app a person can click through has it.
-check('the editing preview has it', /PREVIEW_GUARD_SCRIPT/.test(read('src/components/Preview.tsx')), true);
+check('the editing preview has it', /PREVIEW_GUARD_SCRIPT/.test(read('src/components/workspace/Preview.tsx')), true);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

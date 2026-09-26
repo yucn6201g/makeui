@@ -15,7 +15,7 @@ import path from 'node:path';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const out = path.join(root, 'dist-test/request-limits.test.mjs');
 fs.mkdirSync(path.dirname(out), { recursive: true });
-await esbuild.build({ entryPoints: [path.join(root, 'src/utils/requestLimits.ts')], bundle: true, platform: 'node', format: 'esm', outfile: out });
+await esbuild.build({ entryPoints: [path.join(root, 'src/utils/requests/requestLimits.ts')], bundle: true, platform: 'node', format: 'esm', outfile: out });
 const { promptProblem, oversizedImages, MAX_PROMPT_CHARS, MAX_IMAGE_BYTES } = await import(pathToFileURL(out).href);
 
 let pass = 0, fail = 0;

@@ -23,6 +23,7 @@ import * as esbuild from 'esbuild';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import fs from 'node:fs';
+import { fixupsEntry, readFixups } from './lib/fixups-source.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const build = async (entry, out) => {
@@ -32,8 +33,8 @@ const build = async (entry, out) => {
   });
   return import(pathToFileURL(path.join(root, out)).href);
 };
-const { navCss, listIsStyled, commonRadius } = await build('src/tools/nav-css.ts', 'dist/nc.test.mjs');
-const { fixUnstyledNav } = await build('src/tools/framework-fixups.ts', 'dist/ncf.test.mjs');
+const { navCss, listIsStyled, commonRadius } = await build('src/tools/fixups/nav-css.ts', 'dist/nc.test.mjs');
+const { fixUnstyledNav } = await build(fixupsEntry(), 'dist/ncf.test.mjs');
 
 let pass = 0, fail = 0;
 const check = (name, got, want) => {
@@ -170,7 +171,7 @@ check('a scoped style counts',
 }
 
 // --- the wiring -------------------------------------------------------------------
-const fixups = fs.readFileSync(path.join(root, 'src/tools/framework-fixups.ts'), 'utf8');
+const fixups = readFixups();
 check('the project pass runs it', fixups.includes('apply(fixUnstyledNav(files))'), true);
 // Before the utility block, so the project's own rules stay above it.
 check('and before the utility block',

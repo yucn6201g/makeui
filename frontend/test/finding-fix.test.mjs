@@ -19,10 +19,11 @@ import { execSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import fs from 'node:fs';
+import { APP_FILES, readApp } from './lib/app-source.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 execSync(
-  `npx esbuild "${path.join(root, 'src/utils/findingFix.ts')}" --bundle --platform=node --format=esm ` +
+  `npx esbuild "${path.join(root, 'src/utils/chat/findingFix.ts')}" --bundle --platform=node --format=esm ` +
     `--outfile="${path.join(root, 'dist-test/ff.test.mjs')}"`,
   { stdio: 'pipe', cwd: root }
 );
@@ -37,7 +38,7 @@ const check = (name, got, want) => {
   ok ? pass++ : fail++;
 };
 
-const app = fs.readFileSync(path.join(root, 'src/App.tsx'), 'utf8');
+const app = readApp();
 const css = fs.readFileSync(path.join(root, 'src/index.css'), 'utf8');
 
 // --- what the button sends -----------------------------------------------------

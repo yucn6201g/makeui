@@ -13,7 +13,7 @@ import fs from 'node:fs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 execSync(
-  `npx esbuild "${path.join(root, 'src/utils/previewFetch.ts')}" --bundle --platform=node --format=esm ` +
+  `npx esbuild "${path.join(root, 'src/utils/preview/previewFetch.ts')}" --bundle --platform=node --format=esm ` +
     `--outfile="${path.join(root, 'dist-test/preview-fetch.test.mjs')}"`,
   { stdio: 'pipe', cwd: root }
 );
@@ -79,7 +79,7 @@ const tick = () => new Promise((r) => setTimeout(r, 0));
 const hook = fs.readFileSync(path.join(root, 'src/hooks/useProjects.ts'), 'utf8');
 check('a throttle or a server error is reported as transient', /if \(res\.status === 429 \|\| res\.status >= 500\) throw new TransientPreviewError/.test(hook), true);
 check('and so is the network', /catch \{\s*throw new TransientPreviewError\('network'\)/.test(hook), true);
-const card = fs.readFileSync(path.join(root, 'src/components/ProjectThumbnail.tsx'), 'utf8');
+const card = fs.readFileSync(path.join(root, 'src/components/project-list/ProjectThumbnail.tsx'), 'utf8');
 check('the card asks through the queue', /fetchPreviewPolitely\(\(\) => fetchHtml\(projectId\)\)/.test(card), true);
 
 console.log(`\n${pass} passed, ${fail} failed`);

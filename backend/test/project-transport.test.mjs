@@ -27,8 +27,8 @@ const build = (src, out) => {
   return import(pathToFileURL(path.join(root, out)).href);
 };
 
-const t = await build('src/tools/project-transport.ts', 'dist/pt.test.mjs');
-const { detectKind: detectKindBE } = await build('src/tools/framework-compile.ts', 'dist/fcb.test.mjs');
+const t = await build('src/tools/project/project-transport.ts', 'dist/pt.test.mjs');
+const { detectKind: detectKindBE } = await build('src/tools/project/framework-compile.ts', 'dist/fcb.test.mjs');
 
 let pass = 0, fail = 0;
 const check = (name, got, want) => {

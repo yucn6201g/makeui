@@ -68,7 +68,7 @@ const check = (name, got, want) => {
   check('and leaves the non-React one identical', decodeReactErrors([raw, other])[1], other);
 
   // Applied where the walk records them, so everything downstream reads the sentence.
-  const verify = read('src/tools/browser-verify.ts');
+  const verify = read('src/tools/browser/browser-verify.ts');
   /*
    * Every site that assigns a LIST, which is what `consoleErrors: [` picks out —
    * the interface's `string[]` declaration and the `facts.consoleErrors.length`
@@ -82,7 +82,7 @@ const check = (name, got, want) => {
 
 // --- 3. the clamp is recorded, not moved --------------------------------------------------
 {
-  const scoring = read('src/orchestration/scoring.ts');
+  const scoring = read('src/orchestration/audit/scoring.ts');
   check('the clamp is still 30..99', /Math\.max\(30, Math\.min\(99, this\.raw\(\)\)\)/.test(scoring), true);
   check('and the unclamped value has a name', /raw\(\): number/.test(scoring), true);
   /*
@@ -92,7 +92,7 @@ const check = (name, got, want) => {
   check('it is left out of what the thread stores',
     /Omit<ScoreBreakdown, 'total' \| 'raw'>/.test(scoring), true);
 
-  const graph = read('src/orchestration/graph.ts');
+  const graph = read('src/orchestration/generate/graph.ts');
   check('the pipeline logs it', /raw: scored\.raw/.test(graph), true);
   check('only when it differs from the score', /scored\.raw !== finalScore/.test(graph), true);
 }

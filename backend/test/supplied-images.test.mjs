@@ -16,7 +16,7 @@ import path from 'node:path';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 execSync(
-  `npx esbuild "${path.join(root, 'src/orchestration/supplied-images.ts')}" --bundle --platform=node --format=esm ` +
+  `npx esbuild "${path.join(root, 'src/orchestration/generate/supplied-images.ts')}" --bundle --platform=node --format=esm ` +
     `--outfile="${path.join(root, 'dist/supplied-images.test.mjs')}" --external:@aws-sdk/* --external:@smithy/*`,
   { stdio: 'pipe', cwd: root }
 );
@@ -103,15 +103,16 @@ const modifyJob = runner.slice(runner.indexOf("jobType === 'modify'"), runner.in
 check('the edit runner hands the pictures and descriptions to the edit', /images: await resolveJobImages\(input\)/.test(modifyJob) && /imageCaptions:/.test(modifyJob), true);
 
 // --- wiring: the plan and the edit read them -------------------------------------------------
-const graph = read('src/orchestration/graph.ts');
-const plan = graph.slice(graph.indexOf('async function runPlan('));
+const graph = read('src/orchestration/generate/graph.ts');
+const planSrc = read('src/orchestration/generate/plan.ts');
+const plan = planSrc.slice(planSrc.indexOf('async function runPlan('));
 check('the plan prepares the pictures', /const supplied = await prepareSuppliedImages\(\{/.test(plan), true);
 check('and the design phase is told what to place and what the reference is',
   /imageCaption: supplied\.referenceCaption,\s*contentImages: supplied\.contentContext,/.test(plan), true);
 check('a plan for an existing project hears the data file and the pictures too', /dataContext: `\$\{dataContext\}\$\{supplied\.contentContext\}/.test(plan), true);
 check('the build passes a lone picture\'s description', /let referenceCaption = singleImageCaption\(images, imageCaptions\)/.test(graph) && /imageCaption: referenceCaption,/.test(graph), true);
 
-const edit = read('src/orchestration/meta-orchestrator.ts');
+const edit = read('src/orchestration/edit/meta-orchestrator.ts');
 check('the edit prepares the pictures', /const supplied = await prepareSuppliedImages\(\{/.test(edit), true);
 check('the reference is the one the edit sees', /const imageInput = supplied\.reference/.test(edit), true);
 check('placed pictures travel in the edit context, so the per-file edit can place them',

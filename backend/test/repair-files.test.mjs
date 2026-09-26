@@ -13,7 +13,7 @@ import path from 'node:path';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 execSync(
-  `npx esbuild "${path.join(root, 'src/orchestration/repair-files.ts')}" --bundle --platform=node --format=esm ` +
+  `npx esbuild "${path.join(root, 'src/orchestration/repair/repair-files.ts')}" --bundle --platform=node --format=esm ` +
     `--outfile="${path.join(root, 'dist/rf.test.mjs')}" --external:@aws-sdk/* --external:@smithy/*`,
   { stdio: 'inherit', cwd: root }
 );

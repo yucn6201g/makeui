@@ -6,7 +6,7 @@ import {
 import { logger } from '../utils/logger.js';
 import { pricingTable } from '../config/pricing.js';
 
-export interface RateLimitResult {
+interface RateLimitResult {
   allowed: boolean;
   retryAfter?: number;
   remainingPoints?: number;

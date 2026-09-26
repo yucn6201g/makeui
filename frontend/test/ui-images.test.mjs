@@ -17,6 +17,7 @@ import * as esbuild from 'esbuild';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import fs from 'node:fs';
 import path from 'node:path';
+import { APP_FILES, readApp } from './lib/app-source.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
@@ -24,7 +25,7 @@ const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
 const out = path.join(root, 'dist-test/ui-images.test.mjs');
 fs.mkdirSync(path.dirname(out), { recursive: true });
 await esbuild.build({
-  entryPoints: [path.join(root, 'src/utils/uiImages.ts')],
+  entryPoints: [path.join(root, 'src/utils/requests/uiImages.ts')],
   bundle: true, platform: 'node', format: 'esm', outfile: out,
 });
 const { uiImagesForSend, roomForImages, MAX_UI_IMAGES } = await import(pathToFileURL(out).href);
@@ -101,7 +102,7 @@ check('the backend declares a bound', Boolean(declared), true);
 check('and the composer refuses at the same number', Number(declared[1]), MAX_UI_IMAGES);
 
 // --- the composer uses the rule rather than restating it ----------------------
-const app = read('src/App.tsx');
+const app = readApp();
 check('the composer calls the shared rule', /uiImagesForSend\(image, extraImages\)/.test(app), true);
 check('and the shared ceiling', /roomForImages\(image, extraImages\)/.test(app), true);
 // The inline version this replaced, which must not come back: it decided the
@@ -131,7 +132,7 @@ check('and each extra is one along', /value=\{imageNotes\[i \+ 1\] \?\? ''\}/.te
 // The same offset the send uses, which is what makes the two agree.
 // Now in `captionsForSend`, which every send path calls with the composer's notes.
 check('the send reads them in that order',
-  /picked\.images\.map\(\(_v, i\) => notes\[i\] \?\? ''\)/.test(read('src/utils/uiImages.ts')) && /captionsForSend\(picked, imageNotes\)/.test(app), true);
+  /picked\.images\.map\(\(_v, i\) => notes\[i\] \?\? ''\)/.test(read('src/utils/requests/uiImages.ts')) && /captionsForSend\(picked, imageNotes\)/.test(app), true);
 /*
  * And removing a picture removes ITS note, not the last one. Dropping the
  * picture alone slides every later note onto the wrong photograph — the same
@@ -161,12 +162,12 @@ check('and sent only when something was written',
   check('nothing written, nothing sent', [captionsForSend({ image: A }, ['  ']), captionsForSend({ images: [A, B] }, [])], [undefined, undefined]);
   check('no picture, no descriptions', captionsForSend({}, ['orphan']), undefined);
 
-  const app = read('src/App.tsx');
+  const app = readApp();
   check('the edit sends the picture list and descriptions',
     /modify\(displayHtml, rawText, [^;]*pickedForEdit\.image, effort, dataFile \?\? undefined, pickedForEdit\.images, captionsForSend\(pickedForEdit, imageNotes\)\)/.test(app), true);
   check('the approved plan builds with them, as an edit or a build',
     /pickedForBuild\.images, notesForBuild\);[\s\S]{0,200}generate\([^;]*pickedForBuild\.images, notesForBuild\)/.test(app), true);
-  // Followed by the proposal being amended, when there is one (utils/planRevision.ts).
+  // Followed by the proposal being amended, when there is one (utils/chat/planRevision.ts).
   check('the plan is asked with the descriptions', /proposePlan\([^;]*picked\.images, captionsForSend\(picked, imageNotes\)(?:, revision)?\)/.test(app), true);
   check('no path sends only the first picture any more', /image \?\? undefined, effort/.test(app), false);
   check('the edit request carries them', /body\.images = images/.test(read('src/hooks/useModify.ts')) && /body\.imageCaptions = imageCaptions/.test(read('src/hooks/useModify.ts')), true);

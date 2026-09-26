@@ -17,10 +17,11 @@ import { execSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import fs from 'node:fs';
 import path from 'node:path';
+import { ADMIN_FILES, readAdminPanel, adminSection } from './lib/admin-source.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 execSync(
-  `npx esbuild "${path.join(root, 'src/utils/chartSeries.ts')}" --bundle --platform=node --format=esm ` +
+  `npx esbuild "${path.join(root, 'src/utils/admin/chartSeries.ts')}" --bundle --platform=node --format=esm ` +
     `--outfile="${path.join(root, 'node_modules/.cache/cs.test.mjs')}"`,
   { stdio: 'pipe', cwd: root }
 );
@@ -149,7 +150,7 @@ check('the tallest month is the full height', two[0].percent, 100);
 check('and the others are its share', two[1].percent, 25);
 
 // --- and it is what the chart draws -------------------------------------------
-const panel = fs.readFileSync(path.join(root, 'src/components/AdminPanel.tsx'), 'utf8');
+const panel = readAdminPanel();
 const css = fs.readFileSync(path.join(root, 'src/index.css'), 'utf8');
 const chart = panel.slice(panel.indexOf('function TrendChart('), panel.indexOf('function PriceTable('));
 check('the chart uses this function', /chartBars\(series, order, metric, labelFor\)/.test(chart), true);
@@ -187,7 +188,7 @@ check('the breakdown and the highlight are the same month',
   /active\?\.month === b\.month/.test(chart), true);
 
 // --- side by side, trend first -------------------------------------------------
-const tab = panel.slice(panel.indexOf('function ModelsTab('), panel.indexOf('// --- Main AdminPanel ---'));
+const tab = adminSection('ModelsTab.tsx', 'function ModelsTab(');
 check('the two blocks share a row', /<div className="adm-modelrow">/.test(tab), true);
 check('with the trend before the price table',
   tab.indexOf('の推移') < tab.indexOf('価格表'), true);

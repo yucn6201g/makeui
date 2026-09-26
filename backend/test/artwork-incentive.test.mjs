@@ -28,8 +28,8 @@ const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
 const entry = path.join(root, 'dist/artwork-entry.ts');
 fs.mkdirSync(path.dirname(entry), { recursive: true });
 fs.writeFileSync(entry, [
-  "export { scoreHtml } from '../src/orchestration/scoring.js';",
-  "export { auditInteractivity } from '../src/orchestration/interaction-audit.js';",
+  "export { scoreHtml } from '../src/orchestration/audit/scoring.js';",
+  "export { auditInteractivity } from '../src/orchestration/audit/interaction-audit.js';",
   "export { FRAMEWORKS } from '../src/config/frameworks.js';",
 ].join('\n'));
 execSync(
@@ -92,7 +92,7 @@ function withArtworkUnrendered() {
    * means the score rewarding what the audit reports — which is the thing this
    * file exists about.
    */
-  const scoring = read('src/orchestration/scoring.ts');
+  const scoring = read('src/orchestration/audit/scoring.ts');
   check('the score asks the audit', /renderedFrom\(files, 'src\/components\/illustrations\/'/.test(scoring), true);
   check('and does not count the files itself',
     /paths\.filter\([^)]*illustrations[^)]*\)\.length/.test(scoring), false);
@@ -114,7 +114,7 @@ function withArtworkUnrendered() {
   check('nor any component files', /\.tsx|\.vue|\.svelte/.test(found?.note ?? ''), false);
   check('while the instruction still does', /src\/components\/illustrations\//.test(found?.instruction ?? ''), true);
 
-  const graph = read('src/orchestration/graph.ts');
+  const graph = read('src/orchestration/generate/graph.ts');
   check('the reply prefers the note', /note: readerNote\(d\)/.test(graph), true);
   check('and nothing shows the raw instruction any more',
     /note: shortNote\(d\.instruction\)/.test(graph), false);
@@ -123,7 +123,7 @@ function withArtworkUnrendered() {
 
 // --- the prompt says where a piece goes ------------------------------------------------
 {
-  const prompt = read('src/orchestration/prompt-contracts.ts');
+  const prompt = read('src/orchestration/prompts/prompt-contracts.ts');
   const at = prompt.indexOf('src/components/illustrations/ holds the artwork');
   check('the IMAGERY section was found', at > 0, true);
   /*
@@ -157,7 +157,7 @@ function withArtworkUnrendered() {
    * the four: the four names anyone picks before knowing where they go, which is
    * exactly what the artwork section was changed to prevent.
    */
-  const prompt = read('src/orchestration/prompt-contracts.ts');
+  const prompt = read('src/orchestration/prompts/prompt-contracts.ts');
   const at = prompt.indexOf('ICONS — src/components/icons/ is mandatory');
   check('the ICONS section was found', at > 0, true);
   const section = prompt.slice(at, at + 1600);
@@ -166,7 +166,7 @@ function withArtworkUnrendered() {
   check('the places are named', ['nav item', 'button', 'empty state'].filter((w) => !section.includes(w)), []);
 
   // And the score is still counting files here, on the measurement that says so.
-  const scoring = read('src/orchestration/scoring.ts');
+  const scoring = read('src/orchestration/audit/scoring.ts');
   check('the icon term still counts svg occurrences', /const svgCount = /.test(scoring), true);
   check('and says why it was left alone', /50 of the 65/.test(scoring), true);
   check('while recording the run that disagrees',

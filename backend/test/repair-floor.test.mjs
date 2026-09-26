@@ -35,7 +35,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const out = path.join(root, 'dist/repair-floor.test.mjs');
 fs.mkdirSync(path.dirname(out), { recursive: true });
 await esbuild.build({
-  entryPoints: [path.join(root, 'src/orchestration/repair-budget.ts')],
+  entryPoints: [path.join(root, 'src/orchestration/repair/repair-budget.ts')],
   bundle: true, platform: 'node', format: 'esm', outfile: out,
   external: ['@aws-sdk/*', '@smithy/*', '@strands-agents/*'],
 });
@@ -139,7 +139,7 @@ check('and the cuts are all second or third passes',
   [...new Set(cut.map(([n]) => n))].sort(), [2, 3]);
 
 // --- the rule as the loop states it -------------------------------------------
-const graph = fs.readFileSync(path.join(root, 'src/orchestration/graph.ts'), 'utf8');
+const graph = fs.readFileSync(path.join(root, 'src/orchestration/generate/graph.ts'), 'utf8');
 check('the loop consults the floor', /if \(pass > 1 && defects\.length <= REPAIR_FLOOR\)/.test(graph), true);
 // Against the attemptable set, not every open defect — the two differ, and the
 // measurement above is of the first.

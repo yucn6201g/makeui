@@ -24,6 +24,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ADMIN_FILES, readAdminPanel } from './lib/admin-source.mjs';
+import { APP_FILES, readApp } from './lib/app-source.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const css = fs.readFileSync(path.join(root, 'src/index.css'), 'utf8').replace(/\r\n/g, '\n');
@@ -112,18 +114,18 @@ for (const t of ['--control-h-sm: 24px', '--control-h: 28px', '--control-h-lg: 3
 
 // --- the viewport chooser is the same control as Preview/Code ---------------------------------------
 {
-  const app = fs.readFileSync(path.join(root, 'src/App.tsx'), 'utf8');
+  const app = readApp();
   check('a thumb, not a tinted chip', /<SlidingIndicator active=\{device\} \/>/.test(app), true);
   check('on the same grey track', rules.filter(([s]) => s === '.app__viewport-chips').some(([, b]) => /background: var\(--figma-bg-track\)/.test(b)), true);
 }
 
 // --- words: one label per action ---------------------------------------------------------------
 {
-  const tsx = ['src/App.tsx', 'src/components/ProjectList.tsx', 'src/components/AdminPanel.tsx', 'src/components/CodeEditor.tsx',
-    'src/components/ShareButton.tsx', 'src/components/VersionDiff.tsx'].map((f) => fs.readFileSync(path.join(root, f), 'utf8')).join('\n');
+  const tsx = [...APP_FILES, 'src/components/project-list/ProjectList.tsx', ...ADMIN_FILES, 'src/components/workspace/CodeEditor.tsx',
+    'src/components/workspace/ShareButton.tsx', 'src/components/version-diff/VersionDiff.tsx'].map((f) => fs.readFileSync(path.join(root, f), 'utf8')).join('\n');
   // 取消 and やめる stood beside キャンセル for the same thing: stepping back out of a confirmation or an edit.
   check('backing out is always キャンセル', [/^\s*取消\s*$/m.test(tsx), /^\s*やめる\s*$/m.test(tsx)], [false, false]);
-  const admin = fs.readFileSync(path.join(root, 'src/components/AdminPanel.tsx'), 'utf8');
+  const admin = readAdminPanel();
   check('a row\'s name and budget are edited by the same control, 編集',
     /className="adm-btn adm-btn--link adm-btn--sm"[\s\S]{0,200}ユーザー名を編集`\}\s*>\s*編集/.test(admin), true);
 }

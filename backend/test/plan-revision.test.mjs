@@ -13,7 +13,7 @@ import fs from 'node:fs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 await esbuild.build({
-  entryPoints: [path.join(root, 'src/orchestration/plan-revision.ts')], bundle: true, platform: 'node', format: 'esm',
+  entryPoints: [path.join(root, 'src/orchestration/edit/plan-revision.ts')], bundle: true, platform: 'node', format: 'esm',
   outfile: path.join(root, 'dist/plan-revision.test.mjs'), logLevel: 'error',
 });
 const pr = await import(pathToFileURL(path.join(root, 'dist/plan-revision.test.mjs')).href);
@@ -68,7 +68,7 @@ const PLAN = '## 作るもの\nレディースアパレルの EC サイトです
 }
 
 // --- wiring ------------------------------------------------------------------------
-const graph = fs.readFileSync(path.join(root, 'src/orchestration/graph.ts'), 'utf8');
+const graph = fs.readFileSync(path.join(root, 'src/orchestration/generate/plan.ts'), 'utf8');
 const planBody = graph.slice(graph.indexOf('async function runPlan('), graph.indexOf('const PLAN_WRITER_SYSTEM'));
 check('runPlan amends before it would run the design phase',
   planBody.indexOf('options.revision') > -1 && planBody.indexOf('options.revision') < planBody.indexOf('runDesignSwarm({'), true);

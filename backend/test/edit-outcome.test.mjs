@@ -30,7 +30,7 @@ import path from 'node:path';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 execSync(
-  `npx esbuild "${path.join(root, 'src/orchestration/edit-files.ts')}" --bundle --platform=node --format=esm ` +
+  `npx esbuild "${path.join(root, 'src/orchestration/edit/edit-files.ts')}" --bundle --platform=node --format=esm ` +
     `--outfile="${path.join(root, 'dist/eo.test.mjs')}" --external:@aws-sdk/* --external:@smithy/*`,
   { stdio: 'pipe', cwd: root }
 );

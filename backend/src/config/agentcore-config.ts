@@ -56,7 +56,7 @@ export async function getParameter(name: string): Promise<string> {
  * disappears while any field still names it takes Memory and the KnowledgeBase
  * down with it.
  */
-export interface AgentCoreConfig {
+interface AgentCoreConfig {
   memoryId: string;
   knowledgeBaseId: string;
   dataSourceId: string;
@@ -72,7 +72,7 @@ export async function getAgentCoreConfig(): Promise<AgentCoreConfig> {
   return { memoryId, knowledgeBaseId, dataSourceId };
 }
 
-export interface ModelConfig {
+interface ModelConfig {
   sonnetId: string;
   opusId: string;
   haikuId: string;
@@ -95,7 +95,7 @@ export async function getModelConfig(): Promise<ModelConfig> {
   return { sonnetId, opusId, haikuId, defaultModel };
 }
 
-export interface PresetConfig {
+interface PresetConfig {
   presetName: string;
   kbPrefix: string;
 }
@@ -125,7 +125,7 @@ export async function getPresetConfig(preset?: string): Promise<PresetConfig> {
   }
 }
 
-export interface GuardrailConfig {
+interface GuardrailConfig {
   guardrailId: string;
   guardrailVersion: string;
 }

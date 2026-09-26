@@ -21,9 +21,10 @@
 import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
 import path from 'node:path';
+import { ADMIN_FILES, readAdminPanel, adminSection } from './lib/admin-source.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const panel = fs.readFileSync(path.join(root, 'src/components/AdminPanel.tsx'), 'utf8');
+const panel = readAdminPanel();
 const hook = fs.readFileSync(path.join(root, 'src/hooks/useAdmin.ts'), 'utf8');
 const css = fs.readFileSync(path.join(root, 'src/index.css'), 'utf8');
 
@@ -44,7 +45,7 @@ const rule = (sel) => {
   return out.join('\n');
 };
 
-const tab = panel.slice(panel.indexOf('function ModelsTab('), panel.indexOf('// --- Main AdminPanel ---'));
+const tab = adminSection('ModelsTab.tsx', 'function ModelsTab(');
 
 // --- where it sits ----------------------------------------------------------
 check('the tab exists', tab.length > 0, true);

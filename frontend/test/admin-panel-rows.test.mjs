@@ -29,10 +29,11 @@
 import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
 import path from 'node:path';
+import { ADMIN_FILES, readAdminPanel } from './lib/admin-source.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const css = fs.readFileSync(path.join(root, 'src/index.css'), 'utf8');
-const panel = fs.readFileSync(path.join(root, 'src/components/AdminPanel.tsx'), 'utf8');
+const panel = readAdminPanel();
 const admin = fs.readFileSync(path.join(root, 'src/hooks/useAdmin.ts'), 'utf8');
 
 let pass = 0, fail = 0;
@@ -176,7 +177,7 @@ check('the empty row was widened with it',
 // So the menu no longer lives in its trigger's containing block at all. It is
 // placed in VIEWPORT coordinates, which is the only box that really bounds it,
 // and no ancestor gets a vote.
-const dd = fs.readFileSync(path.join(root, 'src/components/Dropdown.tsx'), 'utf8');
+const dd = fs.readFileSync(path.join(root, 'src/components/common/Dropdown.tsx'), 'utf8');
 check('the menu is placed against the viewport', /position: 'fixed'/.test(dd), true);
 check('measured from the trigger', /root\.getBoundingClientRect\(\)/.test(dd), true);
 check('and the base rule no longer pins it left', /left:\s*0/.test(rules('.dd__menu')), false);

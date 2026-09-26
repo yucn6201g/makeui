@@ -12,7 +12,7 @@ import path from 'node:path';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const css = fs.readFileSync(path.join(root, 'src/index.css'), 'utf8').replace(/\r\n/g, '\n');
-const tsx = fs.readFileSync(path.join(root, 'src/components/ReasoningTranscript.tsx'), 'utf8').replace(/\r\n/g, '\n');
+const tsx = fs.readFileSync(path.join(root, 'src/components/workspace/ReasoningTranscript.tsx'), 'utf8').replace(/\r\n/g, '\n');
 
 let pass = 0, fail = 0;
 const check = (name, got, want) => {

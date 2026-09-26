@@ -29,8 +29,8 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const entry = path.join(root, 'dist/reply-summary-entry.ts');
 fs.mkdirSync(path.dirname(entry), { recursive: true });
 fs.writeFileSync(entry, [
-  "export { replyWithOutcome, conciseDescription, describeOutcome, projectFileCounts } from '../src/orchestration/reply-text.js';",
-  "export { screenLabels } from '../src/orchestration/interaction-audit.js';",
+  "export { replyWithOutcome, conciseDescription, describeOutcome, projectFileCounts } from '../src/orchestration/prompts/reply-text.js';",
+  "export { screenLabels } from '../src/orchestration/audit/interaction-audit.js';",
 ].join('\n'));
 execSync(
   `npx esbuild "${entry}" --bundle --platform=node --format=esm --outfile="${path.join(root, 'dist/reply-summary.test.mjs')}" `

@@ -24,7 +24,7 @@ import fs from 'node:fs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 await esbuild.build({
-  entryPoints: [path.join(root, 'src/orchestration/change-diagnosis.ts')],
+  entryPoints: [path.join(root, 'src/orchestration/edit/change-diagnosis.ts')],
   bundle: true, platform: 'node', format: 'esm', outfile: path.join(root, 'dist/cd.test.mjs'),
   external: ['@aws-sdk/*', '@smithy/*', '@strands-agents/*'], loader: { '.txt': 'text' }, logLevel: 'error',
 });
@@ -105,7 +105,7 @@ const STORE = doc({
     /could not be located by its selector/.test(diagnoseForChange(shell, 'Target element: nav.side. 消して').text), true);
 }
 {
-  const meta = fs.readFileSync(path.join(root, 'src/orchestration/meta-orchestrator.ts'), 'utf8');
+  const meta = fs.readFileSync(path.join(root, 'src/orchestration/edit/meta-orchestrator.ts'), 'utf8');
   check('the modify path hands the facts to a targeted edit too',
     /diagnosis\.problemReport \|\| diagnosis\.aboutImages \|\| diagnosis\.targeted \? diagnosis\.text : ''/.test(meta), true);
 }
@@ -130,22 +130,22 @@ for (const [text, want] of [
 
 // --- the three places it is used ------------------------------------------------------
 const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
-const design = read('src/orchestration/strands-design.ts');
+const design = read('src/orchestration/generate/strands-design.ts');
 check('the change designer takes the facts', /Edit request: "\$\{instruction\}"\$\{dataContext \?\? ''\}\$\{facts \?\? ''\}/.test(design), true);
 check('and is told not to answer with questions', /Never answer with questions for the user/.test(design), true);
-const planner = read('src/orchestration/edit-files.ts');
+const planner = read('src/orchestration/edit/edit-files.ts');
 check('the file planner treats a problem report as a change',
   /A question or a problem report about this UI[\s\S]*IS a change request/.test(planner), true);
 check('and no longer declines a question outright',
   /it asks a\s*\n\s*question, or asks for something the project has no place for — return an\s*\n\s*empty list/.test(planner), false);
-const meta = read('src/orchestration/meta-orchestrator.ts');
+const meta = read('src/orchestration/edit/meta-orchestrator.ts');
 check('the modify path diagnoses', /const diagnosis = diagnoseForChange\(html, instruction\)/.test(meta), true);
 check('only for the requests that need it',
   /const facts = diagnosis\.problemReport \|\| diagnosis\.aboutImages \|\| diagnosis\.targeted \? diagnosis\.text : ''/.test(meta), true);
 // Facts in dataContext would take every edit off the stylesheet-only path.
 check('and keeps the facts out of dataContext', /const dataContext = `[^`]*facts/.test(meta), false);
 check('the facts go ahead of the spec the planner reads', /const specWithFacts = `\$\{facts\}/.test(meta), true);
-const graph = read('src/orchestration/graph.ts');
+const graph = read('src/orchestration/generate/plan.ts');
 check('plan mode diagnoses a change before specifying it',
   /const diagnosis = diagnoseForChange\(html, prompt\)[\s\S]{0,600}facts: diagnosis\.text/.test(graph), true);
 check('and writes it with the change writer', /invokeModel\(modelId, PLAN_CHANGE_WRITER_SYSTEM/.test(graph), true);

@@ -423,7 +423,7 @@ Resources:
             CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
             ResponseHeadersPolicyId: !Ref PublishedHeadersPolicy
             Compress: true
-          # Stock photographs generated pages point at (tools/assign-images.ts),
+          # Stock photographs generated pages point at (tools/images/assign-images.ts),
           # kept in the outputs bucket. Added on the live distribution before it
           # was added here; without it `/stock/...` falls through to the SPA's
           # index.html and every placed image breaks. The app's own headers,

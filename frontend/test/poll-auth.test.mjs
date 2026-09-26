@@ -41,8 +41,8 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const work = path.join(root, 'node_modules/.cache/pollauth');
 fs.rmSync(work, { recursive: true, force: true });
 fs.mkdirSync(path.join(work, 'auth'), { recursive: true });
-fs.mkdirSync(path.join(work, 'utils'), { recursive: true });
-fs.copyFileSync(path.join(root, 'src/utils/pollAuth.ts'), path.join(work, 'utils/pollAuth.ts'));
+fs.mkdirSync(path.join(work, 'utils/requests'), { recursive: true });
+fs.copyFileSync(path.join(root, 'src/utils/requests/pollAuth.ts'), path.join(work, 'utils/requests/pollAuth.ts'));
 fs.writeFileSync(path.join(work, 'auth/cognito.ts'),
   `export async function getIdToken(): Promise<string> {
      const v = (globalThis as any).__session;
@@ -51,7 +51,7 @@ fs.writeFileSync(path.join(work, 'auth/cognito.ts'),
    }
 `);
 execSync(
-  `npx esbuild "${path.join(work, 'utils/pollAuth.ts')}" --bundle --platform=node --format=esm ` +
+  `npx esbuild "${path.join(work, 'utils/requests/pollAuth.ts')}" --bundle --platform=node --format=esm ` +
     `--outfile="${path.join(work, 'bundle.mjs')}"`,
   { stdio: 'pipe', cwd: root }
 );

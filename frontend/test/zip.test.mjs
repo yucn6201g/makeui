@@ -21,7 +21,7 @@ import path from 'node:path';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 execSync(
-  `npx esbuild "${path.join(root, 'src/utils/zip.ts')}" --bundle --platform=node --format=esm ` +
+  `npx esbuild "${path.join(root, 'src/utils/preview/zip.ts')}" --bundle --platform=node --format=esm ` +
     `--outfile="${path.join(root, 'dist-test/zip.test.mjs')}"`,
   { stdio: 'pipe', cwd: root }
 );

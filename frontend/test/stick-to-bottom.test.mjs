@@ -10,10 +10,11 @@ import { execSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import fs from 'node:fs';
 import path from 'node:path';
+import { APP_FILES, readApp } from './lib/app-source.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 execSync(
-  `npx esbuild "${path.join(root, 'src/utils/stickToBottom.ts')}" --bundle --platform=node ` +
+  `npx esbuild "${path.join(root, 'src/utils/chat/stickToBottom.ts')}" --bundle --platform=node ` +
     `--format=esm --outfile="${path.join(root, 'dist-test/stb.test.mjs')}"`,
   { stdio: 'pipe', cwd: root }
 );
@@ -105,7 +106,7 @@ const now = () => t;
 
 // --- App wires it to the content, not to a list of state -----------------------
 {
-  const app = fs.readFileSync(path.join(root, 'src/App.tsx'), 'utf8').replace(/\r\n/g, '\n');
+  const app = readApp().replace(/\r\n/g, '\n');
   check('App creates the follower for the chat thread', /createStickToBottom\(/.test(app), true);
   check('App watches the thread\'s content size', /new ResizeObserver\(/.test(app), true);
   check('App forwards scroll, scrollend and reader intent',

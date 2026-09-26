@@ -16,14 +16,14 @@
  * row count stated next to it.
  */
 
-export type AttachmentKind = 'csv' | 'json' | 'markdown' | 'text';
+type AttachmentKind = 'csv' | 'json' | 'markdown' | 'text';
 
 export interface RawAttachment {
   name: string;
   content: string;
 }
 
-export interface DataAttachment {
+interface DataAttachment {
   name: string;
   kind: AttachmentKind;
   /** What goes in the prompt: a sample, never the whole file. */

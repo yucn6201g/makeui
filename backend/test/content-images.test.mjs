@@ -33,7 +33,7 @@ fs.mkdirSync(path.dirname(out), { recursive: true });
 const entry = path.join(root, 'dist/content-images-entry.ts');
 fs.writeFileSync(entry, [
   "export * from '../src/utils/content-images.js'",
-  "export { captionImages } from '../src/orchestration/image-captions.js'",
+  "export { captionImages } from '../src/orchestration/generate/image-captions.js'",
 ].join('\n'));
 await esbuild.build({
   entryPoints: [entry], bundle: true, platform: 'node', format: 'esm', outfile: out,
@@ -184,12 +184,12 @@ check('no images means no call',
  * becomes the images themselves, the arithmetic at the top of this file applies
  * again and nothing else here would notice.
  */
-const design = read('src/orchestration/strands-design.ts');
+const design = read('src/orchestration/generate/strands-design.ts');
 check('the design phase takes the description, not the pictures',
   /contentImages\?: string/.test(design), true);
-const graph = read('src/orchestration/graph.ts');
-// The definition and its calls — the build's and the plan's, since 2026-09-14 — every one of them captioning.
-const visionCalls = [...graph.matchAll(/invokeVision\(([^\n]*)/g)].slice(1);
+// The build's call and the plan's (since 2026-09-14); the definition is in model-calls.ts.
+const graph = read('src/orchestration/generate/graph.ts') + read('src/orchestration/generate/plan.ts');
+const visionCalls = [...graph.matchAll(/invokeVision\(([^\n]*)/g)];
 check('and only the captioner is given image content',
   visionCalls.length >= 1 && visionCalls.every((m) => m[1].includes("'images:caption'")), true);
 check('under its own ledger stage', /'images:caption'/.test(graph), true);

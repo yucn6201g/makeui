@@ -15,7 +15,7 @@ import path from 'node:path';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 execSync(
-  `npx esbuild "${path.join(root, 'src/orchestration/patch-reply.ts')}" --bundle --platform=node --format=esm ` +
+  `npx esbuild "${path.join(root, 'src/orchestration/repair/patch-reply.ts')}" --bundle --platform=node --format=esm ` +
     `--outfile="${path.join(root, 'dist/patch-reply.test.mjs')}"`,
   { stdio: 'pipe', cwd: root }
 );
@@ -96,7 +96,7 @@ check('markers followed by spaces still read', applyPatchReply(FILE, '<<<<<<< SE
 check('a marker-like line inside the code is not a marker', applyPatchReply('a\nconst s = "<<<<<<< SEARCH";\nb', block('a', 'A')).ok, true);
 
 // --- wiring ---------------------------------------------------------------------------------
-const repair = read('src/orchestration/repair-files.ts');
+const repair = read('src/orchestration/repair/repair-files.ts');
 check('a patch is asked for only where one pays', /const reply = patchWorthy\(plan, leaned\.text\.length\) \? 'patch' : 'whole'/.test(repair), true);
 check('and a reply is read as blocks only when blocks were asked for', /if \(reply === 'patch' && isPatchReply\(answer\)\)/.test(repair), true);
 
@@ -107,7 +107,7 @@ check('and a reply is read as blocks only when blocks were asked for', /if \(rep
  * and imagery-missing replied at 2-14x it.
  */
 execSync(
-  `npx esbuild "${path.join(root, 'src/orchestration/repair-files.ts')}" --bundle --platform=node --format=esm ` +
+  `npx esbuild "${path.join(root, 'src/orchestration/repair/repair-files.ts')}" --bundle --platform=node --format=esm ` +
     `--loader:.txt=text --outfile="${path.join(root, 'dist/patch-worthy.test.mjs')}" --external:@aws-sdk/* --external:@smithy/*`,
   { stdio: 'pipe', cwd: root }
 );

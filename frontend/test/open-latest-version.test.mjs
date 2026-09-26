@@ -18,9 +18,10 @@
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import fs from 'node:fs';
+import { APP_FILES, readApp } from './lib/app-source.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const app = fs.readFileSync(path.join(root, 'src/App.tsx'), 'utf8');
+const app = readApp();
 
 let pass = 0, fail = 0;
 const check = (name, got, want) => {

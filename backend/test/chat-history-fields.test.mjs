@@ -87,7 +87,7 @@ const shapeOf = (src, name, field) => {
   return line[1].split(';').map((s) => s.trim().split(/[?:]/)[0].trim()).filter(Boolean).sort();
 };
 
-const app = read('../frontend/src/App.tsx');
+const app = read('../frontend/src/components/workspace/Workspace.tsx');
 for (const field of ['runInfo', 'proposal']) {
   const inMessage = shapeOf(app, 'ChatMessage', field);
   const inStored = shapeOf(hook, 'StoredMessage', field);

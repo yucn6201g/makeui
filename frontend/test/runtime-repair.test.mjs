@@ -15,10 +15,11 @@ import { execSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import fs from 'node:fs';
 import path from 'node:path';
+import { APP_FILES, readApp } from './lib/app-source.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 execSync(
-  `npx esbuild "${path.join(root, 'src/utils/runtimeRepair.ts')}" --bundle --platform=node --format=esm ` +
+  `npx esbuild "${path.join(root, 'src/utils/chat/runtimeRepair.ts')}" --bundle --platform=node --format=esm ` +
     `--outfile="${path.join(root, 'node_modules/.cache/rr.test.mjs')}"`,
   { stdio: 'pipe', cwd: root }
 );
@@ -74,8 +75,8 @@ check('a long stack is clipped there too', runtimeRepairMessage(long).endsWith('
 check('and more tightly', runtimeRepairMessage(long).length < runtimeRepairInstruction(long).length, true);
 
 // --- the wiring ----------------------------------------------------------
-const preview = fs.readFileSync(path.join(root, 'src/components/Preview.tsx'), 'utf8');
-const app = fs.readFileSync(path.join(root, 'src/App.tsx'), 'utf8');
+const preview = fs.readFileSync(path.join(root, 'src/components/workspace/Preview.tsx'), 'utf8');
+const app = readApp();
 const css = fs.readFileSync(path.join(root, 'src/index.css'), 'utf8');
 
 check('the banner carries a button', /preview__runtime-fix/.test(preview), true);

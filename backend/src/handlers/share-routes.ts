@@ -54,7 +54,7 @@ const groupInScope = (caller: Caller, name: string): boolean => Boolean(caller.s
 
 type Respond = (status: number, body: unknown) => unknown;
 
-export interface ProjectListItem extends ProjectRecord {
+interface ProjectListItem extends ProjectRecord {
   /** The caller's relation to the project. */
   access: { role: ProjectRole; ownerId: string; ownerName: string; via?: 'user' | 'group' };
 }

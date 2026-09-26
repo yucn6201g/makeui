@@ -30,7 +30,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const out = path.join(root, 'dist/auto-tiers.test.mjs');
 fs.mkdirSync(path.dirname(out), { recursive: true });
 await esbuild.build({
-  entryPoints: [path.join(root, 'src/orchestration/workflow-router.ts')],
+  entryPoints: [path.join(root, 'src/orchestration/generate/workflow-router.ts')],
   bundle: true, platform: 'node', format: 'esm', outfile: out,
   external: ['@aws-sdk/*', '@smithy/*', '@strands-agents/*'],
 });

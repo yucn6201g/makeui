@@ -11,7 +11,7 @@
 // is used elsewhere, and to point the input rules at a bigger one. That requires
 // knowing which of the project's tokens is bigger, and usually there is none.
 //
-// The finder is shared with the audit that reports it (tools/form-controls.ts),
+// The finder is shared with the audit that reports it (tools/fixups/form-controls.ts),
 // so the two cannot drift into disagreeing about the same stylesheet.
 //
 //   node test/input-font.test.mjs      (from backend/)
@@ -22,7 +22,7 @@ import path from 'node:path';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const out = path.join(root, 'dist/if.test.mjs');
 await esbuild.build({
-  entryPoints: [path.join(root, 'src/tools/form-controls.ts')],
+  entryPoints: [path.join(root, 'src/tools/fixups/form-controls.ts')],
   bundle: true, platform: 'node', format: 'esm', outfile: out,
   external: ['@aws-sdk/*', '@smithy/*'], logLevel: 'error',
 });

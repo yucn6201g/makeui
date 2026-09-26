@@ -18,13 +18,13 @@ import path from 'node:path';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 execSync(
-  `npx esbuild "${path.join(root, 'src/orchestration/design-presets.ts')}" --bundle --platform=node --format=esm ` +
+  `npx esbuild "${path.join(root, 'src/orchestration/presets/design-presets.ts')}" --bundle --platform=node --format=esm ` +
     `--outfile="${path.join(root, 'dist/design-presets.test.mjs')}" --external:@aws-sdk/* --external:@smithy/*`,
   { stdio: 'pipe', cwd: root }
 );
 const { presetIds, getPresetSpec, presetConformance, resolveUserDesignSystem, hasPresetSignature } =
   await import(pathToFileURL(path.join(root, 'dist/design-presets.test.mjs')).href);
-const src = fs.readFileSync(path.join(root, 'src/orchestration/design-presets.ts'), 'utf8');
+const src = fs.readFileSync(path.join(root, 'src/orchestration/presets/design-presets.ts'), 'utf8');
 
 let pass = 0, fail = 0;
 const check = (name, got, want) => {
@@ -38,7 +38,7 @@ const BUILT_IN = ['digital-agency', 'carbon', 'spindle', 'material3'];
 check('the presets are none and the four published systems', presetIds(), ['none', ...BUILT_IN]);
 
 // --- the menu offers exactly these -----------------------------------------------------------
-const menu = fs.readFileSync(path.join(root, '../frontend/src/utils/presets.ts'), 'utf8');
+const menu = fs.readFileSync(path.join(root, '../frontend/src/utils/projects/presets.ts'), 'utf8');
 const menuIds = [...menu.matchAll(/^\s*id: '([a-z0-9-]+)',/gm)].map((m) => m[1]);
 check('the composer menu offers the same presets', menuIds, presetIds());
 

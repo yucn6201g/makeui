@@ -29,7 +29,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const entry = path.join(root, 'dist/foreign-entry.ts');
 fs.mkdirSync(path.dirname(entry), { recursive: true });
 fs.writeFileSync(entry, [
-  "export { foreignImport } from '../src/orchestration/repair-files.js';",
+  "export { foreignImport } from '../src/orchestration/repair/repair-files.js';",
   "export { FRAMEWORKS } from '../src/config/frameworks.js';",
 ].join('\n'));
 execSync(

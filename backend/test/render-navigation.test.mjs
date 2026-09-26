@@ -28,6 +28,7 @@ import * as esbuild from 'esbuild';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import fs from 'node:fs';
+import { readFixups } from './lib/fixups-source.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const build = async (entry, out) => {
@@ -38,9 +39,9 @@ const build = async (entry, out) => {
   });
   return import(pathToFileURL(path.join(root, out)).href);
 };
-const rn = await build('src/tools/render-navigation.ts', 'dist/rn.test.mjs');
-const bv = await build('src/tools/browser-verify.ts', 'dist/rnbv.test.mjs');
-const ra = await build('src/orchestration/runtime-audit.ts', 'dist/rnra.test.mjs');
+const rn = await build('src/tools/fixups/render-navigation.ts', 'dist/rn.test.mjs');
+const bv = await build('src/tools/browser/browser-verify.ts', 'dist/rnbv.test.mjs');
+const ra = await build('src/orchestration/audit/runtime-audit.ts', 'dist/rnra.test.mjs');
 
 let pass = 0, fail = 0;
 const check = (name, got, want) => {
@@ -115,7 +116,7 @@ check('an already-deferred call is left alone',
   check('and it says why it matters', /応答しなくなります/.test(r.fixed[0] ?? ''), true);
   check('nothing to do is nothing reported', rn.fixRenderNavigation(new Map([['a.tsx', 'x']])).fixed, []);
 }
-const fixups = fs.readFileSync(path.join(root, 'src/tools/framework-fixups.ts'), 'utf8');
+const fixups = readFixups();
 check('the project pass runs it for React', /kind === 'react'[\s\S]{0,200}apply\(fixRenderNavigation\(files\)\)/.test(fixups), true);
 
 // --- the walk cannot be taken down silently again ------------------------------------
@@ -161,13 +162,13 @@ check('a label containing the separator survives',
   const bare = ra.pageFrozenDefect({ reason: 'page-frozen', error: 'x', durationMs: 1 });
   check('a freeze before any press is still reported', /ページを開くと/.test(bare.instruction), true);
 }
-const graph = fs.readFileSync(path.join(root, 'src/orchestration/graph.ts'), 'utf8');
+const graph = fs.readFileSync(path.join(root, 'src/orchestration/generate/graph.ts'), 'utf8');
 check('the pipeline hands the freeze to the repair loop',
   /failure\?\.reason === 'page-frozen'\)\s*\{\s*runtimeDefects\.push\(pageFrozenDefect\(failure\)\)/.test(graph), true);
 check('and tells the reply that it asked', /verifyAttempted: useBrowserVerify/.test(graph), true);
 check('the failure log carries the run it belongs to',
   /Browser verification failed; continuing without it', \{\s*requestId: options\.requestId/.test(
-    fs.readFileSync(path.join(root, 'src/tools/browser-verify.ts'), 'utf8')), true);
+    fs.readFileSync(path.join(root, 'src/tools/browser/browser-verify.ts'), 'utf8')), true);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

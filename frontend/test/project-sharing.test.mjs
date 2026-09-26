@@ -6,10 +6,12 @@ import { execSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import fs from 'node:fs';
+import { ADMIN_FILES, readAdminPanel } from './lib/admin-source.mjs';
+import { APP_FILES, readApp } from './lib/app-source.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 execSync(
-  `npx esbuild "${path.join(root, 'src/utils/projectFilter.ts')}" --bundle --platform=node --format=esm ` +
+  `npx esbuild "${path.join(root, 'src/utils/projects/projectFilter.ts')}" --bundle --platform=node --format=esm ` +
     `--outfile="${path.join(root, 'dist-test/project-sharing.filter.test.mjs')}"`,
   { stdio: 'pipe', cwd: root }
 );
@@ -44,7 +46,7 @@ const check = (name, got, want) => {
 
 // --- the list ----------------------------------------------------------------------------
 {
-  const list = read('src/components/ProjectList.tsx');
+  const list = read('src/components/project-list/ProjectList.tsx');
   check('the tabs are プロジェクト, 共有, アーカイブ', /\['active', 'プロジェクト', activeCount\][\s\S]{0,200}\['shared', '共有', sharedCount\][\s\S]*アーカイブ/.test(list), true);
   check('a shared card says whose it is and the role', /\{project\.access\?\.ownerName\} さんから共有[\s\S]{0,200}ROLE_LABELS\[role\]/.test(list), true);
   check('and the owner\'s says it is shared', /project\.sharedAt \? \(\s*<div className="project-list__card-share">共有中<\/div>/.test(list), true);
@@ -53,13 +55,13 @@ const check = (name, got, want) => {
 
 // --- the share panel -------------------------------------------------------------------------
 {
-  const panel = read('src/components/ShareButton.tsx');
+  const panel = read('src/components/workspace/ShareButton.tsx');
   check('people are searched by name, email or group', /ユーザー名・メールアドレス・グループ名で検索/.test(panel), true);
   check('three roles to choose from', /SHARE_ROLES\.map/.test(panel), true);
   check('only owner and full add people', /const manage = canManageShares\(effectiveRole\);[\s\S]*\{manage && \(\s*<div className="share-panel__add">/.test(panel), true);
   check('a member may leave', /isSelf && \([\s\S]{0,200}共有から外れる/.test(panel), true);
   check('the public link is still here, not for viewers', /<LinkSection html=\{html\} title=\{title\} allowed=\{canWrite\(role\)\} \/>/.test(panel), true);
-  const roles = read('src/utils/shareRoles.ts');
+  const roles = read('src/utils/projects/shareRoles.ts');
   check('the roles are named as asked', /full: '全権限',\s*edit: '編集',\s*view: '閲覧',/.test(roles), true);
   const hook = read('src/hooks/useShares.ts');
   check('the panel talks to the share routes', ['/shares`', '/users/search${search}`', '/share-groups`', "method: 'PUT'", "method: 'DELETE'"].every((s) => hook.includes(s)), true);
@@ -67,7 +69,7 @@ const check = (name, got, want) => {
 
 // --- the workspace ---------------------------------------------------------------------------
 {
-  const app = read('src/App.tsx');
+  const app = readApp();
   check('the role comes from the project', /const projectRole = project\.access\?\.role \?\? 'owner';\s*const readOnly = projectRole === 'view';/.test(app), true);
   check('a viewer gets a note, not a prompt box', /\{readOnly \? \([\s\S]{0,400}閲覧権限で共有されたプロジェクトです/.test(app), true);
   check('and no editor', [/onEditFile=\{readOnly \? undefined : directEdit\.editSource\}/.test(app), /onEdit=\{readOnly \? undefined : directEdit\.editStyle\}/.test(app)], [true, true]);
@@ -79,14 +81,14 @@ const check = (name, got, want) => {
   check('a version is loaded through its project', /loadVersion\(versionId, project\.projectId\)/.test(app), true);
   const chat = read('src/hooks/useChatHistory.ts');
   check('the author is saved with the message', /author, timestamp,\s*\}\)\);/.test(chat), true);
-  check('versions name who ran them', /v\.actorName \? `\$\{v\.actorName\}：` : ''/.test(read('src/utils/versionOptions.ts')), true);
+  check('versions name who ran them', /v\.actorName \? `\$\{v\.actorName\}：` : ''/.test(read('src/utils/projects/versionOptions.ts')), true);
 }
 
 // --- the top bar: Admin and Logout are header buttons like ZIP and 共有 -------------------------
 {
-  const app = read('src/App.tsx');
-  const list = read('src/components/ProjectList.tsx');
-  const admin = read('src/components/AdminPanel.tsx');
+  const app = readApp();
+  const list = read('src/components/project-list/ProjectList.tsx');
+  const admin = readAdminPanel();
   check('Logout in the workspace', /className="app__header-btn app__logout"/.test(app), true);
   check('Logout on the list', /className="app__header-btn project-list__logout"/.test(list), true);
   check('Admin', /className="app__header-btn admin-panel__toggle"/.test(admin), true);

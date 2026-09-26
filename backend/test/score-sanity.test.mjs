@@ -33,8 +33,8 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const entry = path.join(root, 'dist/score-entry.ts');
 fs.mkdirSync(path.dirname(entry), { recursive: true });
 fs.writeFileSync(entry, [
-  "export { scoreHtml, scoreBreakdown } from '../src/orchestration/scoring.js';",
-  "export { writeProjectDocument } from '../src/tools/project-transport.js';",
+  "export { scoreHtml, scoreBreakdown } from '../src/orchestration/audit/scoring.js';",
+  "export { writeProjectDocument } from '../src/tools/project/project-transport.js';",
   "export { FRAMEWORKS } from '../src/config/frameworks.js';",
 ].join('\n'));
 execSync(

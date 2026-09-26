@@ -34,9 +34,9 @@ function constant(src, name) {
 }
 
 const api = back('src/handlers/lambda-handler.ts');
-const composerLimits = front('src/utils/requestLimits.ts');
-const uiImages = front('src/utils/uiImages.ts');
-const dataAttachment = front('src/utils/dataAttachment.ts');
+const composerLimits = front('src/utils/requests/requestLimits.ts');
+const uiImages = front('src/utils/requests/uiImages.ts');
+const dataAttachment = front('src/utils/requests/dataAttachment.ts');
 
 check('prompt length', constant(composerLimits, 'MAX_PROMPT_CHARS'), constant(api, 'MAX_PROMPT_LENGTH'));
 check('and the API value was read', constant(api, 'MAX_PROMPT_LENGTH') > 0, true);
@@ -55,7 +55,7 @@ const offeredImages = [...new Set(offered('IMAGE_ACCEPT').map((e) => (e === 'jpg
 check('picture types', offeredImages, acceptedImages);
 
 // And the composer actually checks the two it restates.
-const app = front('src/App.tsx');
+const app = front('src/components/workspace/Workspace.tsx');
 check('the brief is checked before sending', /const tooLong = promptProblem\(rawText\)/.test(app), true);
 check('an oversized picture is refused when it is picked', /oversizedImages\(picked\.filter/.test(app), true);
 

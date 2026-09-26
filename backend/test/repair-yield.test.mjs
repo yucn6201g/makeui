@@ -19,7 +19,7 @@ import path from 'node:path';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 execSync(
-  `npx esbuild "${path.join(root, 'src/orchestration/repair-yield.ts')}" --bundle --platform=node ` +
+  `npx esbuild "${path.join(root, 'src/orchestration/repair/repair-yield.ts')}" --bundle --platform=node ` +
     `--format=esm --outfile="${path.join(root, 'dist/ry.test.mjs')}"`,
   { stdio: 'pipe', cwd: root }
 );
@@ -59,7 +59,7 @@ check('an unmeasured defect is attempted', repairable('something-new'), true);
 //
 // Every excluded id must be under the floor in the table beside it. Without
 // this, the list is a place to put anything anyone finds annoying.
-const src = fs.readFileSync(path.join(root, 'src/orchestration/repair-yield.ts'), 'utf8');
+const src = fs.readFileSync(path.join(root, 'src/orchestration/repair/repair-yield.ts'), 'utf8');
 /*
  * Read each Set by name rather than scraping every quoted line in the file.
  *

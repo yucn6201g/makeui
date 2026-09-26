@@ -14,7 +14,7 @@ import path from 'node:path';
 // package root and `node test/...` from inside test/ both work.
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 execSync(
-  `npx esbuild "${path.join(root, 'src/orchestration/strands-design.ts')}" --bundle --platform=node --format=esm ` +
+  `npx esbuild "${path.join(root, 'src/orchestration/generate/strands-design.ts')}" --bundle --platform=node --format=esm ` +
     `--outfile="${path.join(root, 'dist/sd.test.mjs')}" --external:@aws-sdk/* --external:@smithy/* --external:@strands-agents/* --external:zod`,
   { stdio: 'inherit', cwd: root }
 );

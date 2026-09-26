@@ -14,7 +14,7 @@ import fs from 'node:fs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 execSync(
-  `npx esbuild "${path.join(root, 'src/orchestration/graph.ts')}" --bundle --platform=node --format=esm ` +
+  `npx esbuild "${path.join(root, 'src/orchestration/audit/scoring.ts')}" --bundle --platform=node --format=esm ` +
     `--loader:.txt=text --outfile="${path.join(root, 'dist/rs.test.mjs')}" --external:@aws-sdk/* --external:@smithy/*`,
   { stdio: 'pipe', cwd: root }
 );
@@ -199,7 +199,7 @@ check('an existing file is never dropped for being unused', c.dropped.some((p) =
       fence('src/styles/globals.css', '.a{color:#000}')
     ), ERRORS), []);
 
-  const graph = fs.readFileSync(path.join(root, 'src/orchestration/graph.ts'), 'utf8');
+  const graph = fs.readFileSync(path.join(root, 'src/orchestration/generate/graph.ts'), 'utf8');
   const brokeAt = graph.indexOf('if (broke.length > 0 && !isRetry)');
   const broke = graph.slice(brokeAt, graph.indexOf('const improved =', brokeAt));
   check('the single reverts run after the routing revert, inside the breaking branch',

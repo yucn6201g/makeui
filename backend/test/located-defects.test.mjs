@@ -25,8 +25,8 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const entry = path.join(root, 'dist/located-entry.ts');
 fs.mkdirSync(path.dirname(entry), { recursive: true });
 fs.writeFileSync(entry, [
-  "export { auditAiTells } from '../src/orchestration/design-audit.js';",
-  "export { planFileRepairs } from '../src/orchestration/repair-files.js';",
+  "export { auditAiTells } from '../src/orchestration/audit/design-audit.js';",
+  "export { planFileRepairs } from '../src/orchestration/repair/repair-files.js';",
 ].join('\n'));
 execSync(
   `npx esbuild "${entry}" --bundle --platform=node --format=esm --outfile="${path.join(root, 'dist/located.test.mjs')}" ` +

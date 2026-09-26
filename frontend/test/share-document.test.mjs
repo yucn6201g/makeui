@@ -18,7 +18,7 @@ import path from 'node:path';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 execSync(
-  `npx esbuild "${path.join(root, 'src/utils/shareDocument.ts')}" --bundle --platform=node --format=esm ` +
+  `npx esbuild "${path.join(root, 'src/utils/preview/shareDocument.ts')}" --bundle --platform=node --format=esm ` +
     `--outfile="${path.join(root, 'dist-test/sd.test.mjs')}" "--external:virtual:*" ` +
     `"--alias:@vue/compiler-sfc=@vue/compiler-sfc/dist/compiler-sfc.esm-browser.js"`,
   { stdio: 'pipe', cwd: root }

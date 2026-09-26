@@ -32,7 +32,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const server = fs.readFileSync(path.join(root, 'src/config/effort.ts'), 'utf8');
-const composer = fs.readFileSync(path.resolve(root, '..', 'frontend', 'src', 'App.tsx'), 'utf8');
+const composer = fs.readFileSync(path.resolve(root, '..', 'frontend', 'src', 'components', 'workspace', 'Workspace.tsx'), 'utf8');
 /*
  * Both files EXPLAIN the table that went, by name, which is deliberate and is
  * asserted below — so a search for the name over the whole file finds the

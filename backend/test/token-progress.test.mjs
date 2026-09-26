@@ -58,7 +58,7 @@ const jobs = read('src/services/job-service.ts');
 check('the heartbeat writes the total and nothing else',
   /UpdateExpression: 'SET streamTokens = :t, updatedAt = :now, #ttl = :ttl'/.test(jobs), true);
 check('reading the total when the write is sent', /inFlight = inFlight\s*\.then\(async \(\) => \{[\s\S]{0,300}const spent = total\(\)/.test(jobs), true);
-for (const [file, run] of [['src/orchestration/graph.ts', 'runGeneration'], ['src/orchestration/graph.ts', 'runPlan'], ['src/orchestration/meta-orchestrator.ts', 'runModify']]) {
+for (const [file, run] of [['src/orchestration/generate/graph.ts', 'runGeneration'], ['src/orchestration/generate/plan.ts', 'runPlan'], ['src/orchestration/edit/meta-orchestrator.ts', 'runModify']]) {
   const src = read(file);
   const at = src.indexOf(`return await ${run}(options, ledger)`);
   const around = src.slice(at - 400, at + 200);
@@ -67,7 +67,7 @@ for (const [file, run] of [['src/orchestration/graph.ts', 'runGeneration'], ['sr
 }
 
 // --- the design specialists are charged as each call ends --------------------------
-const design = read('src/orchestration/strands-design.ts');
+const design = read('src/orchestration/generate/strands-design.ts');
 check('the stream\'s metadata events are recorded per node',
   /inner\.event\?\.type === 'modelMetadataEvent'[\s\S]{0,1400}recordTokens\(u\.inputTokens \?\? 0, u\.outputTokens \?\? 0, `design:\$\{id\}`/.test(design), true);
 check('and the node figures record only what the stream missed',

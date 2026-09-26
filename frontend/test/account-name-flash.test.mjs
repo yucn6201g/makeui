@@ -22,11 +22,12 @@
 import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
 import path from 'node:path';
+import { APP_FILES, readApp } from './lib/app-source.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const app = fs.readFileSync(path.join(root, 'src/App.tsx'), 'utf8');
+const app = readApp();
 const hook = fs.readFileSync(path.join(root, 'src/hooks/useUsage.ts'), 'utf8');
-const menu = fs.readFileSync(path.join(root, 'src/components/UsageMenu.tsx'), 'utf8');
+const menu = fs.readFileSync(path.join(root, 'src/components/common/UsageMenu.tsx'), 'utf8');
 const css = fs.readFileSync(path.join(root, 'src/index.css'), 'utf8');
 
 let pass = 0, fail = 0;

@@ -36,13 +36,13 @@ export interface ModelPrices {
   cacheWrite: number;
 }
 
-export interface PricingTable {
+interface PricingTable {
   currency: string;
   models: Record<string, ModelPrices>;
 }
 
 /** The four things a request spends, kept apart because they are priced apart. */
-export interface TokenSplit {
+interface TokenSplit {
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;

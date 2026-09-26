@@ -19,11 +19,12 @@ import * as esbuild from 'esbuild';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import fs from 'node:fs';
+import { fixupsEntry, readFixups } from './lib/fixups-source.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const out = path.join(root, 'dist/uc.test.mjs');
 await esbuild.build({
-  entryPoints: [path.join(root, 'src/tools/utility-css.ts')],
+  entryPoints: [path.join(root, 'src/tools/fixups/utility-css.ts')],
   bundle: true, platform: 'node', format: 'esm', outfile: out,
   external: ['@aws-sdk/*', '@smithy/*'], logLevel: 'error',
 });
@@ -31,7 +32,7 @@ const { utilityCss, definedClasses, paletteOf, UTILITY_CLASS } = await import(pa
 
 const fx = path.join(root, 'dist/ucf.test.mjs');
 await esbuild.build({
-  entryPoints: [path.join(root, 'src/tools/framework-fixups.ts')],
+  entryPoints: [path.join(root, fixupsEntry())],
   bundle: true, platform: 'node', format: 'esm', outfile: fx,
   external: ['@aws-sdk/*', '@smithy/*'], logLevel: 'error',
 });
@@ -212,15 +213,15 @@ check('a scoped style counts as a definition',
   ])).fixed, []);
 
 // --- the wiring ---------------------------------------------------------------------
-const fixups = fs.readFileSync(path.join(root, 'src/tools/framework-fixups.ts'), 'utf8');
+const fixups = readFixups();
 check('the project pass runs it', fixups.includes('apply(fixDeadUtilityClasses(files))'), true);
 // After the repairs that write markup, because it reads the markup.
 check('and after the repairs that add classes',
   fixups.indexOf('apply(fixDeadUtilityClasses(files))') > fixups.indexOf('apply(fixPlaceholderImageBoxes(files))'), false);
-const audit = fs.readFileSync(path.join(root, 'src/orchestration/design-audit.ts'), 'utf8');
-const utilityCssSource = fs.readFileSync(path.join(root, 'src/tools/utility-css.ts'), 'utf8');
+const audit = fs.readFileSync(path.join(root, 'src/orchestration/audit/design-audit.ts'), 'utf8');
+const utilityCssSource = fs.readFileSync(path.join(root, 'src/tools/fixups/utility-css.ts'), 'utf8');
 check('the audit reads the same definition of "defined"', /for \(const c of definedClasses\(css\)\) defined\.add\(c\)/.test(audit), true);
-check('and the same detector', /import \{[^}]*\bUTILITY_CLASS\b[^}]*\} from '\.\.\/tools\/utility-css\.js'/.test(audit), true);
+check('and the same detector', /import \{[^}]*\bUTILITY_CLASS\b[^}]*\} from '\.\.\/\.\.\/tools\/fixups\/utility-css\.js'/.test(audit), true);
 /*
  * A stylesheet that is nothing but `flex` and `p-4` is exactly what
  * `thin-stylesheet` exists to find, and seventy appended rules would answer

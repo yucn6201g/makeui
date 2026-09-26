@@ -20,7 +20,7 @@ import fs from 'node:fs';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 process.env.CLOUDFRONT_DOMAIN = 'cdn.example.net';
 execSync(
-  `npx esbuild "${path.join(root, 'src/tools/assign-images.ts')}" --bundle --platform=node --format=esm ` +
+  `npx esbuild "${path.join(root, 'src/tools/images/assign-images.ts')}" --bundle --platform=node --format=esm ` +
     `--outfile="${path.join(root, 'dist/ai.test.mjs')}" --external:@aws-sdk/* --external:@smithy/*`,
   { stdio: 'inherit', cwd: root }
 );
@@ -235,13 +235,13 @@ S3Client.prototype.send = savedSend;
 
 // --- the two halves of the taxonomy must agree ----------------------------
 // The subjects are collected by scripts/subjects.mjs and recognised by
-// src/tools/subject-terms.ts, and they are deliberately separate files: the
+// src/tools/images/subject-terms.ts, and they are deliberately separate files: the
 // pictures change when someone re-curates, the words change constantly. The
 // cost of that separation is that they can drift apart silently — a term for a
 // subject nobody collects matches nothing, and a collected subject with no
 // terms is six photographs that can never be chosen.
 execSync(
-  `npx esbuild "${path.join(root, 'src/tools/subject-terms.ts')}" --bundle --platform=node --format=esm ` +
+  `npx esbuild "${path.join(root, 'src/tools/images/subject-terms.ts')}" --bundle --platform=node --format=esm ` +
     `--outfile="${path.join(root, 'dist/st.test.mjs')}"`,
   { stdio: 'inherit', cwd: root }
 );
@@ -489,7 +489,7 @@ export const ITEMS = [
   check('and only that one', theirs.replaced, 2);
 }
 {
-  const src = fs.readFileSync(path.join(root, 'src/tools/assign-images.ts'), 'utf8');
+  const src = fs.readFileSync(path.join(root, 'src/tools/images/assign-images.ts'), 'utf8');
   check('the pass is told the user\'s words', /slotForeignImages\(html, context\.brief \?\? ''\)/.test(src), true);
 }
 

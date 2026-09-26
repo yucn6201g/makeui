@@ -21,6 +21,7 @@
 import * as esbuild from 'esbuild';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
+import { fixupsEntry, readFixups } from './lib/fixups-source.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const build = async (entry, out) => {
@@ -30,8 +31,8 @@ const build = async (entry, out) => {
   });
   return import(pathToFileURL(path.join(root, out)).href);
 };
-const ai = await build('src/tools/action-icons.ts', 'dist/ai.test.mjs');
-const fx = await build('src/tools/framework-fixups.ts', 'dist/aif.test.mjs');
+const ai = await build('src/tools/fixups/action-icons.ts', 'dist/ai.test.mjs');
+const fx = await build(fixupsEntry(), 'dist/aif.test.mjs');
 
 let pass = 0, fail = 0;
 const check = (name, got, want) => {
@@ -168,14 +169,14 @@ check('a project already drawing an icon is left alone', fx.fixIconsNotDrawn(fil
 
 // --- the wiring ---------------------------------------------------------------
 import fs from 'node:fs';
-const src = fs.readFileSync(path.join(root, 'src/tools/framework-fixups.ts'), 'utf8');
+const src = readFixups();
 check('the project pass runs it', src.includes('apply(fixIconsNotDrawn(files, kind))'), true);
 // After the artwork, which is the other pass that reads the markup: a button
 // given a glyph is not a place an illustration would have gone.
 check('and after the drawing',
   src.indexOf('apply(fixArtworkNotDrawn(files, kind))') < src.indexOf('apply(fixIconsNotDrawn(files, kind))'), true);
 // The contract now names the two places a glyph must not go.
-const prompt = fs.readFileSync(path.join(root, 'src/orchestration/prompt-contracts.ts'), 'utf8');
+const prompt = fs.readFileSync(path.join(root, 'src/orchestration/prompts/prompt-contracts.ts'), 'utf8');
 check('the build is told not to put one on a photograph', /ON A PHOTOGRAPH/.test(prompt), true);
 check('nor to use one as an empty state', /AS AN EMPTY STATE'S PICTURE/.test(prompt), true);
 

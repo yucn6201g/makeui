@@ -21,11 +21,12 @@
 import * as esbuild from 'esbuild';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
+import { fixupsEntry, readFixups } from './lib/fixups-source.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const out = path.join(root, 'dist/cp.test.mjs');
 await esbuild.build({
-  entryPoints: [path.join(root, 'src/tools/framework-fixups.ts')],
+  entryPoints: [path.join(root, fixupsEntry())],
   bundle: true, platform: 'node', format: 'esm', outfile: out,
   external: ['@aws-sdk/*', '@smithy/*'], logLevel: 'error',
 });
@@ -360,11 +361,11 @@ for (const [field, want] of [
 
 // --- the wiring ---------------------------------------------------------------------
 import fs from 'node:fs';
-const src = fs.readFileSync(path.join(root, 'src/tools/framework-fixups.ts'), 'utf8');
+const src = readFixups();
 check('the project pass runs it', src.includes('apply(fixCatalogueWithoutPhotos(files))'), true);
 // It has to run before the photograph pass, which is what turns a slot into a
 // picture. `fixupProject` after the build; `assignItemImages` in finalising.
-const graph = fs.readFileSync(path.join(root, 'src/orchestration/graph.ts'), 'utf8');
+const graph = fs.readFileSync(path.join(root, 'src/orchestration/generate/graph.ts'), 'utf8');
 check('and the photograph pass runs after the build fixups',
   graph.indexOf('const fixups = fixupProject(finalHtml, outputKind)') < graph.indexOf('await assignItemImages(finalHtml'), true);
 

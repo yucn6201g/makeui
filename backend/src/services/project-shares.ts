@@ -50,7 +50,7 @@ export function isShareRole(value: unknown): value is ShareRole {
 
 /** Highest first: when a person holds a grant directly and through their group, the higher one counts. */
 const RANK: Record<ProjectRole, number> = { owner: 4, full: 3, edit: 2, view: 1 };
-export function strongerRole<R extends ProjectRole>(a: R | null, b: R | null): R | null {
+function strongerRole<R extends ProjectRole>(a: R | null, b: R | null): R | null {
   if (!a) return b;
   if (!b) return a;
   return RANK[a] >= RANK[b] ? a : b;
@@ -68,7 +68,7 @@ export const CAN = {
   manage: (r: ProjectRole | null): boolean => r === 'owner' || r === 'full',
 };
 
-export interface ShareTarget {
+interface ShareTarget {
   type: 'user' | 'group';
   /** A Cognito `sub` for a user, the group's name for a group. */
   id: string;
@@ -85,7 +85,7 @@ export interface ShareGrant extends ShareTarget {
   grantedAt: string;
 }
 
-export interface SharedProjectRef {
+interface SharedProjectRef {
   projectId: string;
   ownerId: string;
   role: ShareRole;

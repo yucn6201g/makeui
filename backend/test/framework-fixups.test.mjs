@@ -9,27 +9,34 @@
 import { execSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
+import { fixupsEntry } from './lib/fixups-source.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 execSync(
-  `npx esbuild "${path.join(root, 'src/tools/framework-fixups.ts')}" --bundle --platform=node --format=esm ` +
+  `npx esbuild "${path.join(root, fixupsEntry())}" --bundle --platform=node --format=esm ` +
     `--outfile="${path.join(root, 'dist/fxt.test.mjs')}" --external:@aws-sdk/* --external:@smithy/*`,
   { stdio: 'inherit', cwd: root }
 );
 execSync(
-  `npx esbuild "${path.join(root, 'src/orchestration/repair-files.ts')}" --bundle --platform=node --format=esm ` +
+  `npx esbuild "${path.join(root, 'src/orchestration/repair/repair-files.ts')}" --bundle --platform=node --format=esm ` +
     `--loader:.txt=text --outfile="${path.join(root, 'dist/rft.test.mjs')}" --external:@aws-sdk/* --external:@smithy/*`,
   { stdio: 'inherit', cwd: root }
 );
 const { fixVueMacros, fixReactMissingProvider, fixRequireNamedDefault, fixVueUnclosedHandler,
   fixImportRequireHybrid, fixVueUncapturedProps, fixVueUnboundProps, fixDefaultImportOfNamedExport,
   fixArrowFunctionCast, salvageUnparsableStyles, fixupProject, fixVueNonReactiveHash,
-  stubUnbuildableComponents, unbuildableFiles, fixPlaceholderImageBoxes, fixDetailIdNotPassed, dropSuppliedFiles } = await import(
+  stubUnbuildableComponents, unbuildableFiles, fixPlaceholderImageBoxes, fixDetailIdNotPassed } = await import(
   pathToFileURL(path.join(root, 'dist/fxt.test.mjs')).href
 );
+execSync(
+  `npx esbuild "${path.join(root, 'src/tools/fixups/supplied-files.ts')}" --bundle --platform=node --format=esm ` +
+    `--outfile="${path.join(root, 'dist/sft.test.mjs')}"`,
+  { stdio: 'inherit', cwd: root }
+);
+const { dropSuppliedFiles } = await import(pathToFileURL(path.join(root, 'dist/sft.test.mjs')).href);
 const { parses } = await import(pathToFileURL(path.join(root, 'dist/rft.test.mjs')).href);
 execSync(
-  `npx esbuild "${path.join(root, 'src/tools/react-bundle.ts')}" --bundle --platform=node --format=esm ` +
+  `npx esbuild "${path.join(root, 'src/tools/project/react-bundle.ts')}" --bundle --platform=node --format=esm ` +
     `--outfile="${path.join(root, 'dist/rbt.test.mjs')}" --external:@aws-sdk/* --external:@smithy/*`,
   { stdio: 'inherit', cwd: root }
 );

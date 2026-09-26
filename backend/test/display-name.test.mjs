@@ -89,7 +89,7 @@ check('the ceiling is measured after trimming',
 // only about an account that has none, which is exactly the case checked here.
 {
   const client = fs.readFileSync(
-    path.resolve(root, '..', 'frontend', 'src/utils/displayName.ts'), 'utf8'
+    path.resolve(root, '..', 'frontend', 'src/utils/account/displayName.ts'), 'utf8'
   );
   check('the composer helper exists', /export function localPartOf/.test(client), true);
 
@@ -100,7 +100,7 @@ check('the ceiling is measured after trimming',
    * notice.
    */
   execSync(
-    `npx esbuild "${path.resolve(root, '..', 'frontend', 'src/utils/displayName.ts')}" ` +
+    `npx esbuild "${path.resolve(root, '..', 'frontend', 'src/utils/account/displayName.ts')}" ` +
       `--bundle --platform=node --format=esm --outfile="${path.join(root, 'dist/dn-client.test.mjs')}"`,
     { stdio: 'pipe', cwd: root }
   );

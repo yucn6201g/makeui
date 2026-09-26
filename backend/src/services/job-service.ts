@@ -10,9 +10,9 @@ import { currentUsage } from './token-ledger.js';
 const client = new DynamoDBClient({ region: process.env.AWS_REGION || 'ap-northeast-1' });
 const TABLE_NAME = process.env.USAGE_TABLE_NAME || 'makeui-token-usage';
 
-export type JobStatus = 'pending' | 'running' | 'completed' | 'failed';
+type JobStatus = 'pending' | 'running' | 'completed' | 'failed';
 
-export interface JobRecord {
+interface JobRecord {
   jobId: string;
   userId: string;
   status: JobStatus;

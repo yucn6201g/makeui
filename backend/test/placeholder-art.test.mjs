@@ -15,7 +15,7 @@ import path from 'node:path';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const out = path.join(root, 'dist/art.test.mjs');
 await esbuild.build({
-  entryPoints: [path.join(root, 'src/tools/placeholder-art.ts')],
+  entryPoints: [path.join(root, 'src/tools/images/placeholder-art.ts')],
   bundle: true, platform: 'node', format: 'esm', outfile: out, logLevel: 'error',
 });
 const { artworkFor, monogram, dominantHue } = await import(pathToFileURL(out).href);

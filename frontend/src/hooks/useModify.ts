@@ -1,9 +1,9 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { useAuth } from '../auth/AuthProvider'
 import type { StreamEvent } from './useGenerate'
-import { appendPhase, closeTranscript, type PhaseEntry } from '../utils/phaseTranscript'
-import { postJson, requestErrorMessage } from '../utils/request'
-import { pollAuthToken, isAuthRefusal, AUTH_RETRY_BUDGET } from '../utils/pollAuth';
+import { appendPhase, closeTranscript, type PhaseEntry } from '../utils/chat/phaseTranscript'
+import { postJson, requestErrorMessage } from '../utils/requests/request'
+import { pollAuthToken, isAuthRefusal, AUTH_RETRY_BUDGET } from '../utils/requests/pollAuth';
 
 interface UseModifyReturn {
   modifiedHtml: string | null
@@ -29,7 +29,7 @@ interface UseModifyReturn {
   reset: () => void
   stop: () => void
   /** Re-attach to a job that is already running on the server. */
-  /** `priorPhases` seeds the transcript — see utils/activeJob.ts. */
+  /** `priorPhases` seeds the transcript — see utils/requests/activeJob.ts. */
   resume: (jobId: string, priorPhases?: PhaseEntry[]) => void
   /** Job id of the run in flight, so the caller can persist it. */
   jobId: string | null
@@ -136,7 +136,7 @@ export function useModify(): UseModifyReturn {
       const pollController = new AbortController()
       pollFetchAbortRef.current = pollController
 
-      // Read at request time, not captured — see utils/pollAuth.ts.
+      // Read at request time, not captured — see utils/requests/pollAuth.ts.
       pollAuthToken(tokenRef.current ?? authToken)
         .then((bearer) => fetch(`${apiUrl}/jobs/${jobId}`, {
           headers: { Authorization: `Bearer ${bearer}` },
@@ -194,7 +194,7 @@ export function useModify(): UseModifyReturn {
         })
         .catch((err) => {
           if (err.name === 'AbortError') return
-          // A refused poll is not a finished job — see utils/pollAuth.ts.
+          // A refused poll is not a finished job — see utils/requests/pollAuth.ts.
           if (isAuthRefusal((err as any).status) && authRetriesRef.current < AUTH_RETRY_BUDGET) {
             authRetriesRef.current += 1
             pollTimerRef.current = setTimeout(() => {
@@ -270,7 +270,7 @@ export function useModify(): UseModifyReturn {
       // The user's data, for an edit that replaces what the screens are showing.
       if (attachment) body.attachment = attachment
       // Several pictures, and what each one is. An edit used to send only the first
-      // and the composer cleared the rest — see utils/uiImages.ts.
+      // and the composer cleared the rest — see utils/requests/uiImages.ts.
       if (images && images.length > 0) body.images = images
       if (imageCaptions && imageCaptions.some((c) => c && c.trim())) body.imageCaptions = imageCaptions
 
@@ -321,7 +321,7 @@ export function useModify(): UseModifyReturn {
    *
    * The server holds one `streamPhase` — the current step — so polling alone
    * rebuilds the list from whichever step is running and the history is gone.
-   * See utils/activeJob.ts.
+   * See utils/requests/activeJob.ts.
    */
     if (priorPhases && priorPhases.length > 0) setPhases(priorPhases)
     setJobId(id)

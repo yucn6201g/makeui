@@ -30,8 +30,8 @@ const out = path.join(root, 'dist/visual-critic-scope.test.mjs');
 fs.mkdirSync(path.dirname(out), { recursive: true });
 const entry = path.join(root, 'dist/visual-critic-scope-entry.ts');
 fs.writeFileSync(entry, [
-  "export { critiqueScreenshot } from '../src/orchestration/visual-critic.js'",
-  "export { repairable } from '../src/orchestration/repair-yield.js'",
+  "export { critiqueScreenshot } from '../src/orchestration/audit/visual-critic.js'",
+  "export { repairable } from '../src/orchestration/repair/repair-yield.js'",
 ].join('\n'));
 await esbuild.build({
   entryPoints: [entry], bundle: true, platform: 'node', format: 'esm', outfile: out,
@@ -123,9 +123,9 @@ check('and the kept ones are ones it accepts',
   ids(kept).filter((id) => !repairable(id)), []);
 // Stated against the source, because "they happen to agree today" is not the
 // property — the property is that there is one list.
-const critic = fs.readFileSync(path.join(root, 'src/orchestration/visual-critic.ts'), 'utf8');
+const critic = fs.readFileSync(path.join(root, 'src/orchestration/audit/visual-critic.ts'), 'utf8');
 check('the critic imports that list rather than restating it',
-  /import \{ repairable \} from '\.\/repair-yield\.js'/.test(critic), true);
+  /import \{ repairable \} from '\.\.\/repair\/repair-yield\.js'/.test(critic), true);
 check('and has no second copy of the names',
   /visual-spacing|visual-alignment|visual-hierarchy/.test(
     critic.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')), false);

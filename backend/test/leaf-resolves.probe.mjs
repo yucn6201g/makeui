@@ -28,11 +28,11 @@ const want = Number(process.argv[2] ?? 24);
 const entry = path.join(root, 'dist/leaf-resolves-entry.ts');
 fs.mkdirSync(path.dirname(entry), { recursive: true });
 fs.writeFileSync(entry, [
-  "export { reactFiles } from '../src/orchestration/interaction-audit.js'",
-  "export { writeFile } from '../src/orchestration/repair-files.js'",
-  "export { leafModule } from '../src/orchestration/leaf-modules.js'",
-  "export { unresolvedImports, addMissingBarrels } from '../src/tools/react-bundle.js'",
-  "export { detectKind } from '../src/tools/framework-compile.js'",
+  "export { reactFiles } from '../src/orchestration/audit/interaction-audit.js'",
+  "export { writeFile } from '../src/orchestration/repair/repair-files.js'",
+  "export { leafModule } from '../src/orchestration/generate/leaf-modules.js'",
+  "export { unresolvedImports, addMissingBarrels } from '../src/tools/project/react-bundle.js'",
+  "export { detectKind } from '../src/tools/project/framework-compile.js'",
 ].join('\n'));
 const out = path.join(root, 'dist/leaf-resolves.mjs');
 await esbuild.build({

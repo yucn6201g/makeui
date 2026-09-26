@@ -18,11 +18,12 @@
 import { execSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
+import { fixupsEntry } from './lib/fixups-source.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 for (const [src, out] of [
-  ['src/tools/framework-fixups.ts', 'dist/sb-ff.test.mjs'],
-  ['src/tools/react-bundle.ts', 'dist/sb-rb.test.mjs'],
+  [fixupsEntry(), 'dist/sb-ff.test.mjs'],
+  ['src/tools/project/react-bundle.ts', 'dist/sb-rb.test.mjs'],
 ]) {
   execSync(
     `npx esbuild "${path.join(root, src)}" --bundle --platform=node --format=esm --loader:.txt=text ` +

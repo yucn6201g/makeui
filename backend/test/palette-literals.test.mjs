@@ -7,7 +7,7 @@ import path from 'node:path';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 execSync(
-  `npx esbuild "${path.join(root, 'src/orchestration/design-system-audit.ts')}" --bundle --platform=node ` +
+  `npx esbuild "${path.join(root, 'src/orchestration/audit/design-system-audit.ts')}" --bundle --platform=node ` +
     `--format=esm --loader:.txt=text --outfile="${path.join(root, 'dist/dsa.test.mjs')}" ` +
     `--external:@aws-sdk/* --external:@smithy/*`,
   { stdio: 'pipe', cwd: root }

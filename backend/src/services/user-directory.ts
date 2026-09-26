@@ -17,14 +17,14 @@ import { logger } from '../utils/logger.js';
 const cognito = new CognitoIdentityProviderClient({});
 const USER_POOL_ID = process.env.COGNITO_USER_POOL_ID || '';
 
-export interface DirectoryUser {
+interface DirectoryUser {
   userId: string;
   email: string;
   name: string;
 }
 
 export const SEARCH_MIN_CHARS = 2;
-export const SEARCH_LIMIT = 8;
+const SEARCH_LIMIT = 8;
 
 function toUser(u: UserType): DirectoryUser | null {
   const attr = (n: string) => u.Attributes?.find((a) => a.Name === n)?.Value ?? '';

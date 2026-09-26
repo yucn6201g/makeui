@@ -32,8 +32,8 @@ fs.mkdirSync(path.dirname(out), { recursive: true });
  */
 const entry = path.join(root, 'dist/leaf-modules.test-entry.ts');
 fs.writeFileSync(entry, [
-  "export { leafModule, importShape } from '../src/orchestration/leaf-modules.js'",
-  "export { parses } from '../src/orchestration/repair-files.js'",
+  "export { leafModule, importShape } from '../src/orchestration/generate/leaf-modules.js'",
+  "export { parses } from '../src/orchestration/repair/repair-files.js'",
 ].join('\n'));
 await esbuild.build({
   entryPoints: [entry],
@@ -188,7 +188,7 @@ check('and every one of them draws something inside one svg', broken, []);
 check('and the compiler accepts every one', rejected, []);
 
 // --- the repair calls it, and only for what it covers ---------------------
-const repair = fs.readFileSync(path.join(root, 'src/orchestration/repair-files.ts'), 'utf8');
+const repair = fs.readFileSync(path.join(root, 'src/orchestration/repair/repair-files.ts'), 'utf8');
 check('writeMissing tries this before the model', /const body = leafModule\(/.test(repair), true);
 // A drawing that does not parse must go to the model like anything else, not
 // be spliced in because it came from here.

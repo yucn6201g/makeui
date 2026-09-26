@@ -21,8 +21,8 @@ const bundle = (src, out) =>
       `--outfile="${path.join(root, out)}" --external:@aws-sdk/* --external:@smithy/*`,
     { stdio: 'pipe', cwd: root }
   );
-bundle('src/orchestration/edit-files.ts', 'dist/mp-edit.test.mjs');
-bundle('src/orchestration/workflow-router.ts', 'dist/mp-router.test.mjs');
+bundle('src/orchestration/edit/edit-files.ts', 'dist/mp-edit.test.mjs');
+bundle('src/orchestration/generate/workflow-router.ts', 'dist/mp-router.test.mjs');
 const { planFileEdits, applyFileEdits } = await import(
   pathToFileURL(path.join(root, 'dist/mp-edit.test.mjs')).href
 );

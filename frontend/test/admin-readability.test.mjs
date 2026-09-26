@@ -30,11 +30,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ADMIN_FILES, readAdminPanel, adminSection } from './lib/admin-source.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
-const admin = read('src/components/AdminPanel.tsx');
-const menu = read('src/components/UsageMenu.tsx');
+const admin = readAdminPanel();
+const menu = read('src/components/common/UsageMenu.tsx');
 const css = read('src/index.css');
 
 let pass = 0, fail = 0;
@@ -162,7 +163,7 @@ const check = (name, got, want) => {
 
 // --- 7. models are settable where the member is managed --------------------------------
 {
-  const groups = admin.slice(admin.indexOf('function GroupsTab'), admin.indexOf('// --- Main AdminPanel'));
+  const groups = adminSection('GroupsTab.tsx', 'function GroupsTab');
   check('the member row carries a model picker', /<ModelPicker/.test(groups), true);
   check('over the same setter the user tab uses', /onSetModels\(row\.userId, models\)/.test(groups), true);
   /*

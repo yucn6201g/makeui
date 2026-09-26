@@ -25,7 +25,7 @@ import path from 'node:path';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const entry = path.join(root, 'dist-test/sbs-entry.ts');
 fs.mkdirSync(path.dirname(entry), { recursive: true });
-fs.writeFileSync(entry, "export { toSideBySide } from '../src/utils/sideBySideDiff'\n");
+fs.writeFileSync(entry, "export { toSideBySide } from '../src/utils/editing/sideBySideDiff'\n");
 execSync(
   `npx esbuild "${entry}" --bundle --platform=node --format=esm --jsx=automatic ` +
     `--external:react --external:react/jsx-runtime ` +

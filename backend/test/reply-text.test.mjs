@@ -32,7 +32,7 @@ import fs from 'node:fs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 execSync(
-  `npx esbuild "${path.join(root, 'src/orchestration/reply-text.ts')}" --bundle --platform=node ` +
+  `npx esbuild "${path.join(root, 'src/orchestration/prompts/reply-text.ts')}" --bundle --platform=node ` +
     `--format=esm --outfile="${path.join(root, 'dist/rt.test.mjs')}" --external:@aws-sdk/*`,
   { stdio: 'pipe', cwd: root }
 );
@@ -161,7 +161,7 @@ check('stripping leaves no run of blank lines behind',
  * included. Reported as 「整形前の応答がそのまま表示されている」.
  */
 const here = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const meta = fs.readFileSync(path.join(here, 'src/orchestration/meta-orchestrator.ts'), 'utf8');
+const meta = fs.readFileSync(path.join(here, 'src/orchestration/edit/meta-orchestrator.ts'), 'utf8');
 check('the edit reply is built by describeEditReply', meta.includes('describeEditReply(plan, routePlan.parts, instruction, editChecks)'));
 /*
  * And not by `replyText(plan, '')`, which was the bug: it returns its fallback

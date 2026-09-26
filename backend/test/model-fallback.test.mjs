@@ -33,7 +33,7 @@ const check = (name, got, want) => {
 //
 // Read out of the source rather than restated here. A copy of the regex would
 // agree with itself forever.
-const src = fs.readFileSync(path.join(root, 'src/orchestration/graph.ts'), 'utf8');
+const src = fs.readFileSync(path.join(root, 'src/orchestration/generate/model-calls.ts'), 'utf8');
 const body = /function isModelRefusal\(e: unknown\): boolean \{([\s\S]*?)\n\}/.exec(src);
 check('the classifier is where the test thinks it is', Boolean(body), true);
 
@@ -127,10 +127,11 @@ check('nothing inside the wrapper still sends the refused id',
 // The run has to be able to say it happened. `modelTier` stays what was ASKED
 // for, so without this a substituted run is indistinguishable from one that got
 // what it asked for.
+const flatOf = (p) => fs.readFileSync(path.join(root, p), 'utf8').replace(/\s+/g, ' ');
 check('the substitution reaches the metadata',
-  flat.includes('modelUnavailable?: { asked: string; used: string }'), true);
+  flatOf('src/orchestration/generate/types.ts').includes('modelUnavailable?: { asked: string; used: string }'), true);
 check('and is filled in from the map',
-  flat.includes('modelUnavailable: { asked: selectedModel.modelId, used: modelSubstitution(selectedModel.modelId) as string,'),
+  flatOf('src/orchestration/generate/graph.ts').includes('modelUnavailable: { asked: selectedModel.modelId, used: modelSubstitution(selectedModel.modelId) as string,'),
   true);
 
 console.log(`\n${pass} passed, ${fail} failed`);

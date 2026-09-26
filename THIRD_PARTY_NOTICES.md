@@ -18,9 +18,9 @@ CSS の例は MakeUI 側で書いたもので、公式ドキュメントの文�
 
 含まれている場所:
 
-- `backend/src/orchestration/design-presets.ts`
-- `backend/src/orchestration/preset-foundation.ts`
-- `frontend/src/utils/presets.ts`
+- `backend/src/orchestration/presets/design-presets.ts`
+- `backend/src/orchestration/presets/preset-foundation.ts`
+- `frontend/src/utils/projects/presets.ts`
 - `knowledge-base-docs/`
 
 各ライセンスの全文は、それぞれのパッケージ（npm レジストリおよび各リポジトリ）に

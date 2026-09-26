@@ -20,7 +20,7 @@ import path from 'node:path';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 execSync(
-  `npx esbuild "${path.join(root, 'src/orchestration/graph.ts')}" --bundle --platform=node --format=esm ` +
+  `npx esbuild "${path.join(root, 'src/orchestration/prompts/prompt-contracts.ts')}" --bundle --platform=node --format=esm ` +
     `--loader:.txt=text --outfile="${path.join(root, 'dist/sc-graph.test.mjs')}" ` +
     `--external:@aws-sdk/* --external:@smithy/*`,
   { stdio: 'inherit', cwd: root }

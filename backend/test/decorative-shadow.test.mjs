@@ -29,9 +29,9 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const entry = path.join(root, 'dist/shadow-entry.ts');
 fs.mkdirSync(path.dirname(entry), { recursive: true });
 fs.writeFileSync(entry, [
-  "export { isDecorativeShadow } from '../src/orchestration/preset-conformance.js';",
-  "export { clampDecorativeShadows } from '../src/orchestration/deterministic-fixes.js';",
-  "export { presetConformance } from '../src/orchestration/design-presets.js';",
+  "export { isDecorativeShadow } from '../src/orchestration/presets/preset-conformance.js';",
+  "export { clampDecorativeShadows } from '../src/orchestration/repair/deterministic-fixes.js';",
+  "export { presetConformance } from '../src/orchestration/presets/design-presets.js';",
 ].join('\n'));
 execSync(
   `npx esbuild "${entry}" --bundle --platform=node --format=esm --outfile="${path.join(root, 'dist/shadow.test.mjs')}" ` +

@@ -19,7 +19,7 @@ import path from 'node:path';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 execSync(
-  `npx esbuild "${path.join(root, 'src/orchestration/runtime-audit.ts')}" --bundle --platform=node --format=esm ` +
+  `npx esbuild "${path.join(root, 'src/orchestration/audit/runtime-audit.ts')}" --bundle --platform=node --format=esm ` +
     `--outfile="${path.join(root, 'dist/ra.test.mjs')}" --external:@aws-sdk/* --external:@smithy/*`,
   { stdio: 'pipe', cwd: root }
 );
@@ -311,10 +311,10 @@ check('without the source it says nothing about definitions',
 // --- wiring: the edit path and the stored facts ----------------------------------------------------
 {
   const fs = await import('node:fs');
-  const meta = fs.readFileSync(path.join(root, 'src/orchestration/meta-orchestrator.ts'), 'utf8');
+  const meta = fs.readFileSync(path.join(root, 'src/orchestration/edit/meta-orchestrator.ts'), 'utf8');
   check('an edit audits the render with the bound preset', /auditRuntime\(nowFacts, modifiedHtml, preset\)/.test(meta) && /auditRuntime\(wasFacts, html, preset\)/.test(meta), true);
   check('and keeps report-only findings out of the edit repair', /const newly = found\.filter\(\(d\) => repairable\(d\.id\)\)/.test(meta) && /!runtimeBaseline!\.has\(d\.id\) && repairable\(d\.id\)/.test(meta), true);
-  const graph = fs.readFileSync(path.join(root, 'src/orchestration/graph.ts'), 'utf8');
+  const graph = fs.readFileSync(path.join(root, 'src/orchestration/generate/graph.ts'), 'utf8');
   check('a run keeps what hid a screen, the shell and the styling symptoms',
     /\.\.\.\(x\.hiddenBy \? \{ hiddenBy: x\.hiddenBy \} : \{\}\)/.test(graph) && /layout: scoredFacts\.layout/.test(graph) && /unstyledNav: scoredFacts\.unstyledNav/.test(graph) && /oversizedIcons: scoredFacts\.oversizedIcons/.test(graph), true);
 }

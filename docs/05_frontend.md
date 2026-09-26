@@ -13,61 +13,40 @@
 
 ```text
 frontend/src/
-├── App.tsx                    # メインアプリケーション
-├── main.tsx                   # エントリポイント
+├── main.tsx                      # エントリポイント
+├── App.tsx                       # アプリの外枠（未ログインならログイン、次にプロジェクト一覧か開いたプロジェクト）
+├── index.css                     # グローバルスタイル（デザイントークン・モーション）
 ├── auth/
-│   ├── cognito.ts             # Cognito SDK ラッパー
-│   └── AuthProvider.tsx       # 認証コンテキスト (MFA + 15分間隔のトークン更新)
+│   ├── cognito.ts                # Cognito SDK ラッパー
+│   ├── AuthProvider.tsx          # 認証コンテキスト（MFA + 15分間隔のトークン更新）
+│   └── LoginForm.tsx             # ログイン・初回パスワード変更・MFA の画面
 ├── components/
-│   ├── AdminPanel.tsx         # 管理者用パネル（使用量 / モデル / ユーザー管理 / プロジェクト / グループ）
-│   ├── GeneratingCanvas.tsx   # 生成中のプレビュー面
-│   ├── ActivityCard.tsx       # 実行中のジョブ（ヘッダ + 推論トランスクリプト）
-│   ├── ReasoningTranscript.tsx # 工程ごとの推論記録（開閉・所要時間・コード追従）
-│   ├── Dropdown.tsx           # 説明付き単一選択メニュー（モデル/プリセット/形式）
-│   ├── CodeEditor.tsx         # VS Code 風コードタブ（折りたたみ式エクスプローラ + 可変幅）
-│   ├── Preview.tsx            # プレビュー（HTML / React 両対応）
-│   ├── ProjectList.tsx        # プロジェクト一覧（カードグリッド + サムネイル）
-│   ├── CSSInspector.tsx       # CSS インスペクター
-│   ├── PromptTemplates.tsx    # テンプレート（「絵の説明」ではなく「ブリーフ」）
-│   ├── ErrorBoundary.tsx      # エラーバウンダリ
-│   ├── ProjectThumbnail.tsx   # プロジェクトカードのサムネイル描画
-│   ├── ShareButton.tsx        # 公開リンクを作ってクリップボードへ（1クリック）
-│   ├── UsageMenu.tsx          # ヘッダの使用量表示
-│   ├── LiveFrame.tsx          # 比較用の実行フレーム（1:1・クリック可）
-│   └── VersionDiff.tsx / versionDiffBody.tsx / versionSide.ts
-├── hooks/
-│   ├── useGenerate.ts         # 非同期ジョブ生成 + ポーリング + stop / resume + phases
-│   ├── useModify.ts           # UI 修正（要素選択・参照画像・stop / resume 対応）
-│   ├── usePlan.ts             # プランモード（POST /plan → 提案 + 設計仕様、参照画像対応）
-│   ├── useModels.ts           # GET /models（プルダウンに表示するモデルバージョン）
-│   ├── useChatHistory.ts      # プロジェクト別チャット履歴
-│   ├── useProjects.ts         # プロジェクト CRUD
-│   ├── useAdmin.ts / useUsage.ts / useHistory.ts
-│   ├── usePublish.ts          # 公開リンク（URL を返す）
-│   ├── useRefinePrompt.ts     # POST /refine-prompt（入力中のプロンプトの添削案）
-│   ├── useDirectEdit.ts       # プレビュー上の直接編集
-├── utils/
-│   ├── reactPreview.ts        # 生成プロジェクトのブラウザ内ビルド（React / Vue）
-│   ├── frameworkCompile.ts    # 1ファイル → CommonJS。フレームワークごとのコンパイラ
-│   ├── frameworkKind.ts       # 拡張子から React / Vue を判定（コンパイラ非依存）
-│   ├── virtualFs.ts           # 転送形式（行フェンス / data-file）→ 仮想ファイルツリー
-│   ├── scaffold.ts            # 仮想ファイル → そのまま npm install できるプロジェクト
-│   ├── thumbnail.ts           # 静的モックのサムネイル整形
-│   ├── activeJob.ts           # 実行中ジョブの localStorage 永続化
-│   ├── phaseTranscript.ts     # ポーリング結果 → 工程ごとの推論記録への畳み込み
-│   ├── halfWidth.ts           # ログイン / MFA 入力の半角化
-│   ├── zip.ts                 # 生成プロジェクトの ZIP 書き出し
-│   ├── codeHighlight.ts       # コードタブのシンタックスハイライト
-│   ├── formatReply.ts         # 返答の整形（見出し・箇条書き・「未解決の指摘」の折りたたみ）
-│   ├── projectTitle.ts        # Untitled プロジェクトの自動命名（SPECIFICATION.md の見出し → <title>）
-│   ├── titleWidth.ts          # プロジェクト名の入力幅（文字数ではなく表示幅で計算）
-│   ├── runtimeRepair.ts       # プレビューの「修復する」が送る依頼文
-│   ├── scoreScale.ts          # スコアの基準（SCORE_RUBRIC）が現在より古いか
-│   ├── versionQuality.ts      # バージョン一覧の「要件・指摘」列
-│   ├── chartSeries.ts / modelRows.ts / modelTotals.ts  # 管理画面のモデルタブ（積み上げグラフ・表）
-│   └── ……                     # そのほか（projectFilter / shareDocument / sourceEdit / structuralEdit など）
-├── index.css                  # グローバルスタイル
-└── vite-env.d.ts
+│   ├── project-list/             # プロジェクト一覧（カードグリッド + サムネイル）
+│   ├── workspace/                # 開いたプロジェクトの画面
+│   │   ├── Workspace.tsx         #   チャット・コンポーザー・プレビュー・コード・バージョンをまとめる
+│   │   ├── Preview.tsx           #   プレビュー（直接編集・要素選択）
+│   │   ├── CodeEditor.tsx        #   VS Code 風コードタブ
+│   │   ├── CSSInspector.tsx      #   CSS インスペクター
+│   │   ├── GeneratingCanvas.tsx  #   生成中のプレビュー面
+│   │   ├── ActivityCard.tsx      #   実行中のジョブ（ヘッダ + 推論トランスクリプト）
+│   │   ├── ReasoningTranscript.tsx #  工程ごとの推論記録
+│   │   ├── PromptTemplates.tsx   #   テンプレート選択
+│   │   └── ShareButton.tsx       #   共有（メンバー・グループ・公開リンク）
+│   ├── version-diff/             # バージョン比較（左右の実行フレームと差分）
+│   ├── admin/                    # 管理者パネル（AdminPanel.tsx が外枠、タブごとに1ファイル）
+│   └── common/                   # Dropdown / ErrorBoundary / SlidingIndicator / UsageMenu
+├── hooks/                        # API 呼び出し（生成・編集・プラン・履歴・共有・管理）とモーション
+├── data/
+│   └── promptTemplates.ts        # テンプレート（「絵の説明」ではなく「ブリーフ」）
+└── utils/
+    ├── preview/                  # 生成プロジェクトのブラウザ内ビルド、仮想ファイル、サムネイル、ZIP
+    ├── editing/                  # 直接編集・構造編集・コード検索・差分・ハイライト
+    ├── chat/                     # 返答の整形、工程の記録、修正依頼の文面
+    ├── projects/                 # 一覧の絞り込み、命名、バージョン表示、プリセット、共有ロール
+    ├── requests/                 # 依頼の送信、上限、添付、ポーリングの認証、実行中ジョブ
+    ├── motion/                   # モーションの定義、押下フィードバック、画面遷移
+    ├── admin/                    # 管理画面のモデルタブ（積み上げグラフ・表）
+    └── account/                  # 表示名、グループとロール
 ```
 
 ---
@@ -212,7 +191,7 @@ KB検索と画像枚数は**両モードで同じ**です。それらは検査�
 
 提案には「このプランで作成」ボタンが付き、押すと `approvedPlan` 付きで生成が始まります。**設計仕様をそのまま渡すので、承認後のビルドは設計フェーズを丸ごと飛ばします**（`Building from an approved plan` → design-analyst 1ms）。
 
-**提案の直後にプランモードで送ったメッセージは、その提案への手直しになります**（2026-09-23、`utils/planRevision.ts`）。直前のアシスタント発言が提案のときだけで、生成・編集・エラーなど別の発言を挟んだら新しい依頼として扱います。手直しの結果を承認すると「元の依頼＋追加の指示」で生成します。以前は手直しの一文だけで設計フェーズをやり直していました（詳細は 04_backend.md のプランモード）。
+**提案の直後にプランモードで送ったメッセージは、その提案への手直しになります**（2026-09-23、`utils/chat/planRevision.ts`）。直前のアシスタント発言が提案のときだけで、生成・編集・エラーなど別の発言を挟んだら新しい依頼として扱います。手直しの結果を承認すると「元の依頼＋追加の指示」で生成します。以前は手直しの一文だけで設計フェーズをやり直していました（詳細は 04_backend.md のプランモード）。
 
 ### スコアは「検証あり」と「静的のみ」で比べられません
 
@@ -267,7 +246,7 @@ Figma Make に倣い、話者で表示を変えています。
 **実機検証チップは削除しました。** 計測はジョブ記録とログに残り、修復ループが消費します。
 
 **返答の後半（計測した事実）.** 生成の返答は、モデルの前置きの後に次を出します
-（`backend/src/orchestration/reply-text.ts` が組み立て、`formatReply.ts` が整形）:
+（`backend/src/orchestration/prompts/reply-text.ts` が組み立て、`formatReply.ts` が整形）:
 
 - 到達できた画面数とコンソールエラー、作った画面の名前（画面ごとの CSS ファイルは画面として数えない）
 - **要件の照合**: 「依頼の要件のうち、自動で確認できる6件中4件を満たしています。ほかの3件は自動では確認できない要件です。」
@@ -277,7 +256,7 @@ Figma Make に倣い、話者で表示を変えています。
   「未解決の指摘」から外し、別の折りたたみ（`.app__findings--opinions`）で出します。**修正ボタンは置きません** —
   押しても直らないことが分かっているためです。具体的に指示すれば通常の変更として反映できる旨を添えます
 - **1件ずつ「修正を依頼」できます**（2026-09-19）。各指摘の横のボタンが、その指摘の文を添えた変更指示を
-  そのまま送ります（`utils/findingFix.ts`）。**まとめて直すボタンは置きません** — 1回の修復呼び出しに
+  そのまま送ります（`utils/chat/findingFix.ts`）。**まとめて直すボタンは置きません** — 1回の修復呼び出しに
   無関係な指示を8件渡すと「渡した数だけ欠陥が返ってきた」のがこのパイプラインの実測で、修復パスも編集パスも
   1ファイルずつなのはそのためです。指示文には「指摘された点だけを直し、ほかは変えない」と明記します
   （編集はファイル全体を書き直すので、2026-09-18 には動いていた `ProductCard` ごと作り直されました）
@@ -394,7 +373,7 @@ CSS の削除は行単位ではなく**波括弧の深さで解析**しました
 
 | 区画 | 計測 | 処置 |
 |------|------|------|
-| Preset | 記録上、実際に選ばれていた 160/427 回は**コンポーザーの「デザイン」メニュー**。ドロワーのは2つ目 | 削除（定義は `utils/presets.ts` へ） |
+| Preset | 記録上、実際に選ばれていた 160/427 回は**コンポーザーの「デザイン」メニュー**。ドロワーのは2つ目 | 削除（定義は `utils/projects/presets.ts` へ） |
 | Usage | ヘッダのアカウントメニューが**同じ数字**を出している | 削除 |
 | History / Library | プレビュー上部の `<select>` と**同じフックの同じ一覧**（Library は projectId を渡さない版） | 削除 |
 | Templates | 16件のうち6件は**空のチャットに既に出ていた** | 空のチャットへ移動（残り10件は1段の開閉） |
@@ -433,7 +412,7 @@ CSS の削除は行単位ではなく**波括弧の深さで解析**しました
 
 バージョンの見え方も変わりました: `v3` + 日時バッジ + プロンプトは説明文。native select では
 プロンプトをラベルに入れるしかなく、全選択肢が `v3 — ECサイトのトップ…` で始まり、**狭いトリガーは
-全部に共通する部分だけ**を表示していました。採番（`length - index`）は `utils/versionOptions.ts` の
+全部に共通する部分だけ**を表示していました。採番（`length - index`）は `utils/projects/versionOptions.ts` の
 1箇所です — 2箇所にあってずれれば、同じ実行に2つの名前が同じ画面に出ます。
 
 ### 効きようのない宣言の削除
@@ -786,14 +765,14 @@ React はコンパイルしてから `sandbox="allow-scripts"` で描画する�
 クリップボードに入るのは `data-file` ブロックを詰めた転送用の1文書で、**何かの HTML でもなければ
 開けるプロジェクトでもない**ものだったためです。
 
-ZIP の生成は `utils/zip.ts` に自前で持っています（stored、無圧縮）。必要なのは「テキストを
+ZIP の生成は `utils/preview/zip.ts` に自前で持っています（stored、無圧縮）。必要なのは「テキストを
 数十個まとめて OS が開ける書庫にする」ことだけで、そのために依存とバンドルを増やす釣り合いが
 取れないためです。Windows の Expand-Archive で展開し、UTF-8 のファイル名と日本語の内容が
 保たれることを確認しています。
 
 ### 認証画面の入力（半角固定）
 
-ログイン・パスワード設定・MFA の各入力は、`utils/halfWidth.ts` で**入力のたびに半角へ変換**します。
+ログイン・パスワード設定・MFA の各入力は、`utils/requests/halfWidth.ts` で**入力のたびに半角へ変換**します。
 
 日本語IMEが有効なままだと、ａ と a、７ と 7 のように画面上ほぼ見分けの付かない全角文字が入ります。
 Cognito はバイト列で比較するので単に失敗し、ユーザーは正しく見えるフィールドを読み返し続けることに
@@ -818,7 +797,7 @@ Cognito はバイト列で比較するので単に失敗し、ユーザーは正
 
 ### 添付（クリップボタン）
 
-クリップは1つで、拡張子で振り分けます（`utils/dataAttachment.ts`）。
+クリップは1つで、拡張子で振り分けます（`utils/requests/dataAttachment.ts`）。
 
 - **画像**（png / jpg / gif / webp、1枚5MB・最大8枚）: 1枚目は `image`、2枚目以降は `extraImages` に入り、
   各画像に説明欄が付きます。送信時は `uiImagesForSend` が「1枚なら `image`、2枚以上なら `images`」を決め、
@@ -827,7 +806,7 @@ Cognito はバイト列で比較するので単に失敗し、ユーザーは正
   編集とプラン承認後は1枚目しか送らず、1枚だけのときの説明は送っていませんでした）
 - **データ・資料**（csv / tsv / json / md / txt / pdf、1つ）: テキストで読み、PDF はブラウザで文字を取り出してから送ります。
   チップには行数・件数・ページ数を出します
-- **送る前に断るもの**（`utils/requestLimits.ts`）: 2,000文字を超える依頼文、5MB を超える画像、9枚目以降の画像、
+- **送る前に断るもの**（`utils/requests/requestLimits.ts`）: 2,000文字を超える依頼文、5MB を超える画像、9枚目以降の画像、
   512KB を超えるデータファイル。値は API と同じで、`backend/test/client-limits.test.mjs` が一致を確かめます
 
 添付は送信したメッセージにだけ使い、送信後にクリアします。プランモードだけは、承認してビルドが走るまで保持します。
@@ -859,9 +838,9 @@ Cognito はバイト列で比較するので単に失敗し、ユーザーは正
 
 ## デザインプリセット
 
-コンポーザーの「デザイン」プルダウンから選びます。定義は `utils/presets.ts` の `PRESETS` に集約されています。
+コンポーザーの「デザイン」プルダウンから選びます。定義は `utils/projects/presets.ts` の `PRESETS` に集約されています。
 
-> 設定ドロワーにも同じ選択肢が**もう1つ**ありました。記録上、実際に選ばれていた 160/427 回はコンポーザー側です。ドロワーごと削除しました（下の「設定ドロワーの解体」）。定義は UI 層から出して `utils/presets.ts` に移しています — プロジェクト記録が保持するプリセットを読み戻すのは、コンポーネントの仕事ではないので。
+> 設定ドロワーにも同じ選択肢が**もう1つ**ありました。記録上、実際に選ばれていた 160/427 回はコンポーザー側です。ドロワーごと削除しました（下の「設定ドロワーの解体」）。定義は UI 層から出して `utils/projects/presets.ts` に移しています — プロジェクト記録が保持するプリセットを読み戻すのは、コンポーネントの仕事ではないので。
 
 | id | チップ | 説明 |
 |----|-------|------|
@@ -989,7 +968,7 @@ Lambda のスロットリング回数と毎日一致していました（2・3�
 自分の文書を取りに行くため、プロジェクトが多いと一度に10件を超え、拒否されたカードは取得失敗を「文書なし」と区別できずに
 失敗表示で確定していました。再読み込みで直るのは、2回目は一部がキャッシュ済みで同時数が減るからです。
 
-- 取得は同時に最大3件まで（`utils/previewFetch.ts` の `createLimiter`）
+- 取得は同時に最大3件まで（`utils/preview/previewFetch.ts` の `createLimiter`）
 - 5xx・429・通信エラーは `TransientPreviewError` として区別し、1.2秒・3.5秒待って最大3回まで取り直す。
   待っている間は枠を占有しない（試行ごとに並び直す）
 - 文書が無い（200 で html が空、または 4xx）は確定の答えとして扱い、取り直さない
@@ -1038,7 +1017,7 @@ React はソースブロックと空の `<div id="root">` しか無いため、�
 
 プロジェクトレコードが preset と model を学習するのは**生成が完了した時点**で、出力形式に至っては保存されていません。そのため生成中に一覧へ戻って再入場すると、チップが「前回完了した実行」の値に戻り、いま見ているジョブと食い違っていました。実行中の設定値は `activeJob` に一緒に保存し、再アタッチ時に復元します。
 
-`<MainApp key={project.projectId}>` によりプロジェクト切り替え時にコンポーネントが強制リマウントされます。
+`<Workspace key={project.projectId}>` によりプロジェクト切り替え時にコンポーネントが強制リマウントされます。
 
 バージョン履歴から過去のバージョンを選択した場合は、メタデータを追記するのではなく**そのバージョン時点のチャット履歴全体を復元**します。
 
@@ -1301,8 +1280,8 @@ Cognito の `admin` グループに所属するユーザーにのみ表示され
 
 | | 役割 |
 |---|---|
-| `backend/src/tools/framework-compile.ts` | パイプラインが検証に使う。「ビルドできるか」を決め、採点の前提になる |
-| `frontend/src/utils/frameworkCompile.ts` | ユーザのプレビューが実際に走らせる |
+| `backend/src/tools/project/framework-compile.ts` | パイプラインが検証に使う。「ビルドできるか」を決め、採点の前提になる |
+| `frontend/src/utils/preview/frameworkCompile.ts` | ユーザのプレビューが実際に走らせる |
 
 意図的に並行に保たれていますが、**別々のファイル**です。食い違えば、この製品で
 最悪の形の失敗になります — バックエンドは健全と判定し、スコアは高く出て、

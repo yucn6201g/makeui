@@ -84,7 +84,7 @@ aws s3 cp dist/index.html "s3://${BUCKET}/index.html" \
 # The previous build's assets are KEPT. This is not untidiness.
 #
 #   A loaded page holds the chunk names of the build it came from, and it fetches
-#   some of them lazily — the Svelte and Vue compilers are dynamic imports, so
+#   some of them lazily — the runtimes and the Vue compiler are dynamic imports, so
 #   they are requested at the moment someone previews a project, which can be
 #   long after the tab was opened. Deleting the old files pulls them out from
 #   under every open tab.

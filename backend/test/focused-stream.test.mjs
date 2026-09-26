@@ -14,7 +14,7 @@ import path from 'node:path';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const out = path.join(root, 'dist/focused-stream.test.mjs');
 await esbuild.build({
-  entryPoints: [path.join(root, 'src/orchestration/strands-design.ts')],
+  entryPoints: [path.join(root, 'src/orchestration/generate/strands-design.ts')],
   bundle: true, platform: 'node', format: 'esm', outfile: out,
   external: ['@aws-sdk/*', '@smithy/*', '@strands-agents/*'],
   logLevel: 'error',

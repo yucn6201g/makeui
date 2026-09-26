@@ -1,6 +1,6 @@
 import { DynamoDBClient, PutItemCommand, GetItemCommand, DeleteItemCommand } from '@aws-sdk/client-dynamodb';
 import { logger } from '../utils/logger.js';
-import type { ScoreParts } from '../orchestration/scoring.js';
+import type { ScoreParts } from '../orchestration/audit/scoring.js';
 
 const client = new DynamoDBClient({ region: process.env.AWS_REGION || 'ap-northeast-1' });
 const TABLE_NAME = process.env.USAGE_TABLE_NAME || 'makeui-token-usage';

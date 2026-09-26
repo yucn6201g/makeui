@@ -72,7 +72,7 @@ export function normalizeEffort(value: unknown): Effort | undefined {
   return LEGACY[value];
 }
 
-export interface EffortProfile {
+interface EffortProfile {
   /** The four-agent Strands design graph. 60–260s and the largest single cost. */
   designGraph: boolean;
   /**

@@ -20,7 +20,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const preview = fs.readFileSync(path.join(root, 'src/components/Preview.tsx'), 'utf8');
+const preview = fs.readFileSync(path.join(root, 'src/components/workspace/Preview.tsx'), 'utf8');
 const css = fs.readFileSync(path.join(root, 'src/index.css'), 'utf8');
 
 let pass = 0, fail = 0;

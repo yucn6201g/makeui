@@ -20,7 +20,7 @@
 /** Above this many line-pair comparisons the exact count is not worth the time. */
 const LCS_BUDGET = 4_000_000;
 
-export interface ChangeSize {
+interface ChangeSize {
   beforeLines: number;
   afterLines: number;
   /** Lines common to both, in order. */

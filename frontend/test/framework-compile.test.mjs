@@ -1,5 +1,5 @@
 // The preview's own compiler, which is a deliberate twin of the backend's
-// (backend/src/tools/framework-compile.ts). They are separate because one runs
+// (backend/src/tools/project/framework-compile.ts). They are separate because one runs
 // in a Lambda and one in a browser, and the cost of that is drift: a fix made on
 // one side and forgotten on the other shows up as "it previews fine but the
 // stored project is broken", or the reverse.
@@ -15,7 +15,7 @@ import * as sucrase from 'sucrase';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 execSync(
-  `npx esbuild "${path.join(root, 'src/utils/frameworkCompile.ts')}" --bundle --platform=node --format=esm ` +
+  `npx esbuild "${path.join(root, 'src/utils/preview/frameworkCompile.ts')}" --bundle --platform=node --format=esm ` +
     `--outfile="${path.join(root, 'dist-test/fc.test.mjs')}" "--external:virtual:*" ` +
     // Node resolves the bare specifier to the CJS build, which drags in
     // consolidate's optional template engines and cannot be bundled. Vite gives
@@ -107,7 +107,7 @@ check('a malformed SFC still fails', badBlocks.ok, false);
 // compiler. It is asked of `detectKind` now, the same function the builder uses
 // to choose a runtime, so the two cannot disagree.
 execSync(
-  `npx esbuild "${path.join(root, 'src/utils/frameworkCompile.ts')}" --bundle --platform=node --format=esm ` +
+  `npx esbuild "${path.join(root, 'src/utils/preview/frameworkKind.ts')}" --bundle --platform=node --format=esm ` +
     `--outfile="${path.join(root, 'dist-test/dk.test.mjs')}" "--external:virtual:*" ` +
     `"--alias:@vue/compiler-sfc=@vue/compiler-sfc/dist/compiler-sfc.esm-browser.js"`,
   { stdio: 'pipe', cwd: root }

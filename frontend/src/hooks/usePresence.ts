@@ -1,8 +1,8 @@
 import { useEffect, useReducer, useRef, useState, useLayoutEffect } from 'react';
-import { prefersReducedMotion } from '../utils/motion';
+import { prefersReducedMotion } from '../utils/motion/motion';
 
 /** How long something takes to leave. Kept short: leaving is never the point. */
-export const EXIT_MS = 180;
+const EXIT_MS = 180;
 
 /**
  * Something that is shown and hidden, kept on screen long enough to leave.
@@ -32,7 +32,7 @@ export function usePresence(open: boolean, exitMs = EXIT_MS) {
   return { mounted, closing: !open && lingering, state: (open ? 'open' : 'closing') as 'open' | 'closing' };
 }
 
-export interface PresenceEntry<T> {
+interface PresenceEntry<T> {
   item: T;
   key: string;
   /** No longer in the list, and on its way out. */

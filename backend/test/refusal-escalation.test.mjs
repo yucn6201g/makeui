@@ -56,7 +56,7 @@ const rethrows = (src) => {
 
 // --- the two planners ------------------------------------------------------------
 {
-  const repair = flat('src/orchestration/repair-files.ts');
+  const repair = flat('src/orchestration/repair/repair-files.ts');
   check('the repair planner recognises a refusal', repair.includes('isModelUnavailable(e)'), true);
   check('and rethrows it rather than returning an empty plan', rethrows(repair), true);
   /*
@@ -66,7 +66,7 @@ const rethrows = (src) => {
    */
   check('a malformed reply still returns a plan object', repair.includes("logger.warn('File repair planning failed'"), true);
 
-  const edit = flat('src/orchestration/edit-files.ts');
+  const edit = flat('src/orchestration/edit/edit-files.ts');
   check('the edit planner recognises a refusal', edit.includes('isModelUnavailable(e)'), true);
   check('and rethrows it', rethrows(edit), true);
   check('a malformed reply still declines softly', edit.includes("logger.warn('File edit planning failed'"), true);
@@ -79,7 +79,7 @@ const rethrows = (src) => {
    * "falling back to full rewrite" and then did exactly that, for every error
    * including a throttle.
    */
-  const meta = flat('src/orchestration/meta-orchestrator.ts');
+  const meta = flat('src/orchestration/edit/meta-orchestrator.ts');
   check('the edit caller rethrows a refusal instead of rewriting', rethrows(meta), true);
   check('and still falls back otherwise',
     meta.includes("logger.warn('Per-file edit failed — falling back to full rewrite'"), true);
@@ -89,7 +89,7 @@ const rethrows = (src) => {
    * catch breaks the loop, so a throw skips the whole-document call below it.
    * Asserted anyway, because that is load-bearing and reads like an accident.
    */
-  const graph = flat('src/orchestration/graph.ts');
+  const graph = flat('src/orchestration/generate/graph.ts');
   check('the repair caller names a refusal separately in the log',
     graph.includes("logger.warn('Interaction repair refused; the pass stops here'"), true);
   check('and the whole-document repair is inside the same try',

@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, type RefObject } from 'react';
-import { prefersReducedMotion, spring } from '../utils/motion';
+import { prefersReducedMotion, spring } from '../utils/motion/motion';
 
 interface Box { x: number; y: number; w: number; h: number }
 

@@ -23,7 +23,7 @@ const GROUP = runtimeLogGroup();
 const REGION = 'ap-northeast-1';
 const days = Number(process.argv[2] ?? 45);
 
-/** Keep this in step with NOT_WORTH_RETRYING in src/orchestration/repair-yield.ts. */
+/** Keep this in step with NOT_WORTH_RETRYING in src/orchestration/repair/repair-yield.ts. */
 const NOT_WORTH_RETRYING = new Set([
   'action-dead-runtime',
   'nav-dead-runtime',

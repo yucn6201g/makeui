@@ -20,14 +20,14 @@ import path from 'node:path';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 execSync(
-  `npx esbuild "${path.join(root, 'src/orchestration/deterministic-fixes.ts')}" --bundle --platform=node ` +
+  `npx esbuild "${path.join(root, 'src/orchestration/repair/deterministic-fixes.ts')}" --bundle --platform=node ` +
     `--format=esm --outfile="${path.join(root, 'dist/df.test.mjs')}" ` +
     `--external:@aws-sdk/* --external:@smithy/* --external:@strands-agents/*`,
   { stdio: 'pipe', cwd: root }
 );
 const { applyDeterministicFixes, revealHiddenScreens } = await import(pathToFileURL(path.join(root, 'dist/df.test.mjs')).href);
 execSync(
-  `npx esbuild "${path.join(root, 'src/tools/project-transport.ts')}" --bundle --platform=node ` +
+  `npx esbuild "${path.join(root, 'src/tools/project/project-transport.ts')}" --bundle --platform=node ` +
     `--format=esm --outfile="${path.join(root, 'dist/pt2.test.mjs')}"`,
   { stdio: 'pipe', cwd: root }
 );

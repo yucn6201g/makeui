@@ -24,7 +24,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
-const src = read('src/orchestration/refine-prompt.ts');
+const src = read('src/orchestration/edit/refine-prompt.ts');
 const system = src.slice(src.indexOf('const SYSTEM = `'), src.indexOf('`;', src.indexOf('const SYSTEM = `')));
 
 let pass = 0, fail = 0;

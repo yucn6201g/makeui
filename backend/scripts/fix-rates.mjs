@@ -1,6 +1,6 @@
 // How often each defect is actually fixed by a repair pass.
 //
-// The table in src/orchestration/repair-yield.ts decides which defects the loop
+// The table in src/orchestration/repair/repair-yield.ts decides which defects the loop
 // spends calls on, and a table like that rots: the pipeline changes and the
 // rates move with it. `preset-drift` reads 100% because the conformance repair
 // was rewritten to work on the stylesheet; before that it was 0%.
@@ -86,7 +86,7 @@ for (const r of rows) {
     `${Math.round(r.rate * 100)}%`.padStart(8) + (r.n < 10 ? '  (thin)' : ''));
 }
 
-console.log('\nPaste into FIX_RATE in src/orchestration/repair-yield.ts:');
+console.log('\nPaste into FIX_RATE in src/orchestration/repair/repair-yield.ts:');
 for (const r of rows) {
   if (r.n < 10) continue;
   const key = /^[a-z][\w]*$/.test(r.id) ? r.id : `'${r.id}'`;

@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
-import { requestErrorMessage } from '../utils/request';
+import { requestErrorMessage } from '../utils/requests/request';
 import { useAuth } from '../auth/AuthProvider';
-import { TransientPreviewError } from '../utils/previewFetch';
+import { TransientPreviewError } from '../utils/preview/previewFetch';
 
 export interface Project {
   projectId: string;

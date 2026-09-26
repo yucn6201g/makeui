@@ -2,8 +2,18 @@ import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } fro
 import { recordUsage } from '../services/token-usage.js';
 import { saveVersion } from '../services/version-history.js';
 import { saveJobPageHtml } from '../services/output-storage.js';
-import { generateUI, planUI, scoreHtml } from '../orchestration/graph.js';
-import { SCORE_RUBRIC } from '../orchestration/scoring.js';
+import { generateUI } from '../orchestration/generate/graph.js';
+import { planUI } from '../orchestration/generate/plan.js';
+import { scoreHtml, SCORE_RUBRIC } from '../orchestration/audit/scoring.js';
+import type { ModelChoice } from '../config/model-config.js';
+import { normalizeEffort } from '../config/effort.js';
+import { isOutputKind, DEFAULT_OUTPUT_KIND, type OutputKind } from '../config/frameworks.js';
+import { detectKind } from '../tools/project/framework-compile.js';
+import { readProjectFiles } from '../tools/project/project-transport.js';
+import { updateJobStatus } from '../services/job-service.js';
+import { recordProjectRun } from '../services/project-service.js';
+import { logger } from '../utils/logger.js';
+import { describeFailure } from '../utils/failure-message.js';
 
 type ChecklistCounts = { total: number; met: number; unmet: number; unverified: number };
 /** What a version row stores of a checklist: met out of the ones a check could settle. */
@@ -12,11 +22,6 @@ function checklistOf(req: ChecklistCounts | undefined): { requirementsMet?: numb
   const checked = req.total - req.unverified;
   return checked > 0 ? { requirementsMet: req.met, requirementsChecked: checked } : {};
 }
-import type { ModelChoice } from '../config/model-config.js';
-import { normalizeEffort } from '../config/effort.js';
-import { isOutputKind, DEFAULT_OUTPUT_KIND, type OutputKind } from '../config/frameworks.js';
-import { detectKind } from '../tools/framework-compile.js';
-import { readProjectFiles } from '../tools/project-transport.js';
 
 /** The framework a produced document actually is, read from its files. */
 const detectKindOf = (html: string): OutputKind =>
@@ -24,10 +29,6 @@ const detectKindOf = (html: string): OutputKind =>
 
 /** A stored job may carry no format, or one from before the field existed. */
 const normalizeKind = (v: unknown): OutputKind => (isOutputKind(v) ? v : DEFAULT_OUTPUT_KIND);
-import { updateJobStatus } from '../services/job-service.js';
-import { recordProjectRun } from '../services/project-service.js';
-import { logger } from '../utils/logger.js';
-import { describeFailure } from '../utils/failure-message.js';
 
 /**
  * The single implementation of "run a queued job to completion".
@@ -43,7 +44,7 @@ const OUTPUT_BUCKET_NAME = process.env.OUTPUT_BUCKET_NAME || `makeui-outputs-${p
 
 // Strands-SDK-dependent modules are imported lazily so the Lambda bundle, which
 // deliberately omits them, still loads for job types that never touch them.
-const getModifyUI = () => import('../orchestration/meta-orchestrator.js').then((m) => m.modifyUI);
+const getModifyUI = () => import('../orchestration/edit/meta-orchestrator.js').then((m) => m.modifyUI);
 
 export interface JobRequest {
   jobId: string;

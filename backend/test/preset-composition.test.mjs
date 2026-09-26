@@ -18,12 +18,12 @@ const out = path.join(root, 'dist/preset-composition.test.mjs');
 const entry = path.join(root, 'dist/preset-composition-entry.ts');
 fs.mkdirSync(path.dirname(out), { recursive: true });
 fs.writeFileSync(entry, [
-  "export { auditComposition, hasCompositionCheck } from '../src/orchestration/preset-composition.js'",
-  "export { auditRuntime } from '../src/orchestration/runtime-audit.js'",
-  "export { mergeLayout, walkExpression } from '../src/tools/browser-verify.js'",
-  "export { presetIds } from '../src/orchestration/design-presets.js'",
-  "export { shellRequirement } from '../src/orchestration/preset-composition.js'",
-  "export { repairable, worthRepairing } from '../src/orchestration/repair-yield.js'",
+  "export { auditComposition, hasCompositionCheck } from '../src/orchestration/presets/preset-composition.js'",
+  "export { auditRuntime } from '../src/orchestration/audit/runtime-audit.js'",
+  "export { mergeLayout, walkExpression } from '../src/tools/browser/browser-verify.js'",
+  "export { presetIds } from '../src/orchestration/presets/design-presets.js'",
+  "export { shellRequirement } from '../src/orchestration/presets/preset-composition.js'",
+  "export { repairable, worthRepairing } from '../src/orchestration/repair/repair-yield.js'",
 ].join('\n'));
 await esbuild.build({
   entryPoints: [entry], bundle: true, platform: 'node', format: 'esm', outfile: out,
@@ -86,7 +86,7 @@ const CLEAN = { screens: [], deadNav: [], deadActions: [], throwing: [], smallFi
 check('the runtime audit reports it for the bound preset',
   m.auditRuntime({ ...CLEAN, layout: RUNS['material3, second run'][1] }, '', 'material3').some((d) => d.id === 'preset-composition'), true);
 check('and not without one', m.auditRuntime({ ...CLEAN, layout: RUNS['material3, second run'][1] }, '').some((d) => d.id === 'preset-composition'), false);
-const graph = fs.readFileSync(path.join(root, 'src/orchestration/graph.ts'), 'utf8');
+const graph = fs.readFileSync(path.join(root, 'src/orchestration/generate/graph.ts'), 'utf8');
 check('every generation call passes the preset', (graph.match(/auditRuntime\([^)]*\)/g) ?? []).every((c) => c.endsWith(', presetName)')), true);
 
 // --- measured by the walk ------------------------------------------------------------------------
@@ -106,8 +106,8 @@ check('the material3 shell names the rail and rules out top tabs', /navigation r
 check('the agency shell names the breadcrumb row and no side nav', /breadcrumb row/.test(m.shellRequirement('digital-agency')) && /NO persistent side navigation/.test(m.shellRequirement('digital-agency')), true);
 check('no preset, no shell', m.shellRequirement('none'), '');
 check('both build paths ask for it',
-  [fs.readFileSync(path.join(root, 'src/orchestration/build-files.ts'), 'utf8').includes('${shellRequirement(ctx.presetName)}'),
-    fs.readFileSync(path.join(root, 'src/orchestration/graph.ts'), 'utf8').includes('${shellRequirement(presetName)}')], [true, true]);
+  [fs.readFileSync(path.join(root, 'src/orchestration/generate/build-files.ts'), 'utf8').includes('${shellRequirement(ctx.presetName)}'),
+    fs.readFileSync(path.join(root, 'src/orchestration/generate/graph.ts'), 'utf8').includes('${shellRequirement(presetName)}')], [true, true]);
 
 // --- the two false findings from the runs of 2026-09-14 (third round) ---------------------------
 {

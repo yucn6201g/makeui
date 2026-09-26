@@ -20,7 +20,7 @@ import path from 'node:path';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const entry = path.join(root, 'dist-test/filediff-entry.ts');
 fs.mkdirSync(path.dirname(entry), { recursive: true });
-fs.writeFileSync(entry, "export { diffFileSets, summarise } from '../src/utils/fileDiff'\n");
+fs.writeFileSync(entry, "export { diffFileSets, summarise } from '../src/utils/editing/fileDiff'\n");
 execSync(
   `npx esbuild "${entry}" --bundle --platform=node --format=esm ` +
     `--outfile="${path.join(root, 'dist-test/filediff.test.mjs')}"`,

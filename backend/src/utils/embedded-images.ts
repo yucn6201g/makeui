@@ -66,7 +66,7 @@ export const EMBEDDED_IMAGE_NOTE =
   + 'Copy each one through EXACTLY as it appears — do not expand it, rename it, or remove it '
   + 'unless the request is to remove that picture.';
 
-export interface LeanText {
+interface LeanText {
   /** The text with every extracted picture replaced by its marker. */
   text: string;
   /** Marker -> the data URI it stands for. Empty when nothing was extracted. */

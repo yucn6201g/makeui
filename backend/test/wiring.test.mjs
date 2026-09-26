@@ -18,13 +18,14 @@
 import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
 import path from 'node:path';
+import { readFixups } from './lib/fixups-source.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
 
-const fixups = read('src/tools/framework-fixups.ts');
-const bundle = read('src/tools/react-bundle.ts');
-const graph = read('src/orchestration/graph.ts');
+const fixups = readFixups();
+const bundle = read('src/tools/project/react-bundle.ts');
+const graph = read('src/orchestration/generate/graph.ts');
 
 let pass = 0, fail = 0;
 const check = (name, got, want) => {
@@ -120,7 +121,7 @@ check('the guessing helper is gone', runner.includes('recordedModelName'), false
  * corrected: `metadata.modelTier` has always carried the true answer, and a
  * second field for one question is how the wrong one gets picked.
  */
-const graphSrc = read('src/orchestration/graph.ts');
+const graphSrc = read('src/orchestration/generate/graph.ts');
 check('the pipeline no longer calls itself a model',
   /model:\s*'multi-agent-pipeline'/.test(graphSrc), false);
 check('and the tier it did run is still reported',

@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '../auth/AuthProvider';
-import { requestErrorMessage } from '../utils/request';
-import { appendPhase, closeTranscript, type PhaseEntry } from '../utils/phaseTranscript';
-import { pollAuthToken, isAuthRefusal, AUTH_RETRY_BUDGET } from '../utils/pollAuth';
+import { requestErrorMessage } from '../utils/requests/request';
+import { appendPhase, closeTranscript, type PhaseEntry } from '../utils/chat/phaseTranscript';
+import { pollAuthToken, isAuthRefusal, AUTH_RETRY_BUDGET } from '../utils/requests/pollAuth';
 
 /** The proposal a message answers: what it was built from and what it said. */
 export interface PlanRevision {
@@ -16,7 +16,7 @@ export function revisedPrompt(original: string, change: string): string {
   return `${original}\n\n追加の指示: ${change}`;
 }
 
-export interface PlanResult {
+interface PlanResult {
   /** Readable proposal, shown in the thread for approval. */
   plan: string;
   /** Design specification behind it, handed to /generate on approval. */
@@ -39,7 +39,7 @@ interface UsePlanReturn {
    */
   plan: (prompt: string, preset: string, model: string, outputKind: string, html?: string, image?: string, attachment?: { name: string; content: string }, images?: string[], imageCaptions?: string[], revision?: PlanRevision) => void;
   /** Re-attach to a plan already running on the server. */
-  /** `priorPhases` seeds the transcript — see utils/activeJob.ts. */
+  /** `priorPhases` seeds the transcript — see utils/requests/activeJob.ts. */
   resume: (jobId: string, prompt: string, priorPhases?: PhaseEntry[]) => void;
   reset: () => void;
   stop: () => void;
@@ -117,7 +117,7 @@ export function usePlan(): UsePlanReturn {
     const controller = new AbortController();
     pollFetchAbortRef.current = controller;
 
-    // Read at request time, not captured — see utils/pollAuth.ts.
+    // Read at request time, not captured — see utils/requests/pollAuth.ts.
     pollAuthToken(tokenRef.current)
       .then((bearer) => fetch(`${apiUrl}/jobs/${jobId}`, {
         headers: { Authorization: `Bearer ${bearer}` },
@@ -160,7 +160,7 @@ export function usePlan(): UsePlanReturn {
       })
       .catch((err: Error & { status?: number; name: string }) => {
         if (err.name === 'AbortError') return;
-        // A refused poll is not a finished job — see utils/pollAuth.ts.
+        // A refused poll is not a finished job — see utils/requests/pollAuth.ts.
         if (isAuthRefusal(err.status) && authRetriesRef.current < AUTH_RETRY_BUDGET) {
           authRetriesRef.current += 1;
           pollTimerRef.current = setTimeout(() => pollJob(jobId, apiUrl), POLL_INTERVAL_MS * 2);
@@ -233,7 +233,7 @@ export function usePlan(): UsePlanReturn {
    *
    * The server holds one `streamPhase` — the current step — so polling alone
    * rebuilds the list from whichever step is running and the history is gone.
-   * See utils/activeJob.ts.
+   * See utils/requests/activeJob.ts.
    */
     if (priorPhases && priorPhases.length > 0) setPhases(priorPhases);
     setJobId(id);

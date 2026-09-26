@@ -27,7 +27,7 @@ import path from 'node:path';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 execSync(
-  `npx esbuild "${path.join(root, 'src/orchestration/requirements.ts')}" --bundle --platform=node --format=esm ` +
+  `npx esbuild "${path.join(root, 'src/orchestration/generate/requirements.ts')}" --bundle --platform=node --format=esm ` +
     `--outfile="${path.join(root, 'dist/rq.test.mjs')}" --external:@aws-sdk/* --external:@smithy/*`,
   { stdio: 'pipe', cwd: root }
 );
@@ -266,11 +266,11 @@ check('the summary counts every status', summarizeRequirements(results),
   { total: 6, met: 0, unmet: 5, unverified: 1, unmetScreens: ['予約確認'] });
 
 // --- wiring ----------------------------------------------------------------------------------
-const graph = read('src/orchestration/graph.ts');
-const meta = read('src/orchestration/meta-orchestrator.ts');
-const budget = read('src/orchestration/repair-budget.ts');
-const reply = read('src/orchestration/reply-text.ts');
-const extract = read('src/orchestration/requirements.ts');
+const graph = read('src/orchestration/generate/graph.ts');
+const meta = read('src/orchestration/edit/meta-orchestrator.ts');
+const budget = read('src/orchestration/repair/repair-budget.ts');
+const reply = read('src/orchestration/prompts/reply-text.ts');
+const extract = read('src/orchestration/generate/requirements.ts');
 
 check('extraction is always Haiku', /modelId: config\.haikuId/.test(extract), true);
 check('and billed to the run', /recordTokens\([^)]*'requirements:extract'\)/.test(extract), true);
@@ -279,10 +279,10 @@ check('a failed extraction is counted, not billed as zero', /recordUnreportedCal
 check('generation starts extracting before the design phase',
   graph.indexOf('const requirementsPromise = extractRequirements(prompt)') < graph.indexOf("log('design-analyst')"), true);
 check('and waits a bounded time for it', /requirements = await Promise\.race\(\[\s*requirementsPromise/.test(graph), true);
-const design = read('src/orchestration/strands-design.ts');
+const design = read('src/orchestration/generate/strands-design.ts');
 check('the design phase waits for the checklist before it starts',
   /requirements = await Promise\.race\(\[\s*requirementsPromise[\s\S]{0,200}\]\)\s*designPlan = await runDesignSwarm\(\{[\s\S]{0,400}requirements: briefRequirements \? designRequirementsBlock\(requirements\) : ''/.test(graph), true);
-check('and so does the plan, whose specification an approved build uses instead', /requirements: designRequirementsBlock\(planRequirements\)/.test(graph), true);
+check('and so does the plan, whose specification an approved build uses instead', /requirements: designRequirementsBlock\(planRequirements\)/.test(read('src/orchestration/generate/plan.ts')), true);
 check('the specialists receive it in the brief', /Design this product: "\$\{prompt\}"\$\{dataContext \?\? ''\}\$\{requirements \?\? ''\}/.test(design), true);
 check('and the critic checks the specification against it', /Design brief: "\$\{prompt\}"\$\{requirements \?\? ''\}/.test(design) && /9\. REQUIREMENTS/.test(design), true);
 check('the build is told', /Original user request: "\$\{prompt\}"\$\{requirementsBlock\(briefRequirements \? requirements : requirements\.filter\(\(r\) => r\.check\.kind !== 'screen'\)\)\}/.test(graph), true);
@@ -303,7 +303,7 @@ check('and says what could not be checked, rather than implying it held', /自�
 
 check('the edit path extracts from the instruction the user wrote', /const editRequirementsPromise = extractRequirements\(requestedInstruction\)/.test(meta), true);
 check('checks the edited project', /checkRequirements\(modifiedHtml, editRequirements\)/.test(meta), true);
-check('and says which instructions did not land', read('src/orchestration/reply-text.ts').includes('次の指示は、変更後のソースで確認できませんでした'), true);
+check('and says which instructions did not land', read('src/orchestration/prompts/reply-text.ts').includes('次の指示は、変更後のソースで確認できませんでした'), true);
 check('an edit sends its misses to the repair before replying',
   /const requirementMisses = requirementDefects\(checkRequirements\(modifiedHtml, editRequirements\)\)[\s\S]*introduced\.push\(\.\.\.requirementMisses\)[\s\S]*if \(introduced\.length > 0\)/.test(meta), true);
 check('and re-checks them on the repaired document',

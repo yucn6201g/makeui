@@ -201,7 +201,7 @@ export function fixedTierFor(
 
 const bedrockTierFor = (t: Tier) => (t === 'opus' ? 'quality' : t === 'haiku' ? 'lite' : 'fast');
 
-export interface TierDecision {
+interface TierDecision {
   tier: Tier
   /** True when the classifier should be consulted; false when the answer is already fixed. */
   useRouter: boolean
@@ -293,7 +293,7 @@ export async function resolveModelForPrompt(
     };
   }
 
-  const { selectModelForPrompt } = await import('../orchestration/workflow-router.js');
+  const { selectModelForPrompt } = await import('../orchestration/generate/workflow-router.js');
   /*
    * The classifier is only offered what this deployment can invoke.
    *

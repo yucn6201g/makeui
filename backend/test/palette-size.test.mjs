@@ -30,7 +30,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const entry = path.join(root, 'dist/palette-entry.ts');
 fs.mkdirSync(path.dirname(entry), { recursive: true });
 fs.writeFileSync(entry,
-  "export { measureDesignSystem, auditDesignSystem } from '../src/orchestration/design-system-audit.js';\n");
+  "export { measureDesignSystem, auditDesignSystem } from '../src/orchestration/audit/design-system-audit.js';\n");
 execSync(
   `npx esbuild "${entry}" --bundle --platform=node --format=esm --outfile="${path.join(root, 'dist/palette.test.mjs')}" ` +
     `--external:@aws-sdk/* --external:@smithy/* --external:@strands-agents/*`,

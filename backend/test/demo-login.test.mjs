@@ -21,7 +21,7 @@ import { completeProject, documentOf } from './fixtures/complete-project.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 execSync(
-  `npx esbuild "${path.join(root, 'src/orchestration/interaction-audit.ts')}" --bundle --platform=node --format=esm ` +
+  `npx esbuild "${path.join(root, 'src/orchestration/audit/interaction-audit.ts')}" --bundle --platform=node --format=esm ` +
     `--outfile="${path.join(root, 'dist/dl.test.mjs')}" --external:@aws-sdk/* --external:@smithy/*`,
   { stdio: 'pipe', cwd: root }
 );
@@ -79,7 +79,7 @@ check('a toggled password field counts', raised(FORM_CSS, TOGGLE), true);
 // rule is how the audit came to be right and the score wrong about the same
 // document, so they share the predicate now — this asserts they still do.
 execSync(
-  `npx esbuild "${path.join(root, 'src/orchestration/graph.ts')}" --bundle --platform=node --format=esm ` +
+  `npx esbuild "${path.join(root, 'src/orchestration/audit/scoring.ts')}" --bundle --platform=node --format=esm ` +
     `--loader:.txt=text --outfile="${path.join(root, 'dist/gl.test.mjs')}" ` +
     `--external:@aws-sdk/* --external:@smithy/*`,
   { stdio: 'pipe', cwd: root }

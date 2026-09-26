@@ -521,7 +521,7 @@ export const handler = async (
         return jsonResponse(429, { error: 'Rate limit exceeded', retryAfter: rate.retryAfter }, { 'Retry-After': String(rate.retryAfter) });
       }
       await applyInputGuardrail(input.prompt);
-      const { refinePrompt } = await import('../orchestration/refine-prompt.js');
+      const { refinePrompt } = await import('../orchestration/edit/refine-prompt.js');
       /*
        * Billed, which it was not.
        *

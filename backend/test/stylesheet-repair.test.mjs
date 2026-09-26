@@ -23,7 +23,7 @@ import path from 'node:path';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 execSync(
-  `npx esbuild "${path.join(root, 'src/tools/project-transport.ts')}" --bundle --platform=node ` +
+  `npx esbuild "${path.join(root, 'src/tools/project/project-transport.ts')}" --bundle --platform=node ` +
     `--format=esm --outfile="${path.join(root, 'dist/ss.test.mjs')}"`,
   { stdio: 'pipe', cwd: root }
 );

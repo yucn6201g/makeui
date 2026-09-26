@@ -44,7 +44,7 @@ const USER_POOL_ID = process.env.COGNITO_USER_POOL_ID || '';
 /** `BatchWriteItem` takes twenty-five requests per call, and refuses twenty-six. */
 const BATCH_SIZE = 25;
 
-export interface PurgeResult {
+interface PurgeResult {
   rows: number;
   objects: number;
 }
@@ -280,7 +280,7 @@ async function storedOwners(): Promise<Set<string> | null> {
  */
 const MAX_ORPHANS_PER_SWEEP = 10;
 
-export interface SweepResult {
+interface SweepResult {
   swept: string[];
   rows: number;
   objects: number;

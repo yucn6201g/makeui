@@ -22,9 +22,9 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const entry = path.join(root, 'dist/pc-probe-entry.ts');
 fs.mkdirSync(path.dirname(entry), { recursive: true });
 fs.writeFileSync(entry, [
-  "export { outputSpecFor, projectContract, stylesheetContract, SCREEN_COMPLETENESS, FORM_CONTROL_SIZING } from '../src/orchestration/prompt-contracts.js';",
+  "export { outputSpecFor, projectContract, stylesheetContract, SCREEN_COMPLETENESS, FORM_CONTROL_SIZING } from '../src/orchestration/prompts/prompt-contracts.js';",
   "export { FRAMEWORKS } from '../src/config/frameworks.js';",
-  "export { systemField } from '../src/orchestration/prompt-cache.js';",
+  "export { systemField } from '../src/orchestration/prompts/prompt-cache.js';",
 ].join('\n'));
 execSync(
   `npx esbuild "${entry}" --bundle --platform=node --format=esm --outfile="${path.join(root, 'dist/pc-probe.mjs')}" ` +

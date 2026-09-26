@@ -128,9 +128,9 @@ check('and it says to copy them through', EMBEDDED_IMAGE_NOTE.includes('EXACTLY'
  * body without leaning it first is the whole bug coming back, and nothing else
  * here would notice.
  */
-const meta = read('src/orchestration/meta-orchestrator.ts');
-const repair = read('src/orchestration/repair-files.ts');
-const edit = read('src/orchestration/edit-files.ts');
+const meta = read('src/orchestration/edit/meta-orchestrator.ts');
+const repair = read('src/orchestration/repair/repair-files.ts');
+const edit = read('src/orchestration/edit/edit-files.ts');
 
 check('the whole-document rewrite leans its input', /const leaned = lean\(rawHtml\)/.test(meta), true);
 check('and restores on the way out', /return withImages\(/.test(meta), true);

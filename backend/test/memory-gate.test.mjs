@@ -44,7 +44,7 @@ const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
 const out = path.join(root, 'dist/memory-gate.test.mjs');
 fs.mkdirSync(path.dirname(out), { recursive: true });
 const entry = path.join(root, 'dist/memory-gate-entry.ts');
-fs.writeFileSync(entry, "export { summariseDesignDecisions } from '../src/orchestration/graph.js'\n");
+fs.writeFileSync(entry, "export { summariseDesignDecisions } from '../src/orchestration/generate/plan.js'\n");
 await esbuild.build({
   entryPoints: [entry], bundle: true, platform: 'node', format: 'esm', outfile: out,
   external: ['@aws-sdk/*', '@smithy/*', '@strands-agents/*'],
@@ -61,7 +61,7 @@ const check = (name, got, want) => {
 
 /** The defect ids an audit file can produce, read off its own source. */
 const idsIn = (file) =>
-  [...new Set([...read(`src/orchestration/${file}`).matchAll(/id: '([a-z-]+)'/g)].map((m) => m[1]))].sort();
+  [...new Set([...read(`src/orchestration/audit/${file}`).matchAll(/id: '([a-z-]+)'/g)].map((m) => m[1]))].sort();
 
 const VISUAL = [...idsIn('design-audit.ts'), ...idsIn('design-system-audit.ts')];
 const BEHAVIOURAL = [...idsIn('interaction-audit.ts'), ...idsIn('seed-data-audit.ts')];
@@ -73,7 +73,7 @@ check('and so do the behavioural ones', BEHAVIOURAL.length > 0, true);
 check('the two sets are disjoint', VISUAL.filter((id) => BEHAVIOURAL.includes(id)), []);
 
 // --- what the gate consults ---------------------------------------------------
-const graph = read('src/orchestration/graph.ts');
+const graph = read('src/orchestration/generate/graph.ts');
 const gate = graph.slice(graph.indexOf('const blockers = ['), graph.indexOf('const clean = blockers.length === 0'));
 check('the gate is the three checks that read the record', [
   /toRunnableDocument\(finalHtml, outputKind\)\.error/.test(gate),
@@ -143,7 +143,7 @@ check('it says nothing about routing, controls or seed data',
 
 // --- the store's own bounds still apply ---------------------------------------
 // Opening the gate is only safe because what is behind it is bounded.
-const memory = read('src/tools/memory-tool.ts');
+const memory = read('src/tools/agent/memory-tool.ts');
 check('the store keeps a bounded number per person', /KEEP_PER_ACTOR = \d+/.test(memory), true);
 check('retrieval is bounded too', /RETRIEVE_LIMIT = \d+/.test(memory), true);
 check('and a weak match is not a preference', /MIN_SCORE = 0\.\d+/.test(memory), true);

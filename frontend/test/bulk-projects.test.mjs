@@ -24,7 +24,7 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
 const hook = read('src/hooks/useProjects.ts');
-const list = read('src/components/ProjectList.tsx');
+const list = read('src/components/project-list/ProjectList.tsx');
 const css = read('src/index.css');
 
 let pass = 0, fail = 0;

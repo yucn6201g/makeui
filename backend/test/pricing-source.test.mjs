@@ -74,7 +74,7 @@ const check = (name, got, want) => {
    */
   check('the cache-write column is the 5m one', /5m cache write/.test(cols), true);
   check('and not the 1h one', /1h cache write/.test(cols), false);
-  const cache = read('src/orchestration/prompt-cache.ts');
+  const cache = read('src/orchestration/prompts/prompt-cache.ts');
   check('which is what the code actually asks for',
     /cache_control: \{ type: 'ephemeral' \}/.test(cache) && !/ttl/.test(cache), true);
 

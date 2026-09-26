@@ -24,12 +24,12 @@ const out = path.join(root, 'dist/preset-foundation.test.mjs');
 const entry = path.join(root, 'dist/preset-foundation-entry.ts');
 fs.mkdirSync(path.dirname(out), { recursive: true });
 fs.writeFileSync(entry, [
-  "export * from '../src/orchestration/preset-foundation.js'",
-  "export { presetIds, getPresetSpec, presetConformance } from '../src/orchestration/design-presets.js'",
-  "export { hoistImports } from '../src/tools/react-bundle.js'",
-  "export { clampDecorativeShadows } from '../src/orchestration/deterministic-fixes.js'",
-  "export { measureDesignSystem, auditDesignSystem } from '../src/orchestration/design-system-audit.js'",
-  "export { withUsedFoundationTokens } from '../src/orchestration/preset-conformance.js'",
+  "export * from '../src/orchestration/presets/preset-foundation.js'",
+  "export { presetIds, getPresetSpec, presetConformance } from '../src/orchestration/presets/design-presets.js'",
+  "export { hoistImports } from '../src/tools/project/react-bundle.js'",
+  "export { clampDecorativeShadows } from '../src/orchestration/repair/deterministic-fixes.js'",
+  "export { measureDesignSystem, auditDesignSystem } from '../src/orchestration/audit/design-system-audit.js'",
+  "export { withUsedFoundationTokens } from '../src/orchestration/presets/preset-conformance.js'",
 ].join('\n'));
 await esbuild.build({
   entryPoints: [entry], bundle: true, platform: 'node', format: 'esm', outfile: out,
@@ -37,7 +37,7 @@ await esbuild.build({
   logLevel: 'error',
 });
 const m = await import(pathToFileURL(out).href);
-const src = fs.readFileSync(path.join(root, 'src/orchestration/design-presets.ts'), 'utf8');
+const src = fs.readFileSync(path.join(root, 'src/orchestration/presets/design-presets.ts'), 'utf8');
 
 let pass = 0, fail = 0;
 const check = (name, got, want) => {
@@ -260,16 +260,16 @@ check('digital-agency focus is the black outline over yellow',
 // --- wired where it has to be ------------------------------------------------------------------
 {
   const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
-  const graph = read('src/orchestration/graph.ts');
+  const graph = read('src/orchestration/generate/graph.ts');
   const count = (s, needle) => s.split(needle).length - 1;
   check('generation writes the block before measuring and again after the repairs', count(graph, 'applyPresetFoundation(finalHtml, presetName)'), 2);
   check('both critic calls are given the scale', count(graph, 'presetScaleNote(presetName)'), 2);
   check('the single-call build is told the tokens are written', graph.includes('foundationPromptBlock(presetName)'), true);
   check('the per-file build writes the block into the foundation before any screen',
-    read('src/orchestration/build-files.ts').indexOf('withFoundationCss(foundation.get') < read('src/orchestration/build-files.ts').indexOf('const contract = contractBlock(foundation'), true);
-  check('an edit carries the block', read('src/orchestration/meta-orchestrator.ts').includes('applyPresetFoundation(modifiedHtml, preset)'), true);
+    read('src/orchestration/generate/build-files.ts').indexOf('withFoundationCss(foundation.get') < read('src/orchestration/generate/build-files.ts').indexOf('const contract = contractBlock(foundation'), true);
+  check('an edit carries the block', read('src/orchestration/edit/meta-orchestrator.ts').includes('applyPresetFoundation(modifiedHtml, preset)'), true);
   check('the preview hoists imports too',
-    fs.readFileSync(path.join(root, '../frontend/src/utils/reactPreview.ts'), 'utf8').includes('const css = hoistImports(['), true);
+    fs.readFileSync(path.join(root, '../frontend/src/utils/preview/reactPreview.ts'), 'utf8').includes('const css = hoistImports(['), true);
 }
 
 // --- the spec the code-writing calls see ---------------------------------------------------------
@@ -283,8 +283,8 @@ for (const id of BUILT_IN) {
 }
 check('a preset without a block is left as written', m.withoutTokenDeclarations('--x: 1px', 'none'), '--x: 1px');
 {
-  const bf = fs.readFileSync(path.join(root, 'src/orchestration/build-files.ts'), 'utf8');
-  const gr = fs.readFileSync(path.join(root, 'src/orchestration/graph.ts'), 'utf8');
+  const bf = fs.readFileSync(path.join(root, 'src/orchestration/generate/build-files.ts'), 'utf8');
+  const gr = fs.readFileSync(path.join(root, 'src/orchestration/generate/graph.ts'), 'utf8');
   check('both build prompts use the rewritten spec',
     [bf.includes('withoutTokenDeclarations(ctx.presetSpec, ctx.presetName)'), gr.includes('${withoutTokenDeclarations(presetSpec, presetName)}')], [true, true]);
 }
@@ -331,10 +331,10 @@ check('a preset without a block is left as written', m.withoutTokenDeclarations(
   const vue = fence({ 'src/App.vue': '<template><button class="btn" style="height: 44px">x</button></template>\n<style scoped>\n.btn { height: 44px; }\n</style>' });
   const snappedVue = read(m.snapComponentSizes(vue, 'carbon').html, 'src/App.vue');
   check('a Vue style block is snapped and its template is not', [/<style scoped>\n\.btn \{ height: 48px; \}/.test(snappedVue), /style="height: 44px"/.test(snappedVue)], [true, true]);
-  const gr = fs.readFileSync(path.join(root, 'src/orchestration/graph.ts'), 'utf8');
+  const gr = fs.readFileSync(path.join(root, 'src/orchestration/generate/graph.ts'), 'utf8');
   check('the generation runs it before the repair loop and after it', gr.match(/snapComponentSizes\(finalHtml, presetName\)/g)?.length, 2);
   // An edit is the user's word, and "make the button 44px" is one.
-  check('the edit path does not', fs.readFileSync(path.join(root, 'src/orchestration/meta-orchestrator.ts'), 'utf8').includes('snapComponentSizes'), false);
+  check('the edit path does not', fs.readFileSync(path.join(root, 'src/orchestration/edit/meta-orchestrator.ts'), 'utf8').includes('snapComponentSizes'), false);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -257,7 +257,7 @@ check('a non-string is not a name', isValidGroupName(null), false);
 // been burned by; both are executed here and compared.
 {
   execSync(
-    `npx esbuild "${path.resolve(root, '..', 'frontend', 'src/utils/membership.ts')}" ` +
+    `npx esbuild "${path.resolve(root, '..', 'frontend', 'src/utils/account/membership.ts')}" ` +
       `--bundle --platform=node --format=esm --outfile="${path.join(root, 'dist/ug-client.test.mjs')}"`,
     { stdio: 'pipe', cwd: root }
   );

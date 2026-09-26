@@ -25,8 +25,8 @@ if (!docPath) { console.error('usage: node test/stylesheet-repair.probe.mjs <doc
 
 const entry = path.join(root, 'dist/ssp-entry.ts');
 fs.writeFileSync(entry, [
-  "export { stylesheetOf, spliceStylesheet } from '../src/tools/project-transport.js';",
-  "export { presetConformance, getPresetSpec } from '../src/orchestration/design-presets.js';",
+  "export { stylesheetOf, spliceStylesheet } from '../src/tools/project/project-transport.js';",
+  "export { presetConformance, getPresetSpec } from '../src/orchestration/presets/design-presets.js';",
 ].join('\n'));
 execSync(
   `npx esbuild "${entry}" --bundle --platform=node --format=esm --outfile="${path.join(root, 'dist/ssp.mjs')}" ` +

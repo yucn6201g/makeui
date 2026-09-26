@@ -70,7 +70,7 @@ export interface Template {
  *     skeleton makes the build fake a delay, and the browser walk photographs
  *     the skeleton instead of the screen the critic is meant to judge.
  *   - No "Tab で辿れる". Keyboard reach is added deterministically to every
- *     build (tools/keyboard-reach.ts); a brief repeating it is paid for in
+ *     build (tools/fixups/keyboard-reach.ts); a brief repeating it is paid for in
  *     every call the brief is sent to. Keys that are this product's own — the
  *     calendar's arrows, the size picker's — stay.
  */

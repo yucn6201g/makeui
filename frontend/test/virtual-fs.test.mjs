@@ -20,7 +20,7 @@ import path from 'node:path';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 execSync(
-  `npx esbuild "${path.join(root, 'src/utils/virtualFs.ts')}" --bundle --platform=node --format=esm ` +
+  `npx esbuild "${path.join(root, 'src/utils/preview/virtualFs.ts')}" --bundle --platform=node --format=esm ` +
     `--outfile="${path.join(root, 'dist-test/vfs.test.mjs')}"`,
   { stdio: 'pipe', cwd: root }
 );
@@ -135,7 +135,7 @@ check('a fence after a preamble is still found', vfs.splitHtmlToFiles(LEADING).m
 // answered "no". One wrong answer, two visible symptoms: the card painted the
 // project's own source as text, and React, Vue and Svelte were all labelled HTML.
 execSync(
-  `npx esbuild "${path.join(root, 'src/utils/thumbnail.ts')}" --bundle --platform=node --format=esm ` +
+  `npx esbuild "${path.join(root, 'src/utils/preview/thumbnail.ts')}" --bundle --platform=node --format=esm ` +
     `--outfile="${path.join(root, 'dist-test/thumb.test.mjs')}" "--external:virtual:*" ` +
     `"--alias:@vue/compiler-sfc=@vue/compiler-sfc/dist/compiler-sfc.esm-browser.js"`,
   { stdio: 'pipe', cwd: root }

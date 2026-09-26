@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../auth/AuthProvider';
 
-export interface ModelInfo {
+interface ModelInfo {
   id: 'auto' | 'haiku' | 'sonnet' | 'opus';
   label: string;
   /** Version parsed from the configured Bedrock model id, e.g. "4.5". */

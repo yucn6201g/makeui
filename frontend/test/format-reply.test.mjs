@@ -14,10 +14,11 @@ import { execSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import fs from 'node:fs';
+import { APP_FILES, readApp } from './lib/app-source.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 execSync(
-  `npx esbuild "${path.join(root, 'src/utils/formatReply.ts')}" --bundle --platform=node --format=esm ` +
+  `npx esbuild "${path.join(root, 'src/utils/chat/formatReply.ts')}" --bundle --platform=node --format=esm ` +
     `--outfile="${path.join(root, 'dist-test/fr.test.mjs')}"`,
   { stdio: 'pipe', cwd: root }
 );
@@ -176,13 +177,13 @@ check('the phrase inside a sentence is not a heading',
  * so a change to the wording fails here instead of the findings silently
  * unfolding back into the reply.
  */
-const backend = fs.readFileSync(path.join(root, '../backend/src/orchestration/reply-text.ts'), 'utf8');
+const backend = fs.readFileSync(path.join(root, '../backend/src/orchestration/prompts/reply-text.ts'), 'utf8');
 check('the backend writes the heading this recognises',
   backend.includes('lines.push(`未解決の指摘が${open.length}件あります。`);'), true);
 check('and lists every finding rather than counting the rest', /ほか\$\{rest\}件/.test(backend), false);
-check('the chat renders the fold', /block\.kind === 'findings'/.test(fs.readFileSync(path.join(root, 'src/App.tsx'), 'utf8')), true);
+check('the chat renders the fold', /block\.kind === 'findings'/.test(readApp()), true);
 check('as a disclosure, closed by default',
-  /<details className="app__findings"/.test(fs.readFileSync(path.join(root, 'src/App.tsx'), 'utf8')), true);
+  /<details className="app__findings"/.test(readApp()), true);
 
 // --- the critic's opinions, apart from the findings ------------------------------
 /*
@@ -212,7 +213,7 @@ check('the backend writes the opinions heading this recognises',
   backend.includes('lines.push(`デザインについての参考意見が${opinions.length}件あります（自動修正の対象外）。`);'), true);
 check('and decides which they are by the repair exclusion, not by a list of its own',
   /const opinions = all\.filter\(\(d\) => isCriticFinding\(d\.id\) && !repairable\(d\.id\)\)/.test(backend), true);
-const app = fs.readFileSync(path.join(root, 'src/App.tsx'), 'utf8');
+const app = readApp();
 check('the opinions fold has no fix button',
   /block\.kind === 'opinions' \?[\s\S]*?<\/details>/.exec(app)?.[0].includes('handleFixFinding'), false);
 

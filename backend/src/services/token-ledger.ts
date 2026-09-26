@@ -75,14 +75,6 @@ export interface TokenLedger {
   onRecord?: () => void;
 }
 
-/** Usage as Bedrock reports it, including the two cache counters. */
-export interface CallUsage {
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens?: number;
-  cacheWriteTokens?: number;
-}
-
 const storage = new AsyncLocalStorage<TokenLedger>();
 
 export function newLedger(): TokenLedger {

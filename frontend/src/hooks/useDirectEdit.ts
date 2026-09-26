@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '../auth/AuthProvider';
-import { applyStyleEdit, applyTextEdit, isReactDocument } from '../utils/directEdit';
-import { applyFileEdit } from '../utils/sourceEdit';
+import { applyStyleEdit, applyTextEdit, isReactDocument } from '../utils/editing/directEdit';
+import { applyFileEdit } from '../utils/editing/sourceEdit';
 
 /**
  * Holds edits the user made by hand, and saves them without a generation.
@@ -21,7 +21,7 @@ import { applyFileEdit } from '../utils/sourceEdit';
 /** How long the user must pause before an edit becomes a version. */
 const SAVE_DEBOUNCE_MS = 1200;
 
-export interface UseDirectEditOptions {
+interface UseDirectEditOptions {
   /** The document as it stands, before any hand edits. */
   baseHtml: string | null;
   projectId?: string;
@@ -41,7 +41,7 @@ export interface UseDirectEditOptions {
   onSaved?: () => void;
 }
 
-export interface UseDirectEditReturn {
+interface UseDirectEditReturn {
   /** The edited document, or null when nothing has been edited. */
   edited: string | null;
   /** Whether text editing is possible for this document at all. */

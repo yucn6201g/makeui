@@ -21,7 +21,7 @@ import fs from 'node:fs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 await esbuild.build({
-  entryPoints: [path.join(root, 'src/tools/framework-compile.ts')],
+  entryPoints: [path.join(root, 'src/tools/project/framework-compile.ts')],
   bundle: true, platform: 'node', format: 'esm', outfile: path.join(root, 'dist/rb.test.mjs'),
   external: ['@aws-sdk/*', '@smithy/*'], loader: { '.txt': 'text' }, logLevel: 'error',
 });
@@ -48,16 +48,16 @@ const constant = (src) => {
   const start = at + 'export const RENDER_BOUNDARY = `'.length;
   return src.slice(start, src.indexOf('`', start));
 };
-const be = constant(read('backend/src/tools/framework-compile.ts'));
-const fe = constant(read('frontend/src/utils/frameworkCompile.ts'));
+const be = constant(read('backend/src/tools/project/framework-compile.ts'));
+const fe = constant(read('frontend/src/utils/preview/frameworkCompile.ts'));
 check('the backend has the boundary', typeof be === 'string' && be.length > 200, true);
 check('the frontend has the boundary', typeof fe === 'string' && fe.length > 200, true);
 check('and they are the same code', be === fe, true);
 
 // --- it is wired where the app is mounted, in both -------------------------------
 const WIRE = /root\.render = function\(el\) \{ __rendered = true; return orig\(__R\.createElement\(MakeuiBoundary, null, el\)\); \};/;
-check('the backend wraps the root render', WIRE.test(read('backend/src/tools/framework-compile.ts')), true);
-check('the frontend wraps the root render', WIRE.test(read('frontend/src/utils/frameworkCompile.ts')), true);
+check('the backend wraps the root render', WIRE.test(read('backend/src/tools/project/framework-compile.ts')), true);
+check('the frontend wraps the root render', WIRE.test(read('frontend/src/utils/preview/frameworkCompile.ts')), true);
 check('the builtins include the boundary', fc.RUNTIMES.react.builtins.includes('function MakeuiBoundary'), true);
 
 // --- it is code the page's engine will run ----------------------------------------
@@ -75,7 +75,7 @@ check('the user can leave the broken screen', /前の画面に戻る/.test(be) &
 check('and the app comes back when they do', /addEventListener\('hashchange', this\.__reset\)/.test(be), true);
 
 // --- the walk measures the panel as the failure it is ---------------------------------
-const walk = read('backend/src/tools/browser-verify.ts');
+const walk = read('backend/src/tools/browser/browser-verify.ts');
 check('a screen showing the panel is measured as failed',
   /querySelector\('\[data-makeui-render-error\]'\)\)\s*\{\s*fill = 0;\s*hiddenBy = 'render-error';/.test(walk), true);
 

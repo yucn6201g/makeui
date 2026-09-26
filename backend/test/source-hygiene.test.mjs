@@ -99,7 +99,7 @@ check('no template-literal regex has a single-escaped class shorthand', dropped,
 // hazard this covers is the one it cannot see.)
 //
 // So the scripts are extracted and actually parsed.
-const verifySrc = fs.readFileSync(path.join(root, 'src/tools/browser-verify.ts'), 'utf8');
+const verifySrc = fs.readFileSync(path.join(root, 'src/tools/browser/browser-verify.ts'), 'utf8');
 const scripts = [...verifySrc.matchAll(/^const ([A-Z_]+) = `([\s\S]*?)`\r?$/gm)];
 
 check('the injected browser scripts were found', scripts.length >= 2, true);
@@ -131,7 +131,7 @@ for (const [, name, body] of scripts) {
 // Every check above stayed green.
 const bvOut = path.join(root, 'dist/bv-hygiene.test.mjs');
 execSync(
-  `npx esbuild "${path.join(root, 'src/tools/browser-verify.ts')}" --bundle --platform=node --format=esm ` +
+  `npx esbuild "${path.join(root, 'src/tools/browser/browser-verify.ts')}" --bundle --platform=node --format=esm ` +
     `--outfile="${bvOut}" --external:@aws-sdk/* --external:@smithy/*`,
   { stdio: 'pipe', cwd: root }
 );

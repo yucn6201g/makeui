@@ -18,6 +18,7 @@ import * as esbuild from 'esbuild';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import fs from 'node:fs';
 import path from 'node:path';
+import { APP_FILES, readApp } from './lib/app-source.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
@@ -25,7 +26,7 @@ const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
 const out = path.join(root, 'dist-test/title-width.test.mjs');
 fs.mkdirSync(path.dirname(out), { recursive: true });
 await esbuild.build({
-  entryPoints: [path.join(root, 'src/utils/titleWidth.ts')],
+  entryPoints: [path.join(root, 'src/utils/projects/titleWidth.ts')],
   bundle: true, platform: 'node', format: 'esm', outfile: out,
 });
 const { titleWidthEm } = await import(pathToFileURL(out).href);
@@ -78,7 +79,7 @@ check('and a ceiling', /max-width:/.test(rule), true);
 check('and no fixed width to override them', /\n\s*width:/.test(rule), false);
 
 // --- and the composer applies it -------------------------------------------------
-const app = read('src/App.tsx');
+const app = readApp();
 check('the width is computed from the value',
   /style=\{\{ width: `\$\{titleWidthEm\(projectTitle\)\}em` \}\}/.test(app), true);
 // The full name is still reachable when it is longer than the ceiling.

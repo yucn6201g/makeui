@@ -21,7 +21,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const entry = path.join(root, 'dist/reply-entry.ts');
 fs.mkdirSync(path.dirname(entry), { recursive: true });
 fs.writeFileSync(entry,
-  "export { describeOutcome, replyWithOutcome, replyText, stripSelfAddressedScaffolding, conciseDescription } from '../src/orchestration/reply-text.js';\n");
+  "export { describeOutcome, replyWithOutcome, replyText, stripSelfAddressedScaffolding, conciseDescription } from '../src/orchestration/prompts/reply-text.js';\n");
 execSync(
   `npx esbuild "${entry}" --bundle --platform=node --format=esm --outfile="${path.join(root, 'dist/reply.test.mjs')}" ` +
     `--external:@aws-sdk/* --external:@smithy/* --external:@strands-agents/*`,
@@ -130,7 +130,7 @@ const RUN = {
     unnamed.includes('残る1画面は、'), true);
   check('no afterAction, the old sentence', /5画面中 3画面に到達しました/.test(describeOutcome({ ...RUN, reached: 3 })), true);
 
-  const graph = fs.readFileSync(path.join(root, 'src/orchestration/graph.ts'), 'utf8');
+  const graph = fs.readFileSync(path.join(root, 'src/orchestration/generate/graph.ts'), 'utf8');
   check('the run fills it from the screens the project navigates to',
     /afterAction: scoredFacts[\s\S]{0,200}navigatedToInCode\(finalHtml, id\)[\s\S]{0,80}specScreenTitle\(finalHtml, id\)/.test(graph), true);
 }
@@ -370,7 +370,7 @@ check('and nothing in means nothing out', conciseDescription(''), '');
  * project's. The reply counts the declared screens it did not report unreachable.
  */
 {
-  const graph = fs.readFileSync(path.join(root, 'src/orchestration/graph.ts'), 'utf8');
+  const graph = fs.readFileSync(path.join(root, 'src/orchestration/generate/graph.ts'), 'utf8');
   check('reach is declared screens less the unreachable, not the walk\'s landing count',
     /reached: scoredFacts\s*\?\s*declaredScreenIds\(finalHtml\)\.length > 0\s*\?\s*Math\.max\(0, declaredScreenIds\(finalHtml\)\.length - scoredFacts\.unreachable\.length\)/.test(graph), true);
 }

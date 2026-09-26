@@ -8,10 +8,11 @@ import { execSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import fs from 'node:fs';
+import { APP_FILES, readApp } from './lib/app-source.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 execSync(
-  `npx esbuild "${path.join(root, 'src/utils/planRevision.ts')}" --bundle --platform=node --format=esm ` +
+  `npx esbuild "${path.join(root, 'src/utils/chat/planRevision.ts')}" --bundle --platform=node --format=esm ` +
     `--outfile="${path.join(root, 'dist-test/plan-revision.test.mjs')}"`,
   { stdio: 'pipe', cwd: root }
 );
@@ -37,7 +38,7 @@ check('a proposal with no specification cannot be amended',
 check('an empty thread has nothing to answer', proposalBeingAnswered([]), undefined);
 
 // --- wiring ------------------------------------------------------------------------
-const app = fs.readFileSync(path.join(root, 'src/App.tsx'), 'utf8');
+const app = readApp();
 check('the plan branch sends the proposal being answered, for a build only',
   /const revision = forBuild \? proposalBeingAnswered\(messages\) : undefined;/.test(app), true);
 const hook = fs.readFileSync(path.join(root, 'src/hooks/usePlan.ts'), 'utf8');

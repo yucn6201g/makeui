@@ -2,9 +2,9 @@
 //
 // A generated project is compiled twice by different code:
 //
-//   backend/src/tools/framework-compile.ts   — what the pipeline verifies with,
+//   backend/src/tools/project/framework-compile.ts   — what the pipeline verifies with,
 //     what decides whether a document "builds", what the score is computed on
-//   frontend/src/utils/frameworkCompile.ts   — what the user's preview runs
+//   frontend/src/utils/preview/frameworkCompile.ts   — what the user's preview runs
 //
 // They are deliberately parallel, and they are two separate files. If they ever
 // disagree, the failure is the worst-shaped one this product has: the backend
@@ -41,7 +41,7 @@ if (!fs.existsSync(path.join(frontend, 'node_modules'))) {
 }
 
 execSync(
-  `npx esbuild "${path.join(root, 'src/tools/framework-compile.ts')}" --bundle --platform=node --format=esm ` +
+  `npx esbuild "${path.join(root, 'src/tools/project/framework-compile.ts')}" --bundle --platform=node --format=esm ` +
     `--loader:.txt=text --outfile="${path.join(root, 'dist/cp-backend.test.mjs')}" --external:@aws-sdk/*`,
   { stdio: 'inherit', cwd: root }
 );
@@ -50,7 +50,7 @@ execSync(
   // runtimeScripts(), which this does not call. The Vue alias picks the browser
   // build the backend imports directly — the CJS one drags in optional template
   // engines that are not installed and have nothing to do with compiling an SFC.
-  `npx esbuild "${path.join(frontend, 'src/utils/frameworkCompile.ts')}" --bundle --platform=node --format=esm ` +
+  `npx esbuild "${path.join(frontend, 'src/utils/preview/frameworkCompile.ts')}" --bundle --platform=node --format=esm ` +
     `--outfile="${path.join(root, 'dist/cp-frontend.test.mjs')}" "--external:virtual:*" ` +
     `--alias:@vue/compiler-sfc=@vue/compiler-sfc/dist/compiler-sfc.esm-browser.js`,
   { stdio: 'inherit', cwd: frontend }

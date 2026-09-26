@@ -145,7 +145,7 @@ function route(marker) {
    */
   check('and the group name from the token', /group: auth\.membership\.group,/.test(usageRoute), true);
 
-  const menu = read('../frontend/src/components/UsageMenu.tsx');
+  const menu = read('../frontend/src/components/common/UsageMenu.tsx');
   check('the panel shows it', /グループ「\{group\}」全体/.test(menu), true);
   check('to whoever is looking, not only an administrator',
     /limits\.groupBudget && group/.test(menu), true);

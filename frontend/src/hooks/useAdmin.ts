@@ -160,7 +160,7 @@ export interface AdminVersion {
    * has to say which is which.
    */
   scoreVerified?: boolean;
-  /** Which scale `score` is on — see utils/scoreScale.ts. Absent on older rows. */
+  /** Which scale `score` is on — see utils/projects/scoreScale.ts. Absent on older rows. */
   scoreRubric?: number;
   /** Checkable requirements met, of those checked, and findings shipped with. Absent on older rows. */
   requirementsMet?: number;

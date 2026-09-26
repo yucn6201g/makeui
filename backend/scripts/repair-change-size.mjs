@@ -195,7 +195,7 @@ if (rows.length > 0) {
     const m = pct(l, 0.5);
     console.log(`  ${id.padEnd(26)} n=${String(l.length).padStart(3)}  median ${fmt(m)}  ${m <= CEILING ? 'patch' : 'whole'}`);
   }
-  console.log(`\n  Paste the rows marked "patch" into CHANGE_SHARE in src/orchestration/repair-files.ts:`);
+  console.log(`\n  Paste the rows marked "patch" into CHANGE_SHARE in src/orchestration/repair/repair-files.ts:`);
   for (const [id, l] of rows.filter(([, l]) => pct(l, 0.5) <= CEILING))
     console.log(`    '${id}': { median: ${pct(l, 0.5).toFixed(2)}, of: ${l.length} },`);
 }

@@ -98,11 +98,11 @@ check('a stray closing brace first', firstJsonObject(`} ${NL} {"a":1}`), { a: 1 
 // the pattern. Five files had it; none should now.
 {
   const files = [
-    'src/orchestration/edit-files.ts',
-    'src/orchestration/repair-files.ts',
-    'src/orchestration/build-files.ts',
-    'src/orchestration/workflow-router.ts',
-    'src/orchestration/visual-critic.ts',
+    'src/orchestration/edit/edit-files.ts',
+    'src/orchestration/repair/repair-files.ts',
+    'src/orchestration/generate/build-files.ts',
+    'src/orchestration/generate/workflow-router.ts',
+    'src/orchestration/audit/visual-critic.ts',
   ];
   const greedy = [];
   for (const f of files) {

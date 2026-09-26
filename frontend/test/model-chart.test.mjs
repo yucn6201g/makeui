@@ -20,9 +20,10 @@
 import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
 import path from 'node:path';
+import { ADMIN_FILES, readAdminPanel, adminSection } from './lib/admin-source.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const panel = fs.readFileSync(path.join(root, 'src/components/AdminPanel.tsx'), 'utf8');
+const panel = readAdminPanel();
 const css = fs.readFileSync(path.join(root, 'src/index.css'), 'utf8');
 const hook = fs.readFileSync(path.join(root, 'src/hooks/useAdmin.ts'), 'utf8');
 
@@ -45,7 +46,7 @@ const rule = (sel) => {
 
 const chart = panel.slice(panel.indexOf('function TrendChart('), panel.indexOf('function PriceTable('));
 const prices = panel.slice(panel.indexOf('function PriceTable('), panel.indexOf('function ModelsTab('));
-const tab = panel.slice(panel.indexOf('function ModelsTab('), panel.indexOf('// --- Main AdminPanel ---'));
+const tab = adminSection('ModelsTab.tsx', 'function ModelsTab(');
 
 // --- 内訳なし, everywhere ------------------------------------------------------
 const markup = panel.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');

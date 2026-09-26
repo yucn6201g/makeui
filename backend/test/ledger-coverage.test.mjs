@@ -47,7 +47,7 @@ const check = (name, got, want) => {
 const strip = (src) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 
 // --- the four that were open --------------------------------------------------
-const design = strip(read('src/orchestration/strands-design.ts'));
+const design = strip(read('src/orchestration/generate/strands-design.ts'));
 check('the design critic is billed',
   /recordTokens\([^)]*'design:design-critic'\)/.test(design), true);
 // A call that threw may still have spent its input. The total is meant to be a
@@ -66,12 +66,12 @@ check('and before the guard that can throw the run away',
   design.indexOf('recordTokens(changeUsage.inputTokens')
     < design.indexOf('change specification too short'), true);
 
-const router = strip(read('src/orchestration/workflow-router.ts'));
+const router = strip(read('src/orchestration/generate/workflow-router.ts'));
 check('the classifier is billed', /recordTokens\([^)]*'router:classify'\)/.test(router), true);
 check('and a failed classification is counted',
   (router.match(/recordUnreportedCall\('router:classify'\)/g) ?? []).length, 2);
 
-const refine = strip(read('src/orchestration/refine-prompt.ts'));
+const refine = strip(read('src/orchestration/edit/refine-prompt.ts'));
 const handler = strip(read('src/handlers/lambda-handler.ts'));
 check('prompt refinement reports what it spent', /onUsage\?\.\(\{/.test(refine), true);
 /*
@@ -97,7 +97,7 @@ check('against the caller group, like every other billed call',
  * names the same three jobs separately, which is why its share could be
  * attributed and acted on and the edit path's could not.
  */
-const meta = strip(read('src/orchestration/meta-orchestrator.ts'));
+const meta = strip(read('src/orchestration/edit/meta-orchestrator.ts'));
 check('the text helper takes the stage from its caller',
   /async function invokeText\([^)]*stage = 'meta:invokeText'\)/.test(meta), true);
 check('and reports under it', /reportUsage\(body, stage\)/.test(meta), true);

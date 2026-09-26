@@ -25,7 +25,7 @@ import path from 'node:path';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 execSync(
-  `npx esbuild "${path.join(root, 'src/utils/request.ts')}" --bundle --platform=node --format=esm ` +
+  `npx esbuild "${path.join(root, 'src/utils/requests/request.ts')}" --bundle --platform=node --format=esm ` +
     `--outfile="${path.join(root, 'dist-test/req.test.mjs')}"`,
   { stdio: 'pipe', cwd: root }
 );
@@ -101,23 +101,23 @@ const KEEPS_THE_RAW_MESSAGE = {
   // Cognito's messages distinguish a wrong password from an unknown user from
   // an expired code. Replacing them with one sentence would leave someone
   // retyping a password that was never the problem.
-  'src/App.tsx': 'Cognito auth errors — the distinctions are what the user needs',
+  'src/auth/LoginForm.tsx': 'Cognito auth errors — the distinctions are what the user needs',
   // An operator surface. The raw text is the useful one.
   'src/hooks/useAdmin.ts': 'admin panel — raw message is the point',
   // `error` is never destructured at the call site, so nothing renders it.
   'src/hooks/useHistory.ts': 'not rendered anywhere',
   // The classifier itself.
-  'src/utils/request.ts': 'this is requestErrorMessage',
+  'src/utils/requests/request.ts': 'this is requestErrorMessage',
   // Two different reasons in one file. `isStaleChunk` reads the message to
   // MATCH on it, not to show it. The compile errors are shown deliberately and
   // verbatim: `Panel.tsx: Unexpected token (14:2)` names the file and the
   // position, and replacing it with a sentence would remove the only thing that
   // locates the problem.
-  'src/utils/reactPreview.ts': 'matching, and compiler output that must stay verbatim',
+  'src/utils/preview/reactPreview.ts': 'matching, and compiler output that must stay verbatim',
   // The engine's own complaint about a pattern the user just typed —
   // 「Unterminated group」 says which part of their regex is wrong, where a
   // generic sentence would not.
-  'src/utils/codeSearch.ts': 'regex error describing the user’s own input',
+  'src/utils/editing/codeSearch.ts': 'regex error describing the user’s own input',
 };
 
 const sources = [];

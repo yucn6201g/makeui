@@ -23,8 +23,8 @@ const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
 const entry = path.join(root, 'dist/export-mismatch-entry.ts');
 fs.mkdirSync(path.dirname(entry), { recursive: true });
 fs.writeFileSync(entry, [
-  "export { missingExports, fixNamedImportOfDefault, moduleDefects, toRunnableDocument } from '../src/tools/react-bundle.js'",
-  "export { fixupProject } from '../src/tools/framework-fixups.js'",
+  "export { missingExports, fixNamedImportOfDefault, moduleDefects, toRunnableDocument } from '../src/tools/project/react-bundle.js'",
+  "export { fixupProject } from '../src/tools/fixups/framework-fixups.js'",
   "export { rejectedCandidateKey } from '../src/utils/rejected-candidate.js'",
 ].join('\n'));
 const out = path.join(root, 'dist/export-mismatch.test.mjs');
@@ -112,7 +112,7 @@ check('a name that is neither the default nor the file is not guessed onto the d
   m.fixNamedImportOfDefault(collision).fixed, []);
 
 // --- wired into the judge -------------------------------------------------------------------
-const graph = read('src/orchestration/graph.ts');
+const graph = read('src/orchestration/generate/graph.ts');
 const judge = graph.slice(graph.indexOf('const judgeRepair = async ('), graph.indexOf('const repairBudget = new RepairBudget()'));
 check('a repair candidate gets the deterministic corrections before it is judged',
   judge.indexOf('fixupProject(candidate, outputKind)') > 0 && judge.indexOf('fixupProject(candidate, outputKind)') < judge.indexOf('toRunnableDocument(candidate, outputKind)'), true);
@@ -120,7 +120,7 @@ check('a candidate that broke the app is diagnosed and kept',
   /logger\.info\('A repair candidate broke the app'[\s\S]*?missingExports:[\s\S]*?keepRejectedCandidate\(requestId, pass, kind, candidate\)/.test(judge), true);
 check('and the importers named rank first among the single-file reverts', /\.\.\.mismatched\.map\(\(m\) => m\.importer\)/.test(judge), true);
 // --- and into both edit paths ------------------------------------------------------------------
-const meta = read('src/orchestration/meta-orchestrator.ts');
+const meta = read('src/orchestration/edit/meta-orchestrator.ts');
 check('a per-file edit gets the same corrections', /return correctIdioms\(syntax\.html, 'Per-file edit'\)/.test(meta), true);
 check('and a full rewrite does too', /return correctIdioms\(syntax\.html, 'Full rewrite'\)/.test(meta), true);
 check('through fixupProject, for whatever framework the project is',
@@ -129,7 +129,7 @@ check('through fixupProject, for whatever framework the project is',
 // --- and the preview's 修復する request carries the cause ---------------------------------------
 const prefix = /const RUNTIME_REPAIR_PREFIX = '([^']+)'/.exec(meta)?.[1];
 check('the backend recognises the sentence the frontend writes',
-  Boolean(prefix) && read('../frontend/src/utils/runtimeRepair.ts').includes(`'${prefix}`), true);
+  Boolean(prefix) && read('../frontend/src/utils/chat/runtimeRepair.ts').includes(`'${prefix}`), true);
 check('it appends the import defects the source shows, and nothing for other instructions',
   /if \(!instruction\.startsWith\(RUNTIME_REPAIR_PREFIX\)\) return instruction[\s\S]*?d\.id === 'export-missing' \|\| d\.id === 'import-missing'[\s\S]*?if \(found\.length === 0\) return instruction/.test(meta), true);
 check('the edit plans from the diagnosed request', /const instruction = withStaticDiagnosis\(requestedInstruction, html\)/.test(meta), true);

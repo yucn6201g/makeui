@@ -20,12 +20,12 @@ import path from 'node:path';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 execSync(
-  `npx esbuild "${path.join(root, 'src/utils/sourceEdit.ts')}" --bundle --platform=node --format=esm ` +
+  `npx esbuild "${path.join(root, 'src/utils/editing/sourceEdit.ts')}" --bundle --platform=node --format=esm ` +
     `--outfile="${path.join(root, 'node_modules/.cache/se.test.mjs')}"`,
   { stdio: 'inherit', cwd: root }
 );
 execSync(
-  `npx esbuild "${path.join(root, 'src/utils/virtualFs.ts')}" --bundle --platform=node --format=esm ` +
+  `npx esbuild "${path.join(root, 'src/utils/preview/virtualFs.ts')}" --bundle --platform=node --format=esm ` +
     `--outfile="${path.join(root, 'node_modules/.cache/vf.test.mjs')}"`,
   { stdio: 'inherit', cwd: root }
 );

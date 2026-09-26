@@ -31,7 +31,7 @@ const BUCKET_NAME = process.env.OUTPUT_BUCKET_NAME || `makeui-outputs-${process.
  * expires `outputs/` after ninety days, so the corpus is a rolling window and
  * the probe's pinned fixture goes on 2026-11-12.
  */
-export interface SaveOutputParams {
+interface SaveOutputParams {
   userId: string;
   requestId: string;
   html: string;

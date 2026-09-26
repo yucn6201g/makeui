@@ -20,7 +20,7 @@ import path from 'node:path';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const out = path.join(root, 'dist/kr.test.mjs');
 await esbuild.build({
-  entryPoints: [path.join(root, 'src/tools/keyboard-reach.ts')],
+  entryPoints: [path.join(root, 'src/tools/fixups/keyboard-reach.ts')],
   bundle: true, platform: 'node', format: 'esm', outfile: out,
   external: ['@aws-sdk/*', '@smithy/*'], logLevel: 'error',
 });

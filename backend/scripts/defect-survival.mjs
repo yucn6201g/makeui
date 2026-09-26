@@ -95,7 +95,7 @@ for (const r of rows) {
   );
 }
 
-console.log('\nPaste into SURVIVAL in src/orchestration/repair-yield.ts:');
+console.log('\nPaste into SURVIVAL in src/orchestration/repair/repair-yield.ts:');
 for (const r of rows) {
   if (r.n < 8) continue;
   const key = /^[a-z][\w]*$/.test(r.id) ? r.id : `'${r.id}'`;

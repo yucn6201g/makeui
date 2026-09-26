@@ -29,7 +29,7 @@
 | `cache-yield.mjs` | プロンプトキャッシュの区切りが元を取っているか（読み取りは読んだ側に計上される点に注意） | — |
 | `repair-passes.mjs` | 修復パス1回ごとに何が得られているか（パス数の上限を決める材料） | 45日 |
 | `repair-change-size.mjs [days]` | 修復・編集がファイルの何割を変えているか。**差分形式を作るかの判断基準（30ファイル未満は判断しない、40%以下なら作る、70%以上なら作らない）がスクリプト内に書いてあります** | 7日 |
-| `fix-rates.mjs [days]` | 欠陥の id ごとに、修復パスが直した割合。`src/orchestration/repair-yield.ts` の `FIX_RATE` を作り直す | 30日 |
+| `fix-rates.mjs [days]` | 欠陥の id ごとに、修復パスが直した割合。`src/orchestration/repair/repair-yield.ts` の `FIX_RATE` を作り直す | 30日 |
 | `defect-survival.mjs [days]` | 欠陥が実行の終わりにまだ残っていた割合（利用者が受け取る側の数字）。`SURVIVAL` を作り直す | 30日 |
 | `retry-rates.mjs [days]` | 同じ実行の中で、同じ欠陥に2回目・3回目の修復をする価値があるか。`RETRY_RATE` を作り直す | 45日 |
 | `retry-cost.mjs [days]` | 欠陥を修復の対象から外すと、実際に何トークン減るか | 45日 |

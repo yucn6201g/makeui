@@ -12,10 +12,12 @@ import { execSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import fs from 'node:fs';
+import { ADMIN_FILES, readAdminPanel } from './lib/admin-source.mjs';
+import { APP_FILES, readApp } from './lib/app-source.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 execSync(
-  `npx esbuild "${path.join(root, 'src/utils/motion.ts')}" --bundle --platform=node --format=esm ` +
+  `npx esbuild "${path.join(root, 'src/utils/motion/motion.ts')}" --bundle --platform=node --format=esm ` +
     `--outfile="${path.join(root, 'dist-test/motion.test.mjs')}"`,
   { stdio: 'pipe', cwd: root }
 );
@@ -59,7 +61,7 @@ const check = (name, got, want) => {
   const sizes = [[16, 16], [26, 26], [80, 28], [220, 200], [900, 600]].map(([w, h]) => m.pressScale(w, h));
   check('a press sinks between 1.5% and 6%', sizes.every((s) => s >= 0.94 && s <= 0.985), true);
   check('and a bigger surface sinks by a smaller factor', [...sizes].sort((a, b) => a - b).join() === sizes.join(), true);
-  const press = read('src/utils/pressFeedback.ts');
+  const press = read('src/utils/motion/pressFeedback.ts');
   check('the press animates scale, so a transform is kept', /\{ scale: '1' \}, \{ scale: String\(to\) \}/.test(press), true);
   check('not on a disabled control', /el\.matches\(':disabled, \[aria-disabled="true"\]'\)/.test(press), true);
   check('installed once for the whole app', /installPressFeedback\(\);/.test(read('src/main.tsx')), true);
@@ -67,8 +69,8 @@ const check = (name, got, want) => {
 
 // --- sliding thumbs ----------------------------------------------------------------------
 {
-  const files = ['src/App.tsx', 'src/components/ProjectList.tsx', 'src/components/AdminPanel.tsx',
-    'src/components/VersionDiff.tsx', 'src/components/PromptTemplates.tsx', 'src/components/CodeEditor.tsx'];
+  const files = [...APP_FILES, 'src/components/project-list/ProjectList.tsx', ...ADMIN_FILES,
+    'src/components/version-diff/VersionDiff.tsx', 'src/components/workspace/PromptTemplates.tsx', 'src/components/workspace/CodeEditor.tsx'];
   const tracks = [];
   for (const f of files) {
     const src = read(f);
@@ -90,7 +92,7 @@ const check = (name, got, want) => {
     'prompt-templates__chip--active', 'vsc__activity-btn--active']) {
     check(`the thumb takes ${cls}'s fill`, cssNoComments.includes(`.motion-track > .${cls}`), true);
   }
-  const indicator = read('src/components/SlidingIndicator.tsx');
+  const indicator = read('src/components/common/SlidingIndicator.tsx');
   check('the thumb is placed by layout offsets, not by a pressed, scaled box', /x \+= node\.offsetLeft;/.test(indicator), true);
   check('and jumps, rather than slides, into its first place', /const jump = !placed\.current \|\| prefersReducedMotion\(\);/.test(indicator), true);
 }
@@ -98,14 +100,14 @@ const check = (name, got, want) => {
 // --- things that leave ----------------------------------------------------------------------
 {
   const leaving = [
-    ['src/components/Dropdown.tsx', 'dd__menu'],
-    ['src/components/ShareButton.tsx', 'share-panel'],
-    ['src/components/UsageMenu.tsx', 'usage-menu__panel'],
-    ['src/components/AdminPanel.tsx', 'adm-panel'],
-    ['src/components/AdminPanel.tsx', 'adm-overlay'],
-    ['src/components/VersionDiff.tsx', 'vc'],
-    ['src/components/PromptTemplates.tsx', 'prompt-templates__panel'],
-    ['src/components/ProjectList.tsx', 'project-list__bulk'],
+    ['src/components/common/Dropdown.tsx', 'dd__menu'],
+    ['src/components/workspace/ShareButton.tsx', 'share-panel'],
+    ['src/components/common/UsageMenu.tsx', 'usage-menu__panel'],
+    ['src/components/admin/AdminPanel.tsx', 'adm-panel'],
+    ['src/components/admin/AdminPanel.tsx', 'adm-overlay'],
+    ['src/components/version-diff/VersionDiff.tsx', 'vc'],
+    ['src/components/workspace/PromptTemplates.tsx', 'prompt-templates__panel'],
+    ['src/components/project-list/ProjectList.tsx', 'project-list__bulk'],
   ];
   for (const [file, cls] of leaving) {
     const src = read(file);
@@ -120,12 +122,12 @@ const check = (name, got, want) => {
   check('entrances were found', entrances.length >= 8, true);
   check('and every one fills backwards only', entrances.filter((a) => !/ backwards;$/.test(a)), []);
   check('a chat message too', /animation: chat-msg-in [^;]* backwards;/.test(css), true);
-  check('but only one said after the project opened', /\.app__chat-msg--new,\s*\.app__chat-msg--error \{\s*animation: chat-msg-in/.test(css) && /msg\.timestamp >= openedAt \? ' app__chat-msg--new'/.test(read('src/App.tsx')), true);
+  check('but only one said after the project opened', /\.app__chat-msg--new,\s*\.app__chat-msg--error \{\s*animation: chat-msg-in/.test(css) && /msg\.timestamp >= openedAt \? ' app__chat-msg--new'/.test(readApp()), true);
 }
 
 // --- lists that travel ------------------------------------------------------------------------
 {
-  const list = read('src/components/ProjectList.tsx');
+  const list = read('src/components/project-list/ProjectList.tsx');
   check('the project grid animates its layout', /useFlip\(gridRef, gridSignature\)/.test(list) && /className="project-list__grid" ref=\{gridRef\}/.test(list), true);
   // Measured when the list changes, not on every render: the list re-renders on a poll and on every keystroke.
   check('and measures only when what is in it changes', /\}, \[signature\]\);/.test(read('src/hooks/useFlip.ts')), true);
@@ -142,21 +144,21 @@ const check = (name, got, want) => {
   check('a leaving item keeps its place, so its iframe is not moved and reloaded',
     /After the nearest earlier entry that is still in the list being built/.test(presence), true);
   check('the switch to closing happens while rendering, not a frame late', /if \(wasOpen !== open\) \{/.test(presence), true);
-  check('the share panel\'s members travel too', /useFlip\(membersRef, /.test(read('src/components/ShareButton.tsx')), true);
-  check('and the templates when a category narrows them', /useFlip\(listRef/.test(read('src/components/PromptTemplates.tsx')), true);
+  check('the share panel\'s members travel too', /useFlip\(membersRef, /.test(read('src/components/workspace/ShareButton.tsx')), true);
+  check('and the templates when a category narrows them', /useFlip\(listRef/.test(read('src/components/workspace/PromptTemplates.tsx')), true);
 }
 
 // --- between screens --------------------------------------------------------------------------
 {
-  const app = read('src/App.tsx');
+  const app = readApp();
   check('opening a project is a push', /const open = \(project: Project\) => navigate\(\(\) => setCurrentProject\(project\), 'forward'\);/.test(app), true);
   check('leaving it is a pop', /onBackToProjects=\{\(\) => navigate\(\(\) => setCurrentProject\(null\), 'back'\)\}/.test(app), true);
-  const vt = read('src/utils/viewTransition.ts');
+  const vt = read('src/utils/motion/viewTransition.ts');
   check('without the API, or with less motion, it simply happens', /typeof start !== 'function' \|\| prefersReducedMotion\(\)/.test(vt), true);
   check('the stylesheet slides each way',
     ['forward"]::view-transition-new(root)', 'back"]::view-transition-new(root)'].every((s) => css.includes(s)), true);
   check('tab content arrives rather than appears',
-    /className="adm-body motion-swap" key=\{tab\}/.test(read('src/components/AdminPanel.tsx')) && /\.app__pane,/.test(css), true);
+    /className="adm-body motion-swap" key=\{tab\}/.test(readAdminPanel()) && /\.app__pane,/.test(css), true);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

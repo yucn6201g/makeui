@@ -20,7 +20,7 @@ import path from 'node:path';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 execSync(
-  `npx esbuild "${path.join(root, 'src/orchestration/prompt-cache.ts')}" --bundle --platform=node ` +
+  `npx esbuild "${path.join(root, 'src/orchestration/prompts/prompt-cache.ts')}" --bundle --platform=node ` +
     `--format=esm --outfile="${path.join(root, 'dist/pc.test.mjs')}"`,
   { stdio: 'pipe', cwd: root }
 );
@@ -81,7 +81,7 @@ check('a plain string is its own text', fullText('AAA'), 'AAA');
 // matter and neither is visible to the compiler: the cached half must hold the
 // contract (or there is nothing worth caching), and it must NOT hold anything
 // chosen per run (or it never matches twice).
-const graph = fs.readFileSync(path.join(root, 'src/orchestration/graph.ts'), 'utf8');
+const graph = fs.readFileSync(path.join(root, 'src/orchestration/generate/graph.ts'), 'utf8');
 const contract = graph.slice(graph.indexOf('const assemblerContract = `'), graph.indexOf('const assemblerRun = `'));
 const run = graph.slice(graph.indexOf('const assemblerRun = `'), graph.indexOf('const codeAssemblerSystem'));
 

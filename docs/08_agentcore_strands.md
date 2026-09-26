@@ -341,7 +341,7 @@ Runtime がそれを渡します。KB と違って差し替え運用が無いの
 
 | 使っている | Agent |
 |---|---|
-| `src/orchestration/strands-design.ts` | `layout-architect` / `interaction-designer` / `style-expert` / `content-strategist` / `design-critic` / `change-designer` |
+| `src/orchestration/generate/strands-design.ts` | `layout-architect` / `interaction-designer` / `style-expert` / `content-strategist` / `design-critic` / `change-designer` |
 
 > かつては `src/agents/reverse-engineer.ts` も Agent を作っていました。スクリーンショットからの
 > 逆生成は専用経路をやめ、**画像を添えた通常の生成**になったため削除されています

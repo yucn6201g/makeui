@@ -9,9 +9,9 @@ import {
   sendMFACode,
   signOut as cognitoSignOut,
 } from './cognito';
-import { membershipOf, canOpenAdminPanel, type Membership } from '../utils/membership';
+import { membershipOf, canOpenAdminPanel, type Membership } from '../utils/account/membership';
 
-export type AuthStep = 'idle' | 'new-password' | 'mfa-setup' | 'mfa-verify';
+type AuthStep = 'idle' | 'new-password' | 'mfa-setup' | 'mfa-verify';
 
 interface AuthContextType {
   isAuthenticated: boolean;

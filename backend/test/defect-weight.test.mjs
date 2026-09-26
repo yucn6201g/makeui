@@ -17,7 +17,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
 const out = path.join(root, 'dist/defect-weight.test.mjs');
 await esbuild.build({
-  entryPoints: [path.join(root, 'src/orchestration/defect-weight.ts')],
+  entryPoints: [path.join(root, 'src/orchestration/repair/defect-weight.ts')],
   bundle: true, platform: 'node', format: 'esm', outfile: out, logLevel: 'error',
 });
 const { weightedCount, defectWeight, SEVERE_WEIGHT } = await import(pathToFileURL(out).href);
@@ -62,7 +62,7 @@ for (const id of ['render-lost', 'unreachable-introduced', 'console-error-introd
 }
 
 // --- wired into the judge -------------------------------------------------------------------------
-const graph = read('src/orchestration/graph.ts');
+const graph = read('src/orchestration/generate/graph.ts');
 const judge = graph.slice(graph.indexOf('const judgeRepair = async ('), graph.indexOf('const repairBudget = new RepairBudget()'));
 check('the judge decides on weight', /\? weighed\(after\) < weighed\(before\)/.test(judge), true);
 check('still only on the convergent findings', /const weighed = \(list: InteractionDefect\[\]\) => weightedCount\(list\.filter\(convergent\)\)/.test(judge), true);

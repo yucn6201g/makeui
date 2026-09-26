@@ -212,7 +212,7 @@ const split = (i, o, cr = 0, cw = 0) => ({
   check('and every one passes the cache halves',
     calls.filter((c) => !/cacheReadTokens/.test(c) || !/cacheWriteTokens/.test(c)), []);
 
-  const graph = fs.readFileSync(path.join(root, 'src/orchestration/graph.ts'), 'utf8');
+  const graph = fs.readFileSync(path.join(root, 'src/orchestration/generate/graph.ts'), 'utf8');
   check('which the run reports from its ledger',
     /cacheReadTokens: ledger\.cacheReadTokens, cacheWriteTokens: ledger\.cacheWriteTokens/.test(graph), true);
 }

@@ -13,13 +13,15 @@ import * as esbuild from 'esbuild';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import fs from 'node:fs';
 import path from 'node:path';
+import { ADMIN_FILES, readAdminPanel } from './lib/admin-source.mjs';
+import { APP_FILES, readApp } from './lib/app-source.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
 const out = path.join(root, 'dist-test/score-scale.test.mjs');
 fs.mkdirSync(path.dirname(out), { recursive: true });
 await esbuild.build({
-  entryPoints: [path.join(root, 'src/utils/scoreScale.ts')],
+  entryPoints: [path.join(root, 'src/utils/projects/scoreScale.ts')],
   bundle: true, platform: 'node', format: 'esm', outfile: out,
 });
 const { isOlderScoreScale, isOlderRubric, CURRENT_SCORE_RUBRIC } = await import(pathToFileURL(out).href);
@@ -39,7 +41,7 @@ check('an edit scored without a browser is never marked: the change was to what 
   isOlderScoreScale({ scoreVerified: false }), false);
 check('a row that does not say whether it rendered is treated as rendered', isOlderScoreScale({}), true);
 
-const panel = read('src/components/AdminPanel.tsx');
+const panel = readAdminPanel();
 check('the version list marks it', /\{isOlderScoreScale\(v\) && \(/.test(panel), true);
 check('with the date the scale changed, so the reader knows which rows compare',
   panel.includes('計測方法の変更（2026-09-13）より前のスコアです'), true);
@@ -49,7 +51,7 @@ check('the admin type carries the field', /scoreRubric\?: number;/.test(read('sr
 check('a chat score from scale 3 is older now', isOlderRubric(3), true);
 check('one without a rubric is the first scale', isOlderRubric(undefined), true);
 check('the current one is not', isOlderRubric(CURRENT_SCORE_RUBRIC), false);
-const app = read('src/App.tsx');
+const app = readApp();
 check('the tooltip compares against the current scale, not a literal 2', /if \(isOlderRubric\(parts\.rubric\)\) return unverified \+ oldScale;/.test(app) && !/rubric \?\? 1\) < 2/.test(app), true);
 check('and the chip says so where it is read', /isOlderRubric\(msg\.runInfo\.scoreParts\?\.rubric\) && \(\s*<span className="app__chat-score-unverified"> 旧基準<\/span>/.test(app), true);
 

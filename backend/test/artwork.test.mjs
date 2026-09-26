@@ -27,6 +27,7 @@
 import * as esbuild from 'esbuild';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
+import { fixupsEntry } from './lib/fixups-source.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const build = async (entry, out) => {
@@ -36,8 +37,8 @@ const build = async (entry, out) => {
   });
   return import(pathToFileURL(path.join(root, out)).href);
 };
-const art = await build('src/tools/artwork.ts', 'dist/aw.test.mjs');
-const fx = await build('src/tools/framework-fixups.ts', 'dist/awf.test.mjs');
+const art = await build('src/tools/fixups/artwork.ts', 'dist/aw.test.mjs');
+const fx = await build(fixupsEntry(), 'dist/awf.test.mjs');
 
 let pass = 0, fail = 0;
 const check = (name, got, want) => {

@@ -18,7 +18,7 @@ import path from 'node:path';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 execSync(
-  `npx esbuild "${path.join(root, 'src/utils/presets.ts')}" --bundle --platform=node ` +
+  `npx esbuild "${path.join(root, 'src/utils/projects/presets.ts')}" --bundle --platform=node ` +
     `--format=esm --jsx=automatic --external:react --external:react/jsx-runtime ` +
     `--outfile="${path.join(root, 'dist-test/ps.test.mjs')}"`,
   { stdio: 'pipe', cwd: root }

@@ -24,15 +24,15 @@ const check = (name, got, want) => {
   ok ? pass++ : fail++;
 };
 
-const scoring = read('src/orchestration/scoring.ts');
+const scoring = read('src/orchestration/audit/scoring.ts');
 const backendScale = Number(/export const SCORE_RUBRIC = (\d+)/.exec(scoring)?.[1]);
-const clientScale = Number(/export const CURRENT_SCORE_RUBRIC = (\d+);/.exec(read('../frontend/src/utils/scoreScale.ts'))?.[1]);
+const clientScale = Number(/export const CURRENT_SCORE_RUBRIC = (\d+);/.exec(read('../frontend/src/utils/projects/scoreScale.ts'))?.[1]);
 check('the scale is a number', Number.isInteger(backendScale) && backendScale > 0, true);
 check('and the client marks rows against the same number', clientScale, backendScale);
 check('the current value is explained where it is declared', scoring.includes(` ${backendScale} (2026-`), true);
 check('and there is one scale constant, not two', /export const SCORE_SCALE\b/.test(scoring), false);
 
-check('generation reports it, inside scoreParts', /scoreParts: \{ rubric: scored\.rubric,/.test(read('src/orchestration/graph.ts')), true);
+check('generation reports it, inside scoreParts', /scoreParts: \{ rubric: scored\.rubric,/.test(read('src/orchestration/generate/graph.ts')), true);
 const runner = read('src/handlers/job-runner.ts');
 check('both saved paths record it, generation from the run', /scoreRubric: \(result\.metadata\?\.scoreParts as \{ rubric\?: number \} \| undefined\)\?\.rubric \?\? SCORE_RUBRIC,/.test(runner), true);
 check('and edit', (runner.match(/scoreRubric: /g) ?? []).length, 2);
@@ -47,11 +47,11 @@ check('and both readers return it', (history.match(/scoreRubric: Number\(item\.s
  * The request's checklist and the findings a version shipped with were in the
  * chat reply only. The same chain now carries them to the version list.
  */
-const graph = read('src/orchestration/graph.ts');
+const graph = read('src/orchestration/generate/graph.ts');
 check('generation reports its checklist and its open findings',
   /requirements: \{ total: requirementSummary\.total, met: requirementSummary\.met/.test(graph) && /openFindings: openDefects\.length,/.test(graph), true);
 check('from the one summary the reply also reads', /const requirementSummary = summarizeRequirements\(checkRequirements\(finalHtml, requirements\)\)/.test(graph) && /requirements: requirementSummary,/.test(graph), true);
-check('an edit reports its checklist', /requirements: \{ total: editSummary\.total, met: editSummary\.met/.test(read('src/orchestration/meta-orchestrator.ts')), true);
+check('an edit reports its checklist', /requirements: \{ total: editSummary\.total, met: editSummary\.met/.test(read('src/orchestration/edit/meta-orchestrator.ts')), true);
 check('the runner saves met of checked, from both paths', (runner.match(/\.\.\.checklistOf\(/g) ?? []).length, 2);
 check('a checklist with nothing checkable saves nothing, not zero', /return checked > 0 \? \{ requirementsMet: req\.met, requirementsChecked: checked \} : \{\};/.test(runner), true);
 check('the row stores them only when known',

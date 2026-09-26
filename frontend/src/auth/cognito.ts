@@ -10,7 +10,7 @@ const userPool = new CognitoUserPool({
   ClientId: import.meta.env.VITE_COGNITO_CLIENT_ID,
 });
 
-export interface SignInCallbacks {
+interface SignInCallbacks {
   onSuccess: (session: CognitoUserSession) => void;
   onFailure: (err: Error) => void;
   onNewPasswordRequired: (user: CognitoUser, userAttributes: Record<string, string>) => void;

@@ -40,7 +40,7 @@ const want = Number(process.argv[2] ?? 60);
 // --- an instrumented copy of the real scorer ---------------------------------------
 const entry = path.join(root, 'dist/item-entry.ts');
 fs.mkdirSync(path.dirname(entry), { recursive: true });
-fs.writeFileSync(entry, "export { scoreHtml } from '../src/orchestration/scoring.js';\n");
+fs.writeFileSync(entry, "export { scoreHtml } from '../src/orchestration/audit/scoring.js';\n");
 // esbuild's own entry script under node, rather than `npx` through a shell:
 // passing an argument array through a shell concatenates instead of escaping
 // (Node deprecates it for that reason), and spawning `npx.cmd` without one is
@@ -154,7 +154,7 @@ for (const d of kept) {
 // V8 reports the line a call EXPRESSION starts on, which for a call spanning
 // lines is not the line holding `r.award`. Search back a little rather than
 // printing whatever text happens to sit there.
-const src = fs.readFileSync(path.join(root, 'src/orchestration/scoring.ts'), 'utf8').split(/\r?\n/);
+const src = fs.readFileSync(path.join(root, 'src/orchestration/audit/scoring.ts'), 'utf8').split(/\r?\n/);
 const nearest = (line) => {
   for (let i = line - 1; i >= Math.max(0, line - 5); i -= 1) {
     if (/r\.(award|partial|deduct|gate)\(/.test(src[i] ?? '')) return `${i + 1}: ${src[i].trim().slice(0, 72)}`;

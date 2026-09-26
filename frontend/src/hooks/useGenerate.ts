@@ -1,8 +1,8 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useAuth } from '../auth/AuthProvider';
-import { appendPhase, closeTranscript, type PhaseEntry } from '../utils/phaseTranscript';
-import { postJson, requestErrorMessage } from '../utils/request';
-import { pollAuthToken, isAuthRefusal, AUTH_RETRY_BUDGET } from '../utils/pollAuth';
+import { appendPhase, closeTranscript, type PhaseEntry } from '../utils/chat/phaseTranscript';
+import { postJson, requestErrorMessage } from '../utils/requests/request';
+import { pollAuthToken, isAuthRefusal, AUTH_RETRY_BUDGET } from '../utils/requests/pollAuth';
 
 
 /**
@@ -42,7 +42,7 @@ export interface StreamEvent {
   [key: string]: unknown;
 }
 
-export interface TokenUsage {
+interface TokenUsage {
   inputTokens: number;
   outputTokens: number;
 }
@@ -75,7 +75,7 @@ interface UseGenerateReturn {
   reset: () => void;
   stop: () => void;
   /** Re-attach to a job that is already running on the server. */
-  /** `priorPhases` seeds the transcript — see utils/activeJob.ts. */
+  /** `priorPhases` seeds the transcript — see utils/requests/activeJob.ts. */
   resume: (jobId: string, priorPhases?: PhaseEntry[]) => void;
   /** Job id of the run in flight, so the caller can persist it. */
   jobId: string | null;
@@ -199,7 +199,7 @@ export function useGenerate(): UseGenerateReturn {
       const pollController = new AbortController();
       pollFetchAbortRef.current = pollController;
 
-      // Read at request time, not captured — see utils/pollAuth.ts.
+      // Read at request time, not captured — see utils/requests/pollAuth.ts.
       pollAuthToken(tokenRef.current ?? authToken)
         .then((bearer) => fetch(`${apiUrl}/jobs/${jobId}`, {
           headers: { Authorization: `Bearer ${bearer}` },
@@ -372,7 +372,7 @@ export function useGenerate(): UseGenerateReturn {
    *
    * The server holds one `streamPhase` — the current step — so polling alone
    * rebuilds the list from whichever step is running and the history is gone.
-   * See utils/activeJob.ts.
+   * See utils/requests/activeJob.ts.
    */
     if (priorPhases && priorPhases.length > 0) setPhases(priorPhases);
     setJobId(id);

@@ -35,7 +35,7 @@ const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
 const handler = read('src/handlers/lambda-handler.ts');
 const purge = read('src/services/account-purge.ts');
 const storage = read('src/services/output-storage.ts');
-const graph = read('src/orchestration/graph.ts');
+const graph = read('src/orchestration/generate/graph.ts');
 const groups = read('src/services/user-groups.ts');
 
 let pass = 0, fail = 0;

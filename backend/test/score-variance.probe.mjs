@@ -158,7 +158,7 @@ if (results.length < 2) { console.error('need at least two runs to say anything 
 
 // --- score each one, recording every check ------------------------------------------
 const entry = path.join(root, 'dist/var-entry.ts');
-fs.writeFileSync(entry, "export { scoreHtml } from '../src/orchestration/scoring.js';\n");
+fs.writeFileSync(entry, "export { scoreHtml } from '../src/orchestration/audit/scoring.js';\n");
 execFileSync(process.execPath, [path.join(root, 'node_modules/esbuild/bin/esbuild'), entry, '--bundle',
   '--platform=node', '--format=esm', '--sourcemap=inline', `--outfile=${path.join(root, 'dist/var.mjs')}`,
   '--external:@aws-sdk/*', '--external:@smithy/*', '--external:@strands-agents/*'], { stdio: 'pipe', cwd: root });
@@ -181,7 +181,7 @@ globalThis.__ITEM__ = (stack, args) => {
   cur.push({ site: Number(at[1]), a: args[0], w: args[1], gate: method?.[1] === 'gate' });
 };
 
-const src = fs.readFileSync(path.join(root, 'src/orchestration/scoring.ts'), 'utf8').split(/\r?\n/);
+const src = fs.readFileSync(path.join(root, 'src/orchestration/audit/scoring.ts'), 'utf8').split(/\r?\n/);
 const nearest = (line) => {
   for (let i = line - 1; i >= Math.max(0, line - 5); i -= 1) {
     if (/r\.(award|partial|deduct|gate)\(/.test(src[i] ?? '')) return `${i + 1}: ${src[i].trim().slice(0, 66)}`;
