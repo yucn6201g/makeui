@@ -10,6 +10,7 @@ import { titleWidthEm } from '../../utils/projects/titleWidth';
 import { useAuth } from '../../auth/AuthProvider';
 import { normalizePreset, PRESETS } from '../../utils/projects/presets';
 import { Preview, type DeviceKind } from './Preview';
+import { fetchPreviewPolitely, runNow, DOCUMENT_RETRY_DELAYS_MS } from '../../utils/preview/previewFetch';
 import { isOutputKind, detectKind, type OutputKind } from '../../utils/preview/frameworkKind';
 import { CodeEditor } from './CodeEditor';
 import { AdminPanel } from '../admin/AdminPanel';
@@ -473,6 +474,15 @@ export function Workspace({ project, onBackToProjects, onUpdateProject, fetchPro
     setSelectedAnchor(null);
   };
   const [loadedHtml, setLoadedHtml] = useState<string | null>(project.lastHtml ?? null);
+  /*
+   * Whether the server's document has arrived. The list does not carry one
+   * (`hasDocument` instead), so opening a project from it starts with nothing to
+   * draw — see the fetch further down for what this state changed.
+   */
+  const [documentState, setDocumentState] = useState<'loading' | 'ready' | 'failed'>(
+    project.lastHtml || project.hasDocument === false ? 'ready' : 'loading'
+  );
+  const [documentAttempt, setDocumentAttempt] = useState(0);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [previewTab, setPreviewTab] = useState<'preview' | 'code'>('preview');
   const [device, setDevice] = useState<DeviceKind>('desktop');
@@ -1221,7 +1231,7 @@ export function Workspace({ project, onBackToProjects, onUpdateProject, fetchPro
   };
 
   const handleSend = () => {
-    if (!inputText.trim()) return;
+    if (!inputText.trim() || awaitingDocument) return;
     const rawText = inputText.trim();
     // Refused here rather than by a 400 after the upload — see utils/requests/requestLimits.ts.
     const tooLong = promptProblem(rawText);
@@ -1545,33 +1555,65 @@ export function Workspace({ project, onBackToProjects, onUpdateProject, fetchPro
    *
    * The carried-in copy is still used, as the first paint — it is usually right
    * and it is instant — and it is REPLACED when the fetch disagrees with it.
+   *
+   * 「プロジェクトをクリックしても表示されないことがある」 (2026-09-27). The list
+   * carries no document, so this fetch is the only way a project opened from it
+   * gets one, and it was lost three ways, each leaving the canvas saying
+   * 「左のチャットからUIを生成してください」 as if the project were empty:
+   *
+   *   - a throttle. The account runs ten Lambdas at once; opening a project
+   *     asks for its thread, history, members, usage and this together, while
+   *     the list's thumbnails are still finishing. A 429/5xx threw, nothing
+   *     caught it, nothing asked again. Now retried, as the cards are.
+   *   - a changed dependency mid-flight. The cleanup cancelled the answer and
+   *     the once-per-project guard stopped the re-run from asking again — a
+   *     token refresh, or StrictMode's second mount, was enough. The component
+   *     is keyed by project, so there is nothing to cancel for: an answer
+   *     always belongs to this project, and the guard is set per attempt.
+   *   - the wait itself, which looked the same as an empty project. The canvas
+   *     now says it is loading, or that it could not, with a retry; and a
+   *     prompt cannot be sent before the document is here, since without it
+   *     the prompt would build a new screen over the project instead of
+   *     changing it.
    */
   const previewFetchedRef = useRef<string | null>(null);
+  const fetchPreviewRef = useRef(fetchProjectPreview);
+  fetchPreviewRef.current = fetchProjectPreview;
   useEffect(() => {
     // Not while a run is in flight: it legitimately has no document yet, and
     // fetching would fight it. The effect runs again when the run ends.
     if (isGenerating) return;
-    // Once per project: a project that genuinely has no document must not turn
-    // into a request on every render.
-    if (previewFetchedRef.current === project.projectId) return;
-    previewFetchedRef.current = project.projectId;
-    let cancelled = false;
+    // Once per project and attempt: a project that genuinely has no document
+    // must not turn into a request on every render.
+    const key = `${project.projectId}#${documentAttempt}`;
+    if (previewFetchedRef.current === key) return;
+    previewFetchedRef.current = key;
     /** The copy this component opened with, and the only thing it may replace. */
     const carriedIn = project.lastHtml ?? null;
-    fetchProjectPreview(project.projectId).then((html) => {
-      if (cancelled || !html) return;
-      setLoadedHtml((prev) => {
-        /*
-         * Anything but the carried-in copy is newer than this answer: output
-         * produced since mount, or a stored version the person chose while the
-         * request was in flight. Neither may be clobbered.
-         */
-        if (prev !== null && prev !== carriedIn) return prev;
-        return html;
-      });
-    });
-    return () => { cancelled = true; };
-  }, [project.projectId, project.lastHtml, isGenerating, fetchProjectPreview]);
+    // Straight to the server rather than behind the cards' queue: this is the one
+    // the person is waiting for, and the list that queued the others is gone.
+    fetchPreviewPolitely(() => fetchPreviewRef.current(project.projectId), DOCUMENT_RETRY_DELAYS_MS, undefined, runNow).then(
+      (html) => {
+        if (html) {
+          setLoadedHtml((prev) => {
+            /*
+             * Anything but the carried-in copy is newer than this answer: output
+             * produced since mount, or a stored version the person chose while the
+             * request was in flight. Neither may be clobbered.
+             */
+            if (prev !== null && prev !== carriedIn) return prev;
+            return html;
+          });
+        }
+        setDocumentState('ready');
+      },
+      () => setDocumentState('failed'),
+    );
+  }, [project.projectId, project.lastHtml, isGenerating, documentAttempt]);
+  const retryDocument = () => {
+    setDocumentState('loading');
+    setDocumentAttempt((n) => n + 1);
+  };
 
   /*
    * The transcript of the run in flight, kept beside its job record.
@@ -1640,6 +1682,8 @@ export function Workspace({ project, onBackToProjects, onUpdateProject, fetchPro
   }, [generateJobId, modifyJobId, planJobId, isGenerating, isModifying, isPlanning, genAbandoned, project.projectId]);
 
   const isProcessing = isGenerating || isModifying || isPlanning;
+  /** The project has a document that is not here yet: nothing to show, and nothing to send against. */
+  const awaitingDocument = !displayHtml && !isProcessing && documentState !== 'ready';
 
   /*
    * One paperclip, both kinds of attachment — and one definition, rendered
@@ -1973,7 +2017,8 @@ export function Workspace({ project, onBackToProjects, onUpdateProject, fetchPro
             // Scrolls on its own, so the keyboard has to be able to reach it (axe: scrollable-region-focusable).
             tabIndex={0}
           >
-            {messages.length === 0 && !isProcessing && (
+            {/* Not while an existing project's document is on its way: 「何を作りますか？」 would say it is empty. */}
+            {messages.length === 0 && !isProcessing && !awaitingDocument && (
               <div className="app__chat-empty">
                 <h2 className="app__chat-empty-title">何を作りますか？</h2>
                 <p>UIを説明するか、下のテンプレートを選んでください</p>
@@ -2300,7 +2345,8 @@ export function Workspace({ project, onBackToProjects, onUpdateProject, fetchPro
                   onChange={(e) => setInputText(e.target.value)}
                   onKeyDown={handleKeyDown}
                   placeholder={
-                    chatMode === 'plan'
+                    awaitingDocument ? 'プロジェクトを読み込んでいます…'
+                    : chatMode === 'plan'
                       ? displayHtml ? '変更の方針を相談...' : '作りたいものを説明してください（まず構成案を出します）'
                       : selectedSelector ? `${selectedSelector} を変更...`
                       : displayHtml ? '変更を指示...'
@@ -2336,7 +2382,7 @@ export function Workspace({ project, onBackToProjects, onUpdateProject, fetchPro
                 <button
                   className="app__chat-send-btn"
                   onClick={handleSend}
-                  disabled={isProcessing || !inputText.trim()}
+                  disabled={isProcessing || awaitingDocument || !inputText.trim()}
                   aria-label="送信"
                   type="button"
                 >
@@ -2648,6 +2694,8 @@ export function Workspace({ project, onBackToProjects, onUpdateProject, fetchPro
                 <Preview html={displayHtml} score={null} device={device}
                   title={projectTitle}
                   isGenerating={isProcessing}
+                  documentState={awaitingDocument ? documentState : 'ready'}
+                  onRetryDocument={retryDocument}
                   phases={isModifying ? modifyPhases : phases}
                   generatingMode={isModifying ? 'modify' : 'generate'}
                   onElementSelected={(selector, anchor) => {

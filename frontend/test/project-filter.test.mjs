@@ -20,7 +20,7 @@ execSync(
     `--outfile="${path.join(root, 'dist-test/pf.test.mjs')}"`,
   { stdio: 'pipe', cwd: root }
 );
-const { projectKind, normalizeSearch, matchesQuery, visibleProjects, frameworkCounts, sortProjects } =
+const { projectKind, normalizeSearch, matchesQuery, visibleProjects, frameworkCounts, favouriteCount, sortProjects } =
   await import(pathToFileURL(path.join(root, 'dist-test/pf.test.mjs')).href);
 
 let pass = 0, fail = 0;
@@ -217,6 +217,23 @@ check('no sort leaves the arrival order',
     shown({ favourite: true, framework: 'vue' }).length, 1);
   check('and leaving it off changes nothing', shown({}).length, 3);
   check('nor does passing it false', shown({ favourite: false }).length, 3);
+}
+{
+  // The counts say what pressing each control would show, the other one as set.
+  // The favourite count was the whole list's whatever the framework (2026-09-27).
+  const mixed = [
+    project({ name: 'react-plain', lastHtml: doc('src/App.tsx') }),
+    project({ name: 'react-star', lastHtml: doc('src/App.tsx'), favouritedAt: '2026-08-20T00:00:00.000Z' }),
+    project({ name: 'vue-star', lastHtml: doc('src/App.vue'), favouritedAt: '2026-08-21T00:00:00.000Z' }),
+    project({ name: 'shared-star', lastHtml: doc('src/App.vue'), favouritedAt: '2026-08-22T00:00:00.000Z', sharedAt: '2026-08-22T00:00:00.000Z' }),
+  ];
+  check('the favourite count follows the framework',
+    ['all', 'react', 'vue'].map((f) => favouriteCount(mixed, 'active', f)), [2, 1, 1]);
+  check('and the tab', favouriteCount(mixed, 'shared', 'vue'), 1);
+  check('each count is what the filter shows',
+    ['all', 'react', 'vue'].map((f) => favouriteCount(mixed, 'active', f) === visibleProjects(mixed, { query: '', framework: f, tab: 'active', favourite: true }).length), [true, true, true]);
+  check('with the star on, the framework counts are the starred ones', frameworkCounts(mixed, 'active', true), { all: 2, react: 1, vue: 1 });
+  check('and without it, all of them', frameworkCounts(mixed, 'active'), { all: 3, react: 2, vue: 1 });
 }
 {
   // Archiving clears the star, so the favourite view of the archive is empty by

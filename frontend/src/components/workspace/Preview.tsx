@@ -45,6 +45,12 @@ interface PreviewProps {
    * caught and shown; what was missing was anything to do about it.
    */
   onRepairRuntimeError?: (detail: string) => void;
+  /**
+   * Whether the project's stored document is still on its way, or could not be
+   * fetched. Without it an arriving project and an empty one looked the same.
+   */
+  documentState?: 'loading' | 'ready' | 'failed';
+  onRetryDocument?: () => void;
 }
 
 
@@ -188,7 +194,7 @@ function StatusBar({ device }: { device: 'tablet' | 'mobile' }) {
 
 export function Preview({ html, score, device = 'desktop', onElementSelected,
   isGenerating = false, phases = [], generatingMode = 'generate', title,
-  onRepairRuntimeError }: PreviewProps) {
+  onRepairRuntimeError, documentState = 'ready', onRetryDocument }: PreviewProps) {
   const [selectorMode, setSelectorMode] = useState(false);
   const [layoutOverlay, setLayoutOverlay] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -722,6 +728,17 @@ export function Preview({ html, score, device = 'desktop', onElementSelected,
             />
           ) : isGenerating ? (
             <GeneratingCanvas phases={phases} mode={generatingMode} />
+          ) : documentState === 'loading' ? (
+            <div className="preview__placeholder" role="status">
+              <div className="preview__placeholder-spinner" aria-hidden="true" />
+              <p>プロジェクトを読み込んでいます…</p>
+            </div>
+          ) : documentState === 'failed' ? (
+            <div className="preview__placeholder" role="alert">
+              <p>プロジェクトを読み込めませんでした。</p>
+              <p className="preview__placeholder-hint">しばらく待ってから、もう一度お試しください。</p>
+              <button type="button" className="preview__placeholder-retry" onClick={onRetryDocument}>再試行</button>
+            </div>
           ) : (
             <div className="preview__placeholder">
               <div className="preview__placeholder-icon">

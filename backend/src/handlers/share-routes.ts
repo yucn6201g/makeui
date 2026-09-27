@@ -6,7 +6,9 @@ import {
   readShares,
   revokeShare,
   sharedWith,
+  shareMembers,
   type ProjectRole,
+  type ShareMember,
   type ShareRole,
 } from '../services/project-shares.js';
 import { projectAccess } from '../services/project-access.js';
@@ -57,9 +59,27 @@ type Respond = (status: number, body: unknown) => unknown;
 interface ProjectListItem extends ProjectRecord {
   /** The caller's relation to the project. */
   access: { role: ProjectRole; ownerId: string; ownerName: string; via?: 'user' | 'group' };
+  /** On a shared project: who else it is shared with, the caller left out. See `shareMembers`. */
+  sharedWith?: ShareMember[];
 }
 
 const nameOf = async (sub: string): Promise<string> => (await userBySub(sub))?.name ?? '（削除されたユーザー）';
+
+/*
+ * Who a shared project is shared with, for its card (2026-09-27).
+ *
+ * The 共有 tab said 「共有中」 on the owner's cards and nothing about with whom,
+ * so the only way to find out was to open each project's share panel. One query
+ * per shared project — the SHARE# partition the panel reads — and only for
+ * projects that are shared. A failed read leaves the card without names rather
+ * than failing the list.
+ */
+async function withMembers(p: ProjectListItem, caller: Caller): Promise<ProjectListItem> {
+  const shared = Boolean(p.sharedAt) || p.access.role !== 'owner';
+  if (!shared) return p;
+  const grants = await readShares(p.projectId).then((s) => s.grants).catch(() => null);
+  return grants ? { ...p, sharedWith: shareMembers(grants, caller.userId) } : p;
+}
 
 export async function listProjectsFor(caller: Caller): Promise<ProjectListItem[]> {
   const ownName = displayNameFor(caller.email, caller.name);
@@ -80,7 +100,8 @@ export async function listProjectsFor(caller: Caller): Promise<ProjectListItem[]
       access: { role: r.role, ownerId: r.ownerId, ownerName: await nameOf(r.ownerId), via: r.via },
     };
   }));
-  return [...own, ...shared.filter((p): p is ProjectListItem => p !== null)];
+  const all = [...own, ...shared.filter((p): p is ProjectListItem => p !== null)];
+  return Promise.all(all.map((p) => withMembers(p, caller)));
 }
 
 export async function handleShareRoutes(

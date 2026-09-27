@@ -1,6 +1,6 @@
 import { test, expect } from '../fixtures/test';
 import { reactProject } from '../fixtures/project';
-import { choose, composer, openNewProject, openProject, send } from '../fixtures/screens';
+import { choose, composer, openNewProject, openProject, preview, send, sendButton } from '../fixtures/screens';
 
 test.describe('an existing project', () => {
   test.beforeEach(({ api }) => {
@@ -86,4 +86,86 @@ test('a template fills the composer with its brief', async ({ page }) => {
   await page.getByRole('button', { name: 'テンプレートを入力: 予約システム' }).click();
   await expect(composer(page)).not.toHaveValue('');
   await expect(page.getByRole('button', { name: '送信', exact: true })).toBeEnabled();
+});
+
+/*
+ * Opening a project from the list (2026-09-27): 「プロジェクトをクリックしても表示
+ * されないことがある」. The list carries no document, so the workspace fetches it,
+ * and that fetch was lost to a throttle (never retried) or to a dependency
+ * changing mid-flight — the canvas then said 「左のチャットからUIを生成してください」
+ * over a project that had a screen, and a prompt sent from there built a new
+ * one over it.
+ */
+test.describe('opening a project from the list', () => {
+  test.beforeEach(({ api }) => {
+    api.addProject({ name: '在庫管理', lastHtml: reactProject() });
+  });
+
+  test('a throttled document is asked for again, and arrives', async ({ page, api }) => {
+    let refuse = 0;
+    api.on('GET', /^\/projects\/([^/]+)\/preview$/, (_req, m) => (refuse-- > 0
+      ? { status: 503, body: { message: 'Service Unavailable' } }
+      : { body: { html: api.projects.find((p) => p.projectId === m[1])?.lastHtml ?? null } }));
+    await page.goto('/');
+    await expect(page.locator('iframe.project-list__card-iframe')).toBeVisible(); // the card's own fetch is done
+    // The account's Lambdas are busy the moment the project opens: two refusals, then an answer.
+    refuse = 2;
+    const before = api.all('GET', /\/preview$/).length;
+    await page.getByText('在庫管理', { exact: true }).click();
+    await expect(preview(page).getByRole('heading', { name: '在庫一覧' })).toBeVisible();
+    expect(api.all('GET', /\/preview$/).length - before).toBeGreaterThanOrEqual(3);
+  });
+
+  test('while the document is on its way the canvas says so, and nothing can be sent', async ({ page, api }) => {
+    let release!: () => void;
+    const held = new Promise<void>((r) => { release = r; });
+    let hold = false;
+    api.on('GET', /^\/projects\/([^/]+)\/preview$/, async (_req, m) => {
+      if (hold) await held;
+      return { body: { html: api.projects.find((p) => p.projectId === m[1])?.lastHtml ?? null } };
+    });
+    await page.goto('/');
+    await expect(page.locator('iframe.project-list__card-iframe')).toBeVisible(); // the card's own fetch is done
+    hold = true;
+    await page.getByText('在庫管理', { exact: true }).click();
+    await expect(page.getByRole('status').filter({ hasText: 'プロジェクトを読み込んでいます' })).toBeVisible();
+    await expect(page.getByText('左のチャットからUIを生成してください')).toHaveCount(0);
+    // Nor does the chat greet it as a new project.
+    await expect(page.getByRole('heading', { name: '何を作りますか？' })).toHaveCount(0);
+    await composer(page).fill('ボタンを青くして');
+    await expect(sendButton(page)).toBeDisabled();
+
+    release();
+    await expect(preview(page).getByRole('heading', { name: '在庫一覧' })).toBeVisible();
+    await expect(sendButton(page)).toBeEnabled();
+    await sendButton(page).click();
+    // The document arrived, so the prompt changes it rather than building a new screen.
+    await expect.poll(() => api.all('POST', '/modify').length).toBe(1);
+    expect(api.all('POST', '/generate')).toEqual([]);
+  });
+
+  test('a document that will not come says so, and can be asked for again', async ({ page, api }) => {
+    let down = false;
+    api.on('GET', /^\/projects\/([^/]+)\/preview$/, (_req, m) => (down
+      ? { status: 503, body: { message: 'Service Unavailable' } }
+      : { body: { html: api.projects.find((p) => p.projectId === m[1])?.lastHtml ?? null } }));
+    await page.goto('/');
+    await expect(page.locator('iframe.project-list__card-iframe')).toBeVisible(); // the card's own fetch is done
+    down = true;
+    await page.getByText('在庫管理', { exact: true }).click();
+    const failed = page.getByRole('alert').filter({ hasText: 'プロジェクトを読み込めませんでした。' });
+    await expect(failed).toBeVisible({ timeout: 15_000 });
+    await expect(sendButton(page)).toBeDisabled();
+
+    down = false;
+    await failed.getByRole('button', { name: '再試行' }).click();
+    await expect(preview(page).getByRole('heading', { name: '在庫一覧' })).toBeVisible();
+  });
+
+  test('a new project is not held up waiting for a document it does not have', async ({ page }) => {
+    await openNewProject(page);
+    await expect(page.getByText('左のチャットからUIを生成してください')).toBeVisible();
+    await composer(page).fill('在庫管理の画面');
+    await expect(sendButton(page)).toBeEnabled();
+  });
 });

@@ -50,7 +50,11 @@ const check = (name, got, want) => {
   const list = readProjectList();
   check('the tabs are プロジェクト, 共有, アーカイブ', /\['active', 'プロジェクト', activeCount\][\s\S]{0,200}\['shared', '共有', sharedCount\][\s\S]*アーカイブ/.test(list), true);
   check('a shared card says whose it is and the role', /\{project\.access\?\.ownerName\} さんから共有[\s\S]{0,200}ROLE_LABELS\[role\]/.test(list), true);
-  check('and the owner\'s says it is shared', /project\.sharedAt \? \(\s*<div className="project-list__card-share">共有中<\/div>/.test(list), true);
+  // Who with, since 2026-09-27; 「共有中」 only when the names could not be read.
+  check('and the owner\'s says who it is shared with', /\{project\.sharedWith && project\.sharedWith\.length > 0 && <SharedWith members=\{project\.sharedWith\} \/>\}/.test(list), true);
+  check('falling back to 「共有中」', /project\.sharedAt && !project\.sharedWith\?\.length \? \([\s\S]{0,120}<div className="project-list__card-share">共有中<\/div>/.test(list), true);
+  check('two names, then a count', /const MEMBERS_SHOWN = 2;/.test(list) && /ほか\{rest\}件/.test(list), true);
+  check('and every name with its role for a screen reader', /<span className="sr-only">\s*共有先: \{members\.map\(\(m\) => `\$\{memberName\(m\)\}（\$\{ROLE_LABELS\[m\.role\]\}）`\)\.join\('、'\)\}/.test(list), true);
   check('a viewer gets no star', /!archived && !selecting && canWrite &&/.test(list), true);
 }
 

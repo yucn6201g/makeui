@@ -1746,6 +1746,29 @@ fieldset {
   color: var(--figma-text-dim);
 }
 
+/* A project's document on its way, or not arriving: the app's own spinner, and the save bar's retry. */
+.preview__placeholder-spinner {
+  width: 24px;
+  height: 24px;
+  border: 3px solid var(--figma-border);
+  border-top-color: var(--figma-blue-on-white-text);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+.preview__placeholder-retry {
+  height: 28px;
+  padding: 0 14px;
+  border: 1px solid var(--figma-border-strong);
+  border-radius: var(--radius-6);
+  background: #ffffff;
+  color: var(--figma-text);
+  font-family: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.preview__placeholder-retry:focus-visible { outline: 2px solid var(--figma-blue); outline-offset: 2px; }
+
 /* Header right-side actions */
 .app__header-actions {
   display: flex;
@@ -8885,6 +8908,18 @@ button.app__logo:hover {
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+
+/* Who the project is shared with: a label, two names that give way first, and the count of the rest. */
+.project-list__card-members { gap: 4px; }
+.project-list__members-label { flex: 0 0 auto; font-weight: 600; color: var(--figma-text-muted); }
+.project-list__members-names {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--figma-text-muted);
+}
+.project-list__members-more { flex: 0 0 auto; }
 
 .project-list__role,
 .share-panel__role-badge {

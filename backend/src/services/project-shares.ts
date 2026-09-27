@@ -127,6 +127,29 @@ export async function readShares(projectId: string): Promise<{ ownerId: string |
   return { ownerId: owner?.ownerId?.S ?? null, projectCreatedAt: owner?.projectCreatedAt?.S ?? null, grants };
 }
 
+/** Who a project is shared with, as the project list names them: a name and a role, no address. */
+export interface ShareMember {
+  type: 'user' | 'group';
+  label: string;
+  role: ShareRole;
+}
+
+/**
+ * A project's grants as its card on the 共有 tab lists them.
+ *
+ * The caller's own grant is left out — "shared with you" is what the card
+ * already says for a project someone else owns — and the rest are in the order
+ * they were granted, so the first names are the longest-standing. Emails stay
+ * behind: the share panel shows them to tell two namesakes apart, and a card
+ * has no such question to answer.
+ */
+export function shareMembers(grants: readonly ShareGrant[], callerId: string): ShareMember[] {
+  return grants
+    .filter((g) => !(g.type === 'user' && g.id === callerId))
+    .sort((a, b) => (a.grantedAt < b.grantedAt ? -1 : a.grantedAt > b.grantedAt ? 1 : 0))
+    .map((g) => ({ type: g.type, label: g.label, role: g.role }));
+}
+
 /**
  * A person's role on a project they do not own, or null.
  *

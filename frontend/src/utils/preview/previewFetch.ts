@@ -25,7 +25,16 @@ export const PREVIEW_CONCURRENCY = 3;
 /** Pauses before the second and third attempts. */
 const PREVIEW_RETRY_DELAYS_MS = [1200, 3500];
 
+/**
+ * Pauses before each further attempt at the document of the project being opened.
+ * One more than a card gets, and shorter: someone is looking at an empty canvas.
+ */
+export const DOCUMENT_RETRY_DELAYS_MS = [600, 1500, 3500];
+
 type Task<T> = () => Promise<T>;
+
+/** No queue: for the one request the person is waiting on. */
+export const runNow = <T>(task: Task<T>): Promise<T> => task();
 
 /** A first-in-first-out gate letting `limit` tasks run at once. */
 export function createLimiter(limit: number) {

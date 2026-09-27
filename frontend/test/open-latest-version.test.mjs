@@ -45,8 +45,8 @@ check('a document already on the canvas no longer skips the fetch',
 check('but a run in flight still does', /if \(isGenerating\) return;/.test(effect), true);
 // Once per project: a project that genuinely has no document must not turn into
 // a request on every render.
-check('and it asks once per project',
-  /if \(previewFetchedRef\.current === project\.projectId\) return;/.test(effect), true);
+check('and it asks once per project and attempt',
+  /const key = `\$\{project\.projectId\}#\$\{documentAttempt\}`;\s*if \(previewFetchedRef\.current === key\) return;/.test(effect), true);
 
 /*
  * The answer replaces the carried-in copy and nothing else. Output produced
@@ -57,11 +57,27 @@ check('the copy it opened with is what it may replace',
   /const carriedIn = project\.lastHtml \?\? null;/.test(effect), true);
 check('anything else on the canvas is left alone',
   /if \(prev !== null && prev !== carriedIn\) return prev;/.test(effect), true);
-check('and a missing answer changes nothing', /if \(cancelled \|\| !html\) return;/.test(effect), true);
+check('and a missing answer changes nothing', /\(html\) => \{\s*if \(html\) \{\s*setLoadedHtml/.test(effect), true);
+/*
+ * 「プロジェクトをクリックしても表示されないことがある」 (2026-09-27). The fetch
+ * was lost to a throttle (a rejection nothing caught) and to a dependency
+ * changing mid-flight (the cleanup cancelled the answer, and the guard stopped
+ * the re-run from asking again).
+ */
+check('a throttled answer is asked for again, without the cards\' queue',
+  /fetchPreviewPolitely\(\(\) => fetchPreviewRef\.current\(project\.projectId\), DOCUMENT_RETRY_DELAYS_MS, undefined, runNow\)/.test(effect), true);
+check('a failure is a state the canvas shows, not an unhandled rejection', /\(\) => setDocumentState\('failed'\),/.test(effect), true);
+check('nothing cancels an answer: the component is keyed by project', [/cancelled/.test(effect), /key=\{currentProject\.projectId\}/.test(app)], [false, true]);
+check('a new token does not restart it: the fetch is read through a ref', /fetchPreviewRef\.current = fetchProjectPreview;/.test(app), true);
+check('nothing is sent against a document that has not arrived',
+  /const awaitingDocument = !displayHtml && !isProcessing && documentState !== 'ready';/.test(app)
+    && /if \(!inputText\.trim\(\) \|\| awaitingDocument\) return;/.test(app)
+    && /disabled=\{isProcessing \|\| awaitingDocument \|\| !inputText\.trim\(\)\}/.test(app), true);
+check('and the canvas says which it is', /documentState=\{awaitingDocument \? documentState : 'ready'\}/.test(app), true);
 // The carried-in copy can change under the component — a run completing writes
 // it — so the effect depends on it rather than on the state it sets.
 check('the effect watches the copy, not the state it sets',
-  /\}, \[project\.projectId, project\.lastHtml, isGenerating, fetchProjectPreview\]\);/.test(app), true);
+  /\}, \[project\.projectId, project\.lastHtml, isGenerating, documentAttempt\]\);/.test(app), true);
 
 /*
  * The format picker read the same stale copy, through a once-only flag set the
@@ -82,7 +98,7 @@ check('but never over a format the person chose',
  * falling back to the newest version when the row has none — the same document
  * the dropdown's first row names.
  */
-check('the document comes from the server', /fetchProjectPreview\(project\.projectId\)/.test(effect), true);
+check('the document comes from the server', /fetchPreviewRef\.current\(project\.projectId\)/.test(effect), true);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

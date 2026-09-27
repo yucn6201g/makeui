@@ -166,15 +166,29 @@ export function sortProjects(projects: Project[], sort?: ListSort): Project[] {
   return out.sort((a, b) => starred(a) - starred(b) || (value(a) - value(b)) * sign);
 }
 
-/** How many projects each framework filter would show, for the counts on the tabs. */
-export function frameworkCounts(projects: Project[], tabOrArchived: ProjectTab | boolean): Record<FrameworkFilter, number> {
+/*
+ * The counts beside the filters say what pressing each one would show, given
+ * the other filter as it is set. The favourite count was once the whole active
+ * list's, whichever framework was chosen, so on React it could say 5 over a
+ * list that showed 2 (reported 2026-09-27). Search is left out of both: the
+ * counts describe the set, and a half-typed query would make them flicker.
+ */
+
+/** How many projects each framework filter would show, for the counts on the tabs. With `favourite`, only starred ones. */
+export function frameworkCounts(projects: Project[], tabOrArchived: ProjectTab | boolean, favourite = false): Record<FrameworkFilter, number> {
   const tab = typeof tabOrArchived === 'boolean' ? tabFor({ archived: tabOrArchived }) : tabOrArchived;
   const counts: Record<FrameworkFilter, number> = { all: 0, react: 0, vue: 0 };
   for (const p of projects) {
     if (tabOf(p) !== tab) continue;
+    if (favourite && !p.favouritedAt) continue;
     counts.all++;
     const kind = projectKind(p);
     if (kind === 'react' || kind === 'vue') counts[kind]++;
   }
   return counts;
+}
+
+/** How many starred projects the favourite filter would show on this tab, within this framework. */
+export function favouriteCount(projects: Project[], tab: ProjectTab, framework: FrameworkFilter): number {
+  return frameworkCounts(projects, tab, true)[framework];
 }

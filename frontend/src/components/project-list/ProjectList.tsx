@@ -3,6 +3,7 @@ import { useProjects, type Project } from '../../hooks/useProjects';
 import { ProjectCard, type CardActions } from './ProjectCard';
 import {
   frameworkCounts,
+  favouriteCount,
   tabOf,
   visibleProjects,
   type ProjectTab,
@@ -131,19 +132,17 @@ export function ProjectList({ onOpenProject, onNewProject }: ProjectListProps) {
     () => projects.filter((p) => p.archivedAt).length,
     [projects]
   );
-  const counts = useMemo(() => frameworkCounts(projects, tab), [projects, tab]);
+  // Each count is what pressing its control would show, the other filter as set — see projectFilter.ts.
+  const counts = useMemo(() => frameworkCounts(projects, tab, favouriteOnly), [projects, tab, favouriteOnly]);
   const sharedCount = useMemo(() => projects.filter((p) => tabOf(p) === 'shared').length, [projects]);
   // Every tab says how many it holds, プロジェクト included.
   const activeCount = useMemo(() => projects.filter((p) => tabOf(p) === 'active').length, [projects]);
   /*
-   * Counted over the ACTIVE list only. Archiving clears the star — the service
-   * enforces that an archived project is never a favourite — so including the
-   * archive would count a set that is always empty.
+   * Counted on the tab and within the framework being shown. It was every
+   * starred project outside the archive, so neither すべて/React/Vue nor
+   * プロジェクト/共有 moved it (2026-09-27).
    */
-  const favouriteCount = useMemo(
-    () => projects.filter((p) => p.favouritedAt && !p.archivedAt).length,
-    [projects]
-  );
+  const favourites = useMemo(() => favouriteCount(projects, tab, framework), [projects, tab, framework]);
   const shown = useMemo(
     () =>
       visibleProjects(projects, {
@@ -509,7 +508,7 @@ export function ProjectList({ onOpenProject, onNewProject }: ProjectListProps) {
                 <path d="M12 3l2.7 5.5 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.8 1-6.1L3.2 9.4l6.1-.9z" />
               </svg>
               お気に入り
-              <span className="project-list__segment-count">{favouriteCount}</span>
+              <span className="project-list__segment-count">{favourites}</span>
             </button>
           )}
 
@@ -626,7 +625,7 @@ export function ProjectList({ onOpenProject, onNewProject }: ProjectListProps) {
                 <p className="project-list__empty-title">条件に合うプロジェクトがありません</p>
                 <button
                   className="project-list__empty-action"
-                  onClick={() => { setQuery(''); setFramework('all'); }}
+                  onClick={() => { setQuery(''); setFramework('all'); setFavouriteOnly(false); }}
                   type="button"
                 >
                   条件をクリア

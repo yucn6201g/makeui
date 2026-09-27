@@ -8,7 +8,7 @@
  * that redraw was most of what a tab change cost (2026-09-27).
  */
 import { memo, type MouseEvent } from 'react';
-import type { Project } from '../../hooks/useProjects';
+import type { Project, ShareMember } from '../../hooks/useProjects';
 import { ProjectThumbnail } from './ProjectThumbnail';
 import { projectKind } from '../../utils/projects/projectFilter';
 import { ROLE_LABELS } from '../../utils/projects/shareRoles';
@@ -39,6 +39,34 @@ const formatDate = (iso: string): string => {
   const d = new Date(iso);
   return d.toLocaleDateString('ja-JP', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 };
+
+/** Names written out before the rest is counted: two fit the card's width at its narrowest. */
+const MEMBERS_SHOWN = 2;
+const memberName = (m: ShareMember): string => (m.type === 'group' ? `${m.label}（グループ）` : m.label);
+
+/*
+ * Who the project is shared with, on its card (2026-09-27).
+ *
+ * The owner's cards said 「共有中」 and nothing about with whom; finding out
+ * meant opening each project's share panel. Two names and a count, because the
+ * card is 220px at its narrowest. The whole list, roles included, is in the
+ * text a screen reader reads — a tooltip would not do, since the card's own
+ * button covers the card and would take the hover.
+ */
+function SharedWith({ members }: { members: ShareMember[] }) {
+  const named = members.slice(0, MEMBERS_SHOWN);
+  const rest = members.length - named.length;
+  return (
+    <div className="project-list__card-share project-list__card-members">
+      <span className="sr-only">
+        共有先: {members.map((m) => `${memberName(m)}（${ROLE_LABELS[m.role]}）`).join('、')}
+      </span>
+      <span className="project-list__members-label" aria-hidden="true">共有先</span>
+      <span className="project-list__members-names" aria-hidden="true">{named.map(memberName).join('、')}</span>
+      {rest > 0 && <span className="project-list__members-more" aria-hidden="true">ほか{rest}件</span>}
+    </div>
+  );
+}
 
 /** What a card can ask of the list. One object, stable for the list's lifetime. */
 export interface CardActions {
@@ -79,7 +107,7 @@ export const ProjectCard = memo(function ProjectCard({
   const canWrite = role !== 'view';
   return (
   <div
-                  className={`project-list__card${archived ? ' project-list__card--archived' : ''}${running ? ' project-list__card--running' : ''}${isSelected ? ' project-list__card--selected' : ''}`}
+    className={`project-list__card${archived ? ' project-list__card--archived' : ''}${running ? ' project-list__card--running' : ''}${isSelected ? ' project-list__card--selected' : ''}`}
     aria-hidden={exiting || undefined}
     {...(exiting ? { [EXITING_ATTR]: '' } : {})}
   >
@@ -174,9 +202,11 @@ export const ProjectCard = memo(function ProjectCard({
           {project.access?.ownerName} さんから共有
           <span className={`project-list__role project-list__role--${role}`}>{ROLE_LABELS[role]}</span>
         </div>
-      ) : project.sharedAt ? (
+      ) : project.sharedAt && !project.sharedWith?.length ? (
+        // The names could not be read (or the last grant went while the list was loading).
         <div className="project-list__card-share">共有中</div>
       ) : null}
+      {project.sharedWith && project.sharedWith.length > 0 && <SharedWith members={project.sharedWith} />}
     </div>
 
     {/*

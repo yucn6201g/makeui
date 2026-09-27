@@ -110,10 +110,19 @@ check('its statuses are the backend\'s', ['pending', 'running', 'completed', 'fa
 // A project row is what project-service stores, plus `access` for a shared one.
 const projectRecord = read(path.join(backend, 'services/project-service.ts'));
 const recordFields = /export interface ProjectRecord \{([\s\S]*?)\n\}/.exec(projectRecord)[1];
-api.addProject({ lastHtml: '<html></html>', archivedAt: new Date().toISOString() });
+const listRoutes = read(path.join(backend, 'handlers/share-routes.ts'));
+const listItemFields = /interface ProjectListItem extends ProjectRecord \{([\s\S]*?)\n\}/.exec(listRoutes)[1];
+const listedProject = api.addProject({ lastHtml: '<html></html>', archivedAt: new Date().toISOString() });
+api.share(listedProject.projectId, [{ type: 'user', id: 'sub-hanako', label: '佐藤 花子', role: 'edit' }]);
 const listed = await ask('GET', '/projects');
-check('GET /projects rows carry only ProjectRecord fields (and access)',
-  Object.keys(listed.body.projects[0]).filter((k) => k !== 'access' && !new RegExp(`\\b${k}\\??:`).test(recordFields)), []);
+check('GET /projects rows carry only ProjectRecord and ProjectListItem fields',
+  Object.keys(listed.body.projects[0]).filter((k) => !new RegExp(`\\b${k}\\??:`).test(recordFields + listItemFields)), []);
+// listProjects never reads the document; the mock listing one hid the lost-document bug (2026-09-27).
+check('and never the document — hasDocument instead, as listProjects answers',
+  ['lastHtml' in listed.body.projects[0], listed.body.projects[0].hasDocument, /hasDocument: Boolean\(item\.lastHtmlS3Key/.test(projectRecord)], [false, true, true]);
+check('a shared row names who else, with the fields shareMembers gives',
+  [listed.body.projects[0].sharedWith, /\.map\(\(g\) => \(\{ type: g\.type, label: g\.label, role: g\.role \}\)\)/.test(read(path.join(backend, 'services/project-shares.ts')))],
+  [[{ type: 'user', label: '佐藤 花子', role: 'edit' }], true]);
 const created = await ask('POST', '/projects', { name: 'x' });
 check('POST /projects answers 201 with the project, as the backend does',
   [created.status, /return jsonResponse\(201, project\)/.test(branch("method === 'POST' && path === '/projects'"))], [201, true]);

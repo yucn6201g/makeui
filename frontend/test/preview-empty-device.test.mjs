@@ -72,7 +72,13 @@ check('the stage is no longer conditional on a document',
   preview.indexOf('preview__device-stage') > preview.indexOf('if (device === \'desktop\') return body;'), true);
 // One iframe in the file, so the ref cannot be attached to two of them.
 check('the iframe is written once', (preview.match(/className="preview__iframe"/g) ?? []).length, 1);
-check('and the placeholder once', (preview.match(/className="preview__placeholder"/g) ?? []).length, 1);
+// The placeholders — empty, loading, could not load (2026-09-27) — are all `body`, drawn inside the bezel.
+{
+  const bodyAt = preview.indexOf('const body = html ? (');
+  const shellAt = preview.indexOf("if (device === 'desktop') return body;");
+  const at = [...preview.matchAll(/className="preview__placeholder"/g)].map((m) => m.index);
+  check('and every placeholder is part of the one body', at.length === 3 && at.every((i) => i > bodyAt && i < shellAt), true);
+}
 
 // --- inside the screen, the empty state stands where the app will ----------
 const insetMobile = rule('.preview__device--mobile .preview__device-screen .preview__iframe,\n.preview__device--mobile .preview__device-screen .preview__placeholder,\n.preview__device--mobile .preview__device-screen .generating');

@@ -92,6 +92,18 @@ export class MockApi {
   private sharesOf(projectId: string) {
     return this.shares.get(projectId) ?? [];
   }
+  /** The owner's row carries `sharedAt` while any grant exists, as project-shares.ts keeps it. */
+  private markShared(projectId: string) {
+    const project = this.projects.find((p) => p.projectId === projectId);
+    if (!project) return;
+    if (this.sharesOf(projectId).length === 0) delete project.sharedAt;
+    else project.sharedAt ??= iso();
+  }
+  /** A project that is already shared when the page opens. */
+  share(projectId: string, grants: Array<{ type: 'user' | 'group'; id: string; label: string; role: 'full' | 'edit' | 'view' }>): void {
+    this.shares.set(projectId, grants.map((g, i) => ({ ...g, grantedByName: 'E2E 利用者', grantedAt: iso((grants.length - i) * 60_000) })));
+    this.markShared(projectId);
+  }
   /** What the next job started by /generate, /modify or /plan will report, poll by poll. */
   nextJob: JobStep[] = JOB_OK;
   private readonly jobs = new Map<string, { steps: JobStep[]; polls: number }>();
@@ -181,6 +193,24 @@ export class MockApi {
     return { status: 202, body: { jobId, status: 'pending' } };
   }
 
+  /*
+   * A project as GET /projects answers it (handlers/share-routes.ts): no document —
+   * `hasDocument` instead, so opening one fetches /preview as the real list makes
+   * it — and, on a shared one, who else it is shared with.
+   *
+   * The mock once listed the document inline, which the server stopped doing;
+   * every E2E test then opened projects by a path production never takes, and
+   * the lost-document bug (2026-09-27) went through all of them.
+   */
+  private listed(p: MockProject): Record<string, unknown> {
+    const { lastHtml, ...row } = p;
+    const grants = this.sharesOf(p.projectId);
+    const sharedWith = grants
+      .filter((g) => !(g.type === 'user' && g.id === 'sub-e2e'))
+      .map((g) => ({ type: g.type, label: g.label, role: g.role }));
+    return { ...row, hasDocument: Boolean(lastHtml), ...(grants.length ? { sharedWith } : {}) };
+  }
+
   private defaults(): void {
     this.on('GET', '/models', {
       body: {
@@ -209,7 +239,7 @@ export class MockApi {
     });
 
     // Projects
-    this.on('GET', '/projects', () => ({ body: { projects: this.projects } }));
+    this.on('GET', '/projects', () => ({ body: { projects: this.projects.map((p) => this.listed(p)) } }));
     this.on('POST', '/projects', (req) => {
       const project = this.addProject({ name: String(req.body?.name ?? 'Untitled'), createdAt: iso(), updatedAt: iso() });
       // Newest first, as the list shows it.
@@ -251,11 +281,13 @@ export class MockApi {
       const grants = this.sharesOf(m[1]).filter((g) => !(g.type === req.body?.type && g.id === req.body?.id));
       grants.push({ type: req.body?.type, id: req.body?.id, label, email: person?.email, role: req.body?.role, grantedByName: 'E2E 利用者', grantedAt: iso() });
       this.shares.set(m[1], grants);
+      this.markShared(m[1]);
       return { body: { shares: grants } };
     });
     this.on('DELETE', /^\/projects\/([^/]+)\/shares\/(user|group)\/([^/]+)$/, (_req, m) => {
       const grants = this.sharesOf(m[1]).filter((g) => !(g.type === m[2] && g.id === decodeURIComponent(m[3])));
       this.shares.set(m[1], grants);
+      this.markShared(m[1]);
       return { body: { shares: grants } };
     });
     this.on('GET', '/users/search', (req) => {

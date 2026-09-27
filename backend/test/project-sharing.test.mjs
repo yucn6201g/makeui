@@ -57,6 +57,20 @@ const check = (name, got, want) => {
   check('roles are only the three', [shares.isShareRole('full'), shares.isShareRole('owner'), shares.isShareRole('admin')], [true, false, false]);
 }
 
+// --- who a card on the 共有 tab names (2026-09-27) --------------------------------------------
+{
+  const g = (type, id, role, grantedAt) => ({ type, id, role, label: `${id}-label`, email: `${id}@example.invalid`, grantedBy: 'o', grantedByName: 'o', grantedAt });
+  const grants = [g('user', 'bob', 'edit', '2026-09-03'), g('group', 'design', 'view', '2026-09-01'), g('user', 'me', 'full', '2026-09-02')];
+  const members = shares.shareMembers(grants, 'me');
+  check('in the order they were granted, the caller left out', members.map((m) => m.label), ['design-label', 'bob-label']);
+  check('each with its kind and role, and nothing else — no email', members[1], { type: 'user', label: 'bob-label', role: 'edit' });
+  check('a group named like the caller is still listed', shares.shareMembers([g('group', 'me', 'view', '')], 'me').length, 1);
+  const routes = read('src/handlers/share-routes.ts');
+  check('the list attaches them to every shared project, owned or not',
+    /const shared = Boolean\(p\.sharedAt\) \|\| p\.access\.role !== 'owner';/.test(routes) && /return Promise\.all\(all\.map\(\(p\) => withMembers\(p, caller\)\)\);/.test(routes), true);
+  check('and a failed read leaves the card without names, not the list failed', /readShares\(p\.projectId\)\.then\(\(s\) => s\.grants\)\.catch\(\(\) => null\)/.test(routes), true);
+}
+
 // --- one conversation, whoever saves it ---------------------------------------------------
 {
   const stored = [{ id: 'a', timestamp: 1, content: 'owner asked' }, { id: 'b', timestamp: 2, content: 'reply' }];

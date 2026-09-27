@@ -96,3 +96,85 @@ test.describe('a long list', () => {
     await expect(page.getByText('古い案件 0', { exact: true })).toBeVisible();
   });
 });
+
+/*
+ * The count beside お気に入り was every starred project outside the archive, so
+ * すべて/React/Vue — and プロジェクト/共有 — never moved it (2026-09-27). Each
+ * count now says what pressing its control would show, the other filter as set.
+ */
+test('the favourite count follows the framework and the tab, and the framework counts follow the star', async ({ page, api }) => {
+  const starred = new Date().toISOString();
+  api.addProject({ name: 'React の星 1', outputKind: 'react', favouritedAt: starred });
+  api.addProject({ name: 'React の星 2', outputKind: 'react', favouritedAt: starred });
+  api.addProject({ name: 'Vue の星', outputKind: 'vue', favouritedAt: starred });
+  const sharedStar = api.addProject({ name: '共有の星', outputKind: 'vue', favouritedAt: starred });
+  api.share(sharedStar.projectId, [{ type: 'user', id: 'sub-hanako', label: '佐藤 花子', role: 'edit' }]);
+
+  await page.goto('/');
+  const frameworks = page.getByRole('group', { name: 'フレームワークで絞り込む' });
+  const star = page.getByRole('button', { name: /^お気に入り/ });
+  await expect(star).toContainText('3');
+  await frameworks.getByRole('button', { name: /React/ }).click();
+  await expect(star).toContainText('2');
+  await frameworks.getByRole('button', { name: /Vue/ }).click();
+  await expect(star).toContainText('1');
+
+  // And the other way: with the star on, each framework counts its starred ones.
+  await frameworks.getByRole('button', { name: /すべて/ }).click();
+  await expect(frameworks.getByRole('button', { name: /React/ })).toContainText('3'); // 在庫管理 + 2 starred
+  await star.click();
+  await expect(frameworks.getByRole('button', { name: /React/ })).toContainText('2');
+  await expect(frameworks.getByRole('button', { name: /すべて/ })).toContainText('3');
+  await expect(page.getByText(/の星/)).toHaveCount(3);
+
+  // The 共有 tab counts its own.
+  await projectList(page).getByRole('tab', { name: /共有/ }).click();
+  await expect(star).toContainText('1');
+  await expect(page.getByText('共有の星', { exact: true })).toBeVisible();
+});
+
+test('clearing the filters clears the star too', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: /^お気に入り/ }).click();
+  await page.getByRole('button', { name: '条件をクリア' }).click();
+  await expect(page.getByRole('button', { name: /^お気に入り/ })).toHaveAttribute('aria-pressed', 'false');
+  await expect(cards(page)).toHaveText(['在庫管理', '予約システム']);
+});
+
+/*
+ * The 共有 tab said 「共有中」 on the owner's cards and nothing about with whom
+ * (2026-09-27). Two names and a count of the rest; the whole list, roles
+ * included, is what a screen reader reads.
+ */
+test('a shared project\'s card names who it is shared with', async ({ page, api }) => {
+  const mine = api.addProject({ name: '共有した案件', outputKind: 'react' });
+  api.share(mine.projectId, [
+    { type: 'user', id: 'sub-hanako', label: '佐藤 花子', role: 'edit' },
+    { type: 'group', id: 'design', label: 'design', role: 'view' },
+    { type: 'user', id: 'sub-jiro', label: '鈴木 次郎', role: 'full' },
+  ]);
+  const theirs = api.addProject({
+    name: '共有された案件', outputKind: 'vue', userId: 'sub-owner',
+    access: { role: 'view', ownerId: 'sub-owner', ownerName: '所有者', via: 'user' },
+  });
+  // Shared with this account and one other; the card leaves this account out.
+  api.share(theirs.projectId, [
+    { type: 'user', id: 'sub-e2e', label: 'E2E 利用者', role: 'view' },
+    { type: 'user', id: 'sub-jiro', label: '鈴木 次郎', role: 'edit' },
+  ]);
+
+  await page.goto('/');
+  await projectList(page).getByRole('tab', { name: /共有/ }).click();
+  const card = (name: string) => page.locator('.project-list__card').filter({ hasText: name });
+
+  const members = card('共有した案件').locator('.project-list__card-members');
+  await expect(members).toContainText('共有先');
+  await expect(members).toContainText('佐藤 花子、design（グループ）');
+  await expect(members).toContainText('ほか1件');
+  await expect(members).toContainText('共有先: 佐藤 花子（編集）、design（グループ）（閲覧）、鈴木 次郎（全権限）');
+  await expect(card('共有した案件')).not.toContainText('共有中');
+
+  await expect(card('共有された案件')).toContainText('所有者 さんから共有');
+  await expect(card('共有された案件').locator('.project-list__card-members')).toContainText('鈴木 次郎');
+  await expect(card('共有された案件')).not.toContainText('E2E 利用者');
+});

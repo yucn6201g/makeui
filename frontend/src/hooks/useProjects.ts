@@ -41,6 +41,17 @@ export interface Project {
    * refetched, which is always the caller's own.
    */
   access?: ProjectAccess;
+  /**
+   * On a shared project, who else it is shared with — users and groups, the
+   * caller left out, in the order they were granted. Names and roles only.
+   */
+  sharedWith?: ShareMember[];
+}
+
+export interface ShareMember {
+  type: 'user' | 'group';
+  label: string;
+  role: Exclude<ProjectRole, 'owner'>;
 }
 
 export type ProjectRole = 'owner' | 'full' | 'edit' | 'view';
