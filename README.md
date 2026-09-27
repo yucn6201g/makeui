@@ -23,6 +23,7 @@ Knowledge Base、Guardrails、Cognito、CloudFront）。
 │   ├── scripts/        運用・計測スクリプト（一覧は scripts/README.md）
 │   └── test/           単体テスト（`npm test` がディレクトリを走査）
 ├── frontend/           React SPA（Vite）
+│   ├── e2e/            Playwright の E2E テスト（API と Cognito はモック）
 │   ├── src/
 │   │   ├── auth/           Cognito とログイン画面
 │   │   ├── components/     画面ごとのフォルダ（project-list / workspace / version-diff / admin / common）
@@ -47,6 +48,7 @@ Knowledge Base、Guardrails、Cognito、CloudFront）。
 | [docs/06_startup_and_test.md](./docs/06_startup_and_test.md) | 起動・デプロイ・動作確認 |
 | [docs/07_cicd.md](./docs/07_cicd.md) | CI/CD パイプラインとデプロイ手順 |
 | [docs/08_agentcore_strands.md](./docs/08_agentcore_strands.md) | AgentCore と Strands の設計 |
+| [docs/09_e2e_testing.md](./docs/09_e2e_testing.md) | MakeUI 自身の画面の E2E テスト（Playwright） |
 | [docs/DESIGN.md](./docs/DESIGN.md) | システム設計書（詳細） |
 | [backend/scripts/README.md](./backend/scripts/README.md) | 運用・計測スクリプトの一覧と使い方 |
 
@@ -71,6 +73,14 @@ cd frontend && npm ci && npm run dev
 `npm test` は両方ともディレクトリを走査します。テストファイルを追加したら、
 どこかのリストに登録する必要はありません（登録漏れで CI が22スイート中20しか
 実行していなかったことがあり、いまは走査に変えてあります）。
+
+MakeUI 自身の画面は Playwright の E2E テストで確かめます。API と Cognito は
+テストの中でモックするので、AWS には一切つながりません
+（[docs/09_e2e_testing.md](./docs/09_e2e_testing.md)）。
+
+```bash
+cd frontend && npx playwright install chromium && npm run e2e
+```
 
 ### デプロイ
 

@@ -307,7 +307,7 @@ export function ProjectList({ onOpenProject, onNewProject }: ProjectListProps) {
             onOpen={refreshLedger}
           />
           {isAdmin && <AdminPanel />}
-          <button onClick={logout} className="app__header-btn project-list__logout" type="button">Logout</button>
+          <button onClick={logout} className="app__header-btn project-list__logout" type="button" aria-label="ログアウト">Logout</button>
         </div>
       </header>
 

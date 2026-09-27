@@ -83,3 +83,8 @@ frontend/.env.production
 .aws/
 .claude/
 CLAUDE.local.md
+
+# Playwright E2E (frontend/e2e): the e2e build and what a run leaves behind
+frontend/dist-e2e/
+frontend/e2e/test-results/
+frontend/e2e/report/

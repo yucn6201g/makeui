@@ -35,11 +35,19 @@ phases:
       - echo "--- typecheck (backend)"
       - cd backend && ./node_modules/.bin/tsc --noEmit && cd ..
       - echo "--- typecheck (frontend)"
-      - cd frontend && ./node_modules/.bin/tsc --noEmit && cd ..
+      - cd frontend && ./node_modules/.bin/tsc --noEmit && npm run e2e:typecheck && cd ..
       - echo "--- backend test suites"
       - cd backend && npm test && cd ..
       - echo "--- frontend test suites"
       - cd frontend && npm test && cd ..
+      # MakeUI's own screens in a real browser, against a mocked API and user pool
+      # (frontend/e2e, docs/09_e2e_testing.md). Nothing leaves the build: the E2E
+      # build points at hosts that do not exist and every request is answered in
+      # the test. The image is Amazon Linux, where Playwright's --with-deps (apt)
+      # does not apply, so Chromium's system libraries are installed with dnf.
+      - echo "--- E2E (Playwright, mocked API)"
+      - dnf install -y -q nss nspr atk at-spi2-atk cups-libs libdrm libxkbcommon libXcomposite libXdamage libXfixes libXrandr mesa-libgbm pango cairo alsa-lib libXext libX11 libxcb libxshmfence
+      - cd frontend && npx playwright install chromium && npm run e2e && cd ..
       - echo "--- packaging the API Lambda bundle (dist/lambda.mjs)"
       - cd backend && npm run build && cd ..
       - echo "--- packaging the AgentCore Runtime bundle (dist/runtime/index.js)"
@@ -86,8 +94,13 @@ artifacts:
     - 'backend/node_modules/**/*'
     - 'frontend/node_modules/**/*'
     - '.git/**/*'
+    - 'frontend/dist-e2e/**/*'
+    - 'frontend/e2e/test-results/**/*'
+    - 'frontend/e2e/report/**/*'
 
 cache:
   paths:
     - 'backend/node_modules/**/*'
     - 'frontend/node_modules/**/*'
+    # Chromium for the E2E step, so each build does not download it again.
+    - '/root/.cache/ms-playwright/**/*'

@@ -2,7 +2,7 @@
 
 MakeUI 本体（ログイン・チャット・生成・プレビュー・編集・履歴・公開・管理画面）を、実際のブラウザで操作して確かめるテストの方針と手順です。生成されたアプリの品質を見る仕組み（Runtime のブラウザ巡回、`scripts/replay-walk.mjs`）とは別物です。
 
-> 状態: **方針と手順を定めた段階**（2026-09-14）。まだテストは1本もありません。着手の順番は末尾の「段階計画」にあります。
+> 状態: **L1（モック E2E）と L2（契約の一致）を実装済み**（2026-09-27）。L1 は 32 本、ビルド込みで約 15 秒。L3 はステージング環境待ちです。進み具合は末尾の「段階計画」にあります。
 
 ---
 
@@ -48,12 +48,12 @@ MakeUI 本体（ログイン・チャット・生成・プレビュー・編集�
 ### 2.5 待ち方
 - **固定の sleep は禁止**。Playwright の自動待機と `expect(...).toBeVisible()` などで待ちます。
 - 生成ジョブのポーリング（`GET /jobs/{id}`）は、モック側で `pending → running → completed` を呼ばれた回数で進めます。本物の数分を待ちません。
-- ポーリング間隔が長い箇所は `page.clock` で時間を進めます。
+- ポーリング間隔は 2 秒なので、完了まで 1〜3 回のポーリングで済むジョブにしています（`page.clock` は今のところ不要）。
 
 ### 2.6 プレビュー（iframe）
 - 生成結果のプレビューは iframe の中にあります。`frameLocator` で中身を確かめます。
 - 表示内容は、小さな固定のプロジェクト（見出し1つ・ナビ2つ程度）のフィクスチャにします。生成物の品質はここでは見ません。
-- iframe が `blob:` か `srcdoc` か、sandbox の設定で `frameLocator` が届くかは**最初に確認が必要**です（`LiveFrame.tsx` / `Preview.tsx`）。
+- 編集画面のプレビューは `srcdoc` + `sandbox="allow-scripts"` で、`frameLocator('iframe[title="生成されたUIのプレビュー"]')` で中まで届きます（確認済み）。フィクスチャのプロジェクトは実物と同じ行フェンス形式の React で、プレビューの中でナビゲーションが動くことまで確かめます。
 
 ### 2.7 不安定さへの備え
 - CI では再試行 2 回、初回の再試行でトレースを取り、失敗時はスクリーンショットと動画を残します。
@@ -87,19 +87,29 @@ MakeUI 本体（ログイン・チャット・生成・プレビュー・編集�
 
 ```text
 frontend/
-├── playwright.config.ts          # baseURL、webServer（vite preview）、再試行、トレース
+├── .env.e2e                      # E2E ビルドの宛先（どれも実在しない。リポジトリに入れてよい値だけ）
+├── playwright.config.ts          # ビルド → vite preview → テスト。CI では再試行2回・トレース・動画
 └── e2e/
+    ├── tsconfig.json             # E2E コードの型チェック（npm run e2e:typecheck）
     ├── fixtures/
-    │   ├── auth.ts                # ダミー JWT の生成と localStorage への注入
-    │   ├── api.ts                 # page.route のモック一式（ジョブの状態遷移を含む）
-    │   └── data/                  # projects.json, models.json, usage.json, job-completed.json,
-    │                              # project-small.html（プレビュー用の小さなプロジェクト）
+    │   ├── test.ts               # 全テストが import する test。モックの自動設置と「外への通信」の検出
+    │   ├── auth.ts               # ダミー JWT、localStorage への注入、テスト用の入力値
+    │   ├── cognito.ts            # ユーザープールのモック（SRP・TOTP・初回ログイン・パスワード誤り）
+    │   ├── api.ts                # MakeUI API のモック（状態つき。送られた本文を記録、ジョブを進める）
+    │   ├── admin.ts              # 管理画面用のデータ（架空の2人・1グループ・1か月分）
+    │   ├── project.ts            # プレビューに出す小さな React プロジェクト（行フェンス形式）
+    │   ├── screens.ts            # 画面の部品をアクセシブルな名前で取る関数
+    │   └── http.ts               # CORS ヘッダ
     └── tests/
-        ├── auth.spec.ts
-        ├── generate.spec.ts
-        ├── modify.spec.ts
-        ├── limits.spec.ts
-        └── errors.spec.ts
+        ├── auth.spec.ts          # ログイン・MFA・初回ログイン・ログアウト
+        ├── session.spec.ts       # ログイン済みで開く
+        ├── projects.spec.ts      # 一覧・検索・絞り込み・アーカイブと復元
+        ├── generate.spec.ts      # 生成（送る本文・プレビュー・保存・メニュー）
+        ├── modify.spec.ts        # 既存プロジェクトの表示と編集、閲覧のみの共有
+        ├── limits.spec.ts        # 入力の上限
+        ├── errors.spec.ts        # 失敗の見せ方
+        └── admin.spec.ts         # 管理画面（一般・全体管理者・グループ管理者）
+frontend/test/e2e-contract.test.mjs   # L2: モックとバックエンドの一致（npm test に含まれる）
 ```
 
 ## 5. 手順
@@ -107,29 +117,35 @@ frontend/
 ### 5.1 初回の準備（手元）
 ```bash
 cd frontend
-npm install -D @playwright/test
+npm install
 npx playwright install chromium
 ```
 
 ### 5.2 E2E 用のビルド設定
-E2E では本物の API と Cognito に向けないため、ビルド時の環境変数を E2E 専用の値にします（`frontend/.env.e2e`、リポジトリに入れてよい値だけ）。
+E2E のビルドは `vite build --mode e2e`（`npm run e2e:build`）で、宛先は `frontend/.env.e2e` の値です。
 
 ```text
 VITE_API_URL=http://api.e2e.test
-VITE_COGNITO_USER_POOL_ID=ap-northeast-1_E2ETEST00
+VITE_COGNITO_USER_POOL_ID=e2e-test-1_E2ETEST00
 VITE_COGNITO_CLIENT_ID=e2etestclient000000000000
 ```
 
-`http://api.e2e.test` は実在しない宛先です。モックし忘れた通信は必ず失敗するので、「本物に届いてしまった」が起きません。
+- どれも実在しません。プールの ID の `_` より前が Cognito のホスト名になるので、リージョンも実在しない `e2e-test-1` にしています（`cognito-idp.e2e-test-1.amazonaws.com`）。
+- Vite は **環境変数を `.env` ファイルより優先**します。CodeBuild の環境には本番ビルド用の本物の `VITE_*` が入っているため、`playwright.config.ts` が `.env.e2e` の値を環境変数としてビルドに渡し、上書きします。
+- 出力先は `frontend/dist-e2e/`（`.gitignore` 済み・成果物からも除外）。本番の `dist/` とは混ざりません。
 
 ### 5.3 実行
 ```bash
-npm run e2e          # vite build --mode e2e → vite preview → playwright test
-npm run e2e -- --ui  # 画面を見ながら1本ずつ
+npm run e2e                      # ビルド → vite preview → 全テスト
+npm run e2e -- --ui              # 画面を見ながら1本ずつ
+npm run e2e -- generate          # ファイル名で絞る
+npm run e2e:typecheck            # E2E コードの型チェック
 ```
 
-### 5.4 認証済み状態の作り方（fixtures/auth.ts の中身の方針）
-`amazon-cognito-identity-js` は次のキーを localStorage から読みます。
+失敗したテストのスクリーンショット・動画・トレースは `frontend/e2e/test-results/` に残ります（`.gitignore` 済み）。トレースは `npx playwright show-trace <zip>` で開けます。
+
+### 5.4 認証済み状態の作り方（fixtures/auth.ts）
+`amazon-cognito-identity-js` が localStorage から読む次のキーを、`page.addInitScript` でページの読み込み前に書き込みます。
 
 ```text
 CognitoIdentityServiceProvider.<clientId>.LastAuthUser          = <username>
@@ -139,37 +155,60 @@ CognitoIdentityServiceProvider.<clientId>.<username>.refreshToken = <任意の�
 CognitoIdentityServiceProvider.<clientId>.<username>.clockDrift   = 0
 ```
 
-JWT は `header.payload.signature` の形で、payload に `email`、`exp`（未来）、`cognito:username`、必要なら `cognito:groups: ["admin"]` を入れます。署名部分はダミーで構いません。`page.addInitScript` で、ページの読み込み前に書き込みます。
+- JWT は署名なし（`alg: none`）、payload に `email`・`cognito:username`・`exp`（1時間後）、必要なら `cognito:groups`。
+- 誰としてログインするかは `test.use({ user })` で選びます。`USER`（一般）、`SUPER_ADMIN`（`admin`）、グループ管理者（`grpadm:<名前>`）。`user: null` はログアウト状態で始めます。
+- 書き込みはページごとに1回だけです（`sessionStorage` の目印）。ログアウトしてから再読み込みしても、ログイン状態に戻りません。
+- **ログイン画面のテスト**は、`fixtures/cognito.ts` のモックに対して本物と同じ SRP のやり取りをします。`InitiateAuth` に `PASSWORD_VERIFIER` を返し、ブラウザが計算した応答を受け取ったあと、テストが選んだ流れ（`tokens` / `totp` / `first-login` / `wrong-password`）に進めます。パスワードそのものが通信に一度も出ないことも確かめています。
 
-### 5.5 API モックの書き方（fixtures/api.ts の方針）
-- `http://api.e2e.test/**` を1か所でまとめて受け、ルートごとに応答を返します。
-- テストは「どの本文が送られたか」を記録から取り出して検証します（例: `expect(api.last('POST /generate').body.preset).toBe('carbon')`）。
-- 応答の JSON は `e2e/fixtures/data/` に置きます。実際のジョブの結果から作る場合は、**個人情報と実在のユーザー ID を必ず取り除きます**。
+### 5.5 API モックの書き方（fixtures/api.ts）
+- `http://api.e2e.test/**` を1か所で受け、ルートごとに答えます。プロジェクト・バージョン・チャット・ジョブは**状態を持つ**ので、画面で作ったプロジェクトが一覧に出る、保存した文書が次に開くと出る、が本物どおりに起きます。
+- 送った本文は記録から取り出して確かめます。
 
-### 5.6 CI への組み込み
-- `infrastructure/buildspec/build.yml` の単体テストの後に L1 を足します（`npx playwright install --with-deps chromium` → `npm run e2e`）。失敗したら止めます。
-- **所要時間の目標は 5 分以内**。超える場合は、別の CodeBuild プロジェクトに分けて並列にします。
-- 失敗時のトレース・スクリーンショット・動画は CodeBuild のアーティファクトに残します。
+  ```ts
+  expect(api.last('POST', '/generate')?.body).toMatchObject({ preset: 'carbon' });
+  ```
+
+- テストごとの差し替え:
+  - `api.addProject({...})` — 開いた時点で存在するプロジェクト
+  - `api.nextJob = [{ status: 'running' }, { status: 'failed', error: '…' }]` — 次のジョブのポーリングごとの状態
+  - `api.on('POST', '/generate', { status: 429, body: {...} })` — 特定のルートの応答（後から登録したものが優先）
+- どのモックも答えなかった API 呼び出しは 404 を返し、**テストを失敗させます**。API と Cognito 以外の宛先への通信も遮断して失敗させます（例外は MakeUI 自身が読む Google Fonts で、空のスタイルシートを返します）。
+
+### 5.6 L2: モックと本物の一致（test/e2e-contract.test.mjs）
+モックが本物とずれると、L1 は存在しない API を相手に通り続けます。`npm test` の中で、バックエンドのソースを読んで次を確かめます。
+
+- モックが答えるすべてのルートが、同じメソッドでバックエンドに存在する（404 の見落としを防ぐ）
+- `/models`・`/usage`・`/generate`・`/modify`・`/plan`・`/jobs/{id}`・`/projects`・`/versions`・`/admin/usage`・`/admin/models` について、モックの応答にある項目がすべて本物の応答にもある。状態コード（202・201）も一致する
+
+モックに存在しないルートや本物にない項目を足すと、このテストが落ちることを確認済みです。
+
+### 5.7 CI への組み込み
+`infrastructure/buildspec/build.yml` の単体テストの後で実行し、失敗したらビルドを止めます。
+
+- 型チェックの段で `npm run e2e:typecheck` も実行します。
+- CodeBuild のイメージは Amazon Linux なので、Playwright の `--with-deps`（apt 前提）は使えません。Chromium が必要とするライブラリを `dnf` で入れてから `npx playwright install chromium` します。ダウンロードしたブラウザはビルドキャッシュに残します。
+- `dist-e2e/`・`e2e/test-results/`・`e2e/report/` は成果物から除外しています。
+- 実測（2026-09-27、`BUILD_GENERAL1_MEDIUM`）: 32 本が 2 並列で 39 秒。ライブラリの導入と Chromium のダウンロードを含めても、ビルド全体への追加は 1 分台です。
 
 ## 6. テストを足すときの決まり
 1. 新しい画面操作や API 呼び出しを足したら、L1 のシナリオを1本足す（少なくとも「送った本文」と「表示」を1つずつ確かめる）。
-2. 新しい API ルートを足したら、L1 のモックと L2 の契約テストの両方を足す。
-3. 名前で取れない要素に `data-testid` を足すときは、2.4 の命名に従う。
+2. 新しい API ルートを足したら、`fixtures/api.ts` にモックを足す。L2 がそのルートの存在を自動で確かめます。応答の項目を確かめたいルートは `e2e-contract.test.mjs` に足します。
+3. 要素は `fixtures/screens.ts` のようにアクセシブルな名前で取る。名前で取れない要素は、まず名前を付けることを考える（今のところ `data-testid` は1つも要っていません）。
 4. 固定の sleep、本物の宛先への通信、本物の資格情報は、レビューで差し戻す。
 5. 不具合を直したら、再発を捕まえる L1 のテストを先に書いてから直す。
 
 ## 7. 段階計画
 
-| 段階 | 内容 | 前提 |
+| 段階 | 内容 | 状態 |
 |------|------|------|
-| **1. 土台** | Playwright の導入、`playwright.config.ts`、`fixtures/auth.ts` と `fixtures/api.ts`、P1 の #2（ログイン済みで開く）と #3（生成して表示）の2本。iframe に `frameLocator` が届くかをここで確認 | なし |
-| **2. P1 の残り** | #1・#4〜#7。CI（build.yml）へ組み込み、所要時間を測る | 段階1 |
-| **3. L2 契約テスト** | モックの応答とバックエンドの実ハンドラの応答の形を比べるテストを `npm test` に追加 | 段階2 |
-| **4. P2** | 履歴・公開・プラン・添付・管理画面など | 段階2 |
-| **5. L3 実環境スモーク** | ステージングで、テスト用ユーザーとして1件だけ生成を通す（Haiku・節約、費用の上限つき） | ステージング環境、テスト用ユーザーとシークレット（管理者が用意） |
+| **1. 土台** | Playwright の導入、設定、認証と API のモック、ログイン済みで開く・生成して表示 | 済（2026-09-27） |
+| **2. P1 の残り** | ログイン画面（SRP・TOTP・初回ログイン・誤り・ログアウト）、プリセット・モデル・形式、上限、編集、エラー。CI への組み込み | 済（2026-09-27） |
+| **3. L2 契約テスト** | モックのルートと応答の項目を、バックエンドのソースと照合 | 済（2026-09-27） |
+| **4. P2** | 一覧の操作（検索・絞り込み・アーカイブ）と管理画面（役割ごと） | 一部済。残りは履歴と比較・公開・プランモード・添付と説明文・チャット履歴・直接編集 |
+| **5. L3 実環境スモーク** | ステージングで、テスト用ユーザーとして1件だけ生成を通す（Haiku・節約、費用の上限つき） | ステージング環境、テスト用ユーザーとシークレット（管理者が用意）待ち |
 
-## 8. 未確定・要確認
-- プレビューの iframe の作り（`blob:` / `srcdoc` / sandbox）で `frameLocator` が中に届くか（段階1で確認）
-- CodeBuild のイメージで Chromium を動かしたときのビルド時間
-- 名前で取れない要素がどれくらいあり、`data-testid` をどれだけ足す必要があるか
-- L3 用のステージング環境の構成（エンタープライズ対応の P0 と合わせて決める）
+## 8. 分かったこと・残っていること
+- プレビューの iframe には `frameLocator` が届く（2.6）。
+- 名前で取れない要素は今のところ無く、`data-testid` は足していません。書いている途中で、プロジェクト一覧のログアウトボタンだけアクセシブル名が「Logout」で編集画面（「ログアウト」）と違っていたので揃えました。
+- パスワードの誤りは、Cognito の英語のメッセージ（`Incorrect username or password.`）がそのまま表示されます。テストは「エラーが出てフォームに留まる」ことだけを確かめています。日本語にするかは別途判断が必要です。
+- L3 用のステージング環境の構成は、エンタープライズ対応の P0 と合わせて決めます。
