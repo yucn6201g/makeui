@@ -35,10 +35,13 @@ const formatTokens = (n: number): string => {
   return String(n);
 };
 
-const formatDate = (iso: string): string => {
-  const d = new Date(iso);
-  return d.toLocaleDateString('ja-JP', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-};
+/*
+ * One formatter for every card. `toLocaleDateString` with options builds a new
+ * Intl.DateTimeFormat on each call, and with 150 cards that was the costliest
+ * thing the list's own code did on a tab change — about 40 ms (2026-09-27).
+ */
+const DATE_FORMAT = new Intl.DateTimeFormat('ja-JP', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+const formatDate = (iso: string): string => DATE_FORMAT.format(new Date(iso));
 
 /** Names written out before the rest is counted: two fit the card's width at its narrowest. */
 const MEMBERS_SHOWN = 2;
@@ -138,17 +141,27 @@ export const ProjectCard = memo(function ProjectCard({
           tell apart (axe: nested-interactive, 2026-09-27). The name is
           the button now, and its ::after covers the card, so a click
           anywhere on it still opens the project.
+
+          Not in the archive (2026-09-27): an archived project is put
+          away, and opening one let it be changed there. Its card has
+          only restore and delete; the name is text, except while
+          choosing several, when the card is what gets ticked.
         */}
-        <button
-          type="button"
-          className="project-list__card-name project-list__card-open"
-          onClick={() => actions.activate(project)}
-          role={selecting ? 'checkbox' : undefined}
-          aria-checked={selecting ? isSelected : undefined}
-          tabIndex={exiting ? -1 : 0}
-        >
-          {project.name}
-        </button>
+        {archived && !selecting ? (
+          <span className="project-list__card-name">{project.name}</span>
+        ) : (
+          <button
+            type="button"
+            className="project-list__card-name project-list__card-open"
+            data-press-host=".project-list__card"
+            onClick={() => actions.activate(project)}
+            role={selecting ? 'checkbox' : undefined}
+            aria-checked={selecting ? isSelected : undefined}
+            tabIndex={exiting ? -1 : 0}
+          >
+            {project.name}
+          </button>
+        )}
         {/*
           A run outlives this screen, so the list is where somebody
           goes to see whether one is still going — and it said nothing.

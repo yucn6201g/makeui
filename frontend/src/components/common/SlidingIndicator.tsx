@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef } from 'react';
-import { prefersReducedMotion } from '../../utils/motion/motion';
+import { prefersReducedMotion, spring } from '../../utils/motion/motion';
 
 /**
  * The thumb of a segmented control, or the underline of a tab row, as one
@@ -15,6 +15,13 @@ import { prefersReducedMotion } from '../../utils/motion/motion';
  * Positioned from layout offsets, not from bounding boxes: the item under the
  * pointer is being scaled by the press feedback at the moment it is chosen, and
  * a measured box would carry that scale into the thumb.
+ *
+ * It moves by `transform` alone (2026-09-27). It used to transition `width` and
+ * `height` alongside, which the compositor cannot run: the move then needed the
+ * main thread every frame, and the main thread is exactly what a tab change is
+ * busy with — the project list's underline stuttered for as long as the new
+ * grid took to build. Now the box takes its new size at once and a transform
+ * carries it from the old place and size to the new, off the main thread.
  */
 type IndicatorVariant = 'pill' | 'underline' | 'rail';
 
@@ -49,6 +56,8 @@ function boxWithin(el: HTMLElement, track: HTMLElement) {
 export function SlidingIndicator({ active, variant = 'pill', selector = CHOSEN, className }: SlidingIndicatorProps) {
   const ref = useRef<HTMLSpanElement>(null);
   const placed = useRef(false);
+  /** Where the thumb was last put, in layout terms. */
+  const at = useRef<{ x: number; y: number; w: number; h: number } | null>(null);
 
   useLayoutEffect(() => {
     const thumb = ref.current;
@@ -60,21 +69,40 @@ export function SlidingIndicator({ active, variant = 'pill', selector = CHOSEN, 
       if (!target || target.offsetWidth === 0) {
         thumb.style.opacity = '0';
         placed.current = false;
+        at.current = null;
         return;
       }
       const { x, y, w, h } = boxWithin(target, track);
       const jump = !placed.current || prefersReducedMotion();
-      if (jump) thumb.style.transition = 'none';
+      const was = at.current;
+      if (was && was.x === x && was.y === y && was.w === w && was.h === h) return;
+
+      // Where it visibly is now, including a move still in flight.
+      let from = was;
+      const running = thumb.getAnimations().filter((a) => (a as Animation).id === 'slide');
+      if (was && running.length > 0) {
+        const m = new DOMMatrixReadOnly(getComputedStyle(thumb).transform);
+        from = { x: m.m41, y: m.m42, w: was.w * m.a, h: was.h * m.d };
+      }
+      for (const a of running) a.cancel();
+
       thumb.style.width = `${w}px`;
       thumb.style.height = `${h}px`;
       thumb.style.transform = `translate(${x}px, ${y}px)`;
       thumb.style.opacity = '1';
-      if (jump) {
-        // Commit the position before transitions come back, or they animate from 0,0.
-        void thumb.offsetWidth;
-        thumb.style.transition = '';
-      }
+      at.current = { x, y, w, h };
       placed.current = true;
+      if (jump || !from || typeof thumb.animate !== 'function') return;
+
+      const { easing, duration } = spring('snappy');
+      const slide = thumb.animate(
+        [
+          { transform: `translate(${from.x}px, ${from.y}px) scale(${from.w / w}, ${from.h / h})` },
+          { transform: `translate(${x}px, ${y}px)` },
+        ],
+        { duration, easing },
+      );
+      slide.id = 'slide';
     };
 
     place();

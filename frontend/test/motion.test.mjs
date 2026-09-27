@@ -64,7 +64,8 @@ const check = (name, got, want) => {
   check('and a bigger surface sinks by a smaller factor', [...sizes].sort((a, b) => a - b).join() === sizes.join(), true);
   const press = read('src/utils/motion/pressFeedback.ts');
   check('the press animates scale, so a transform is kept', /\{ scale: '1' \}, \{ scale: String\(to\) \}/.test(press), true);
-  check('not on a disabled control', /el\.matches\(':disabled, \[aria-disabled="true"\]'\)/.test(press), true);
+  check('not on a disabled control', /pressed\.matches\(':disabled, \[aria-disabled="true"\]'\)/.test(press), true);
+  check('a control may hand its press to an ancestor', /pressed\.dataset\.pressHost/.test(press), true);
   check('installed once for the whole app', /installPressFeedback\(\);/.test(read('src/main.tsx')), true);
 }
 
@@ -96,6 +97,10 @@ const check = (name, got, want) => {
   const indicator = read('src/components/common/SlidingIndicator.tsx');
   check('the thumb is placed by layout offsets, not by a pressed, scaled box', /x \+= node\.offsetLeft;/.test(indicator), true);
   check('and jumps, rather than slides, into its first place', /const jump = !placed\.current \|\| prefersReducedMotion\(\);/.test(indicator), true);
+  // By transform alone, which the compositor runs while the main thread builds the grid (2026-09-27).
+  check('the thumb slides by transform alone', /\.motion-indicator \{[^}]*transition: opacity 0\.15s ease;/.test(cssNoComments) && !/\.motion-indicator \{[^}]*width var/.test(cssNoComments), true);
+  check('from its old place and size to its new', /transform: `translate\(\$\{from\.x\}px, \$\{from\.y\}px\) scale\(\$\{from\.w \/ w\}, \$\{from\.h \/ h\}\)`/.test(indicator), true);
+  check('continuing a move in flight', /from = \{ x: m\.m41, y: m\.m42, w: was\.w \* m\.a, h: was\.h \* m\.d \};/.test(indicator), true);
 }
 
 // --- things that leave ----------------------------------------------------------------------
@@ -133,11 +138,11 @@ const check = (name, got, want) => {
   // Measured when the list changes, not on every render: the list re-renders on a poll and on every keystroke.
   check('and measures only when what is in it changes', /\}, \[signature\]\);/.test(read('src/hooks/useFlip.ts')), true);
   check('a change of page arrives as one, not card by card', /const bulk = leaving\.length \+ arriving\.length > BULK;/.test(read('src/hooks/useFlip.ts')), true);
-  check('and keeps a removed card long enough to leave', /const cards = usePresenceList\(shown, \(p\) => p\.projectId\)/.test(list), true);
+  check('and keeps a removed card long enough to leave', /const cards = usePresenceList\(drawnProjects, \(p\) => p\.projectId\)/.test(list), true);
   // The card is marked; its control (the name button since 2026-09-27) leaves the tab order.
   check('a leaving card is marked for useFlip and out of the tab order',
     /aria-hidden=\{exiting \|\| undefined\}\s*\{\.\.\.\(exiting \? \{ \[EXITING_ATTR\]: '' \}/.test(list)
-      && /className="project-list__card-name project-list__card-open"[\s\S]{0,200}tabIndex=\{exiting \? -1 : 0\}/.test(list), true);
+      && /className="project-list__card-name project-list__card-open"[\s\S]{0,300}tabIndex=\{exiting \? -1 : 0\}/.test(list), true);
   const flip = read('src/hooks/useFlip.ts');
   check('leaving cards are lifted out before the rest are measured',
     flip.indexOf('1. Lift the leaving ones out first') < flip.indexOf('2. Measure everything that stays'), true);

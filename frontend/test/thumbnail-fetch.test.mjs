@@ -118,5 +118,38 @@ const code = src.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, ' ');
     /isProject && !reactDoc/.test(m?.[1] ?? ''), true);
 }
 
+// --- a long list stays light (2026-09-27) --------------------------------------------
+/*
+ * 「まだ重い」: with 150 cards a tab, a tab change or a filter held the main
+ * thread 100–170 ms (four times that on a slower machine), the underline stood
+ * still, and a click waited. What the profile found, and what holds each fix.
+ */
+{
+  const read = (p) => fs.readFileSync(path.join(root, p), 'utf8').replace(/\r\n/g, '\n');
+  const thumb = src.replace(/\r\n/g, '\n');
+  // Frames one at a time, each its own task, and never straight after a press or a key.
+  check('frames are made in turn', /const turn = useFrameTurn\(frameDue\);/.test(thumb) && /const showFrame = frameDue && turn\.granted;/.test(thumb), true);
+  check('a turn ends when the frame has loaded', (thumb.match(/onLoad=\{turn\.done\}/g) ?? []).length, 3);
+  check('and waits out the moment after a press', /window\.addEventListener\('pointerdown', hush/.test(thumb) && /const QUIET_MS = \d+;/.test(thumb), true);
+  // The per-card box check before paint forced the new grid's layout inside the commit.
+  check('no card measures itself before paint', /useLayoutEffect|getBoundingClientRect/.test(thumb), false);
+  // A card drawn before shows the page it drew, without starting the app again.
+  check('a live frame reports what it drew', /const doc = built \? withSnapshot\(built\) : null;/.test(thumb), true);
+  check('only from its own frame', /if \(e\.source !== liveRef\.current\?\.contentWindow\) return;/.test(thumb), true);
+  check('and the copy runs no scripts', /srcDoc=\{snapshot\}\s*sandbox=""/.test(thumb), true);
+  const shot = read('src/utils/preview/thumbnail.ts');
+  check('the copy has its scripts removed and canvases as images',
+    /copy\.querySelectorAll\('script'\),function\(s\)\{s\.remove\(\);\}/.test(shot) && /img\.src=c\.toDataURL\(\)/.test(shot), true);
+  // The grid: a screenful at a time, and a paint before it changes.
+  check('the grid draws a screenful, and more near its end', /const \{ count: drawn, sentinel \} = useProgressiveCount\(shown\.length, view\);/.test(list) && /ref=\{sentinel\}/.test(list), true);
+  check('every filter follows a painted frame, not only the tab',
+    /const chosen = useMemo\(\s*\(\) => \(\{ tab, query, framework, favouriteOnly, sortKey, sortDir \}\)/.test(list) && /const view = usePaintFirst\(chosen\);/.test(list), true);
+  const progressive = read('src/hooks/useProgressiveCount.ts');
+  check('a new view starts from one screenful', /if \(state\.key !== resetKey\) \{\s*\/\/[^\n]*\n\s*count = chunk;/.test(progressive), true);
+  const flip = read('src/hooks/useFlip.ts');
+  check('cards added below the fold do not fade the grid again', /if \(animate && bulk && arrivedInView\)/.test(flip), true);
+  check('one date formatter for every card', /const DATE_FORMAT = new Intl\.DateTimeFormat\(/.test(read('src/components/project-list/ProjectCard.tsx')), true);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

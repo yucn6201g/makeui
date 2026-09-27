@@ -115,6 +115,7 @@ export function useFlip(
     };
     const quick = spring('quick');
     let entering = 0;
+    let arrivedInView = false;
     for (const el of kids) {
       if (el.dataset.flipPinned) continue;
       const box: Box = { x: el.offsetLeft, y: el.offsetTop, w: el.offsetWidth, h: el.offsetHeight };
@@ -123,7 +124,9 @@ export function useFlip(
       if (!animate) continue;
 
       if (!was) {
-        if (bulk || !onScreen(box)) continue;
+        if (!onScreen(box)) continue;
+        arrivedInView = true;
+        if (bulk) continue;
         const delay = Math.min(entering++ * stagger, maxStagger);
         // Opacity and a short rise, no scale: scaling a card rescales its iframe.
         el.animate(
@@ -151,8 +154,9 @@ export function useFlip(
       ));
     }
 
-    // A change of page: the whole list arrives once.
-    if (animate && bulk && arriving.length > 0) {
+    // A change of page: the whole list arrives once. Not for cards added below the
+    // fold as a long list fills in (useProgressiveCount) — that would fade the grid again.
+    if (animate && bulk && arrivedInView) {
       root.animate(
         [{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'none' }],
         { duration: 220, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' }

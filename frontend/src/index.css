@@ -3314,6 +3314,9 @@ fieldset legend {
   gap: 16px;
 }
 
+/* After the last drawn card while more are to come (useProgressiveCount). */
+.project-list__more { height: 1px; }
+
 .project-list__card {
   background: #ffffff;
   border: 1px solid var(--figma-border);
@@ -3998,6 +4001,9 @@ fieldset legend {
 .project-list__card--archived .project-list__card-preview {
   opacity: 0.55;
 }
+/* Not a way in: an archived card opens nothing (only its restore and delete do anything). */
+.project-list__card--archived { cursor: default; }
+.project-list__card--archived:hover { translate: none; }
 
 .project-list__card--archived:hover .project-list__card-preview {
   opacity: 1;
@@ -9005,11 +9011,9 @@ button.app__logo:hover {
   opacity: 0;
   pointer-events: none;
   border-radius: var(--radius-4);
-  transition:
-    transform var(--spring-snappy-ms) var(--spring-snappy),
-    width var(--spring-snappy-ms) var(--spring-snappy),
-    height var(--spring-snappy-ms) var(--spring-snappy),
-    opacity 0.15s ease;
+  /* The move is a transform animation from SlidingIndicator, which the compositor runs. */
+  transform-origin: 0 0;
+  transition: opacity 0.15s ease;
 }
 /* The raised white segment of a segmented control. */
 .motion-indicator--pill {

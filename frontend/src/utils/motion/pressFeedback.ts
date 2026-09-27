@@ -36,9 +36,18 @@ export function installPressFeedback(doc: Document = document): void {
 
   doc.addEventListener('pointerdown', (e: PointerEvent) => {
     if (e.button !== 0 || prefersReducedMotion()) return;
-    const el = (e.target as Element | null)?.closest?.(PRESSABLE) as HTMLElement | null;
+    const pressed = (e.target as Element | null)?.closest?.(PRESSABLE) as HTMLElement | null;
+    if (!pressed || pressed.matches(':disabled, [aria-disabled="true"]') || pressed.closest('[data-no-press]')) return;
+    /*
+     * A control can hand its press to an ancestor. The project card's button is
+     * its name, stretched over the card by an absolutely placed ::after; scaling
+     * the button made it a containing block, the ::after shrank to the name, and
+     * a press anywhere else ended outside the button — no click. That was
+     * 「まとめて選択が選択できない」 and the card that did not open (2026-09-27).
+     */
+    const host = pressed.dataset.pressHost;
+    const el = (host ? pressed.closest(host) : pressed) as HTMLElement | null;
     if (!el || typeof el.animate !== 'function') return;
-    if (el.matches(':disabled, [aria-disabled="true"]') || el.closest('[data-no-press]')) return;
 
     const { width, height } = el.getBoundingClientRect();
     const to = pressScale(width, height);

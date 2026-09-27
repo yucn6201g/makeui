@@ -65,26 +65,47 @@ test.describe('a long list', () => {
     for (let i = 0; i < 60; i++) api.addProject({ name: `古い案件 ${i}`, lastHtml: reactProject(), archivedAt: new Date().toISOString() });
   });
 
-  test('switching tabs builds thumbnails only for the cards near the screen', async ({ page }) => {
+  // Cards on screen, not the whole list: a screenful is drawn, and more as the end comes near.
+  const drawnCards = (page: import('@playwright/test').Page) => page.locator('.project-list__card:not(.project-list__card--new)');
+
+  test('switching tabs draws a screenful, and thumbnails only for the cards near the screen', async ({ page }) => {
     await page.goto('/');
-    await expect(page.getByText('案件 59', { exact: true })).toBeAttached();
+    await expect(page.getByText('案件 0', { exact: true })).toBeVisible();
     await projectList(page).getByRole('tab', { name: /アーカイブ/ }).click();
-    await expect(page.getByText('古い案件 59', { exact: true })).toBeAttached();
+    await expect(page.getByText('古い案件 0', { exact: true })).toBeVisible();
+    const drawn = await drawnCards(page).count();
+    expect(drawn).toBeGreaterThan(0);
+    expect(drawn).toBeLessThan(60);
     await expect(page.locator('iframe.project-list__card-iframe').first()).toBeVisible();
-    const frames = await page.locator('iframe.project-list__card-iframe').count();
-    expect(frames).toBeGreaterThan(0);
-    expect(frames).toBeLessThan(30);
+    expect(await page.locator('iframe.project-list__card-iframe').count()).toBeLessThan(30);
     // The old tab's cards are gone, not kept for an exit nobody sees.
     await expect(page.getByText('案件 0', { exact: true })).toHaveCount(0);
   });
 
-  test('a card further down gets its thumbnail once scrolled to', async ({ page }) => {
+  test('scrolling down draws the rest, and a card further down gets its thumbnail', async ({ page }) => {
     await page.goto('/');
+    await expect(page.getByText('案件 0', { exact: true })).toBeVisible();
     const last = page.locator('.project-list__card').filter({ hasText: '案件 59' });
-    await expect(last).toBeAttached();
-    await expect(last.locator('iframe')).toHaveCount(0);
+    await expect(last).toHaveCount(0);
+    // Each step to the bottom brings the next screenful.
+    await expect(async () => {
+      await page.mouse.wheel(0, 4000);
+      await expect(last).toBeAttached({ timeout: 500 });
+    }).toPass();
     await last.scrollIntoViewIfNeeded();
     await expect(last.locator('iframe')).toBeVisible();
+    expect(await drawnCards(page).count()).toBe(62); // with the two from the outer beforeEach
+  });
+
+  test('a tab seen before shows its thumbnails without starting the apps again', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.locator('iframe.project-list__card-iframe[sandbox="allow-scripts"]').first()).toBeVisible();
+    // Long enough for the frames to settle and send back what they drew.
+    await page.waitForTimeout(2000);
+    await projectList(page).getByRole('tab', { name: /アーカイブ/ }).click();
+    await expect(page.getByText('古い案件 0', { exact: true })).toBeVisible();
+    await projectList(page).getByRole('tab', { name: /プロジェクト/ }).click();
+    await expect(page.locator('iframe.project-list__card-iframe[sandbox=""]').first()).toBeVisible();
   });
 
   test('the tab row answers the click at once', async ({ page }) => {
@@ -177,4 +198,66 @@ test('a shared project\'s card names who it is shared with', async ({ page, api 
   await expect(card('共有された案件')).toContainText('所有者 さんから共有');
   await expect(card('共有された案件').locator('.project-list__card-members')).toContainText('鈴木 次郎');
   await expect(card('共有された案件')).not.toContainText('E2E 利用者');
+});
+
+/*
+ * A press anywhere on a card — its thumbnail, as most presses are — did nothing
+ * (2026-09-27). The press feedback scaled the name button, which made it the
+ * containing block of the ::after that stretched it over the card; the ::after
+ * shrank under the pointer and the release landed outside the button. Clicks
+ * by locator land on the name and never saw it, so these press the thumbnail.
+ */
+const pressThumbnail = async (page: import('@playwright/test').Page, name: string) => {
+  const card = page.locator('.project-list__card').filter({ has: page.getByText(name, { exact: true }) });
+  const box = (await card.locator('.project-list__card-preview').boundingBox())!;
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+};
+
+test('pressing a card\'s thumbnail opens the project', async ({ page }) => {
+  await page.goto('/');
+  await pressThumbnail(page, '在庫管理');
+  await expect(page.getByRole('region', { name: 'プレビュー' })).toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'プロジェクト名' })).toHaveValue('在庫管理');
+});
+
+test('choosing several: select by pressing the cards, archive them, then delete them from the archive', async ({ page, api }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: '選択', exact: true }).click();
+  await pressThumbnail(page, '在庫管理');
+  await pressThumbnail(page, '予約システム');
+  await expect(page.getByRole('checkbox', { name: '在庫管理' })).toHaveAttribute('aria-checked', 'true');
+  await expect(page.getByRole('checkbox', { name: '予約システム' })).toHaveAttribute('aria-checked', 'true');
+  const bar = page.getByRole('region', { name: 'まとめて操作' });
+  await expect(bar.getByRole('status')).toHaveText('2件を選択中');
+  // Pressing again takes one back out.
+  await pressThumbnail(page, '予約システム');
+  await expect(bar.getByRole('status')).toHaveText('1件を選択中');
+  await pressThumbnail(page, '予約システム');
+  await bar.getByRole('button', { name: 'アーカイブ' }).click();
+  await expect(cards(page)).toHaveCount(0);
+  await expect.poll(() => api.all('PUT', /^\/projects\/p-e2e-[12]$/).map((c) => c.body)).toEqual([{ archived: true }, { archived: true }]);
+
+  await projectList(page).getByRole('tab', { name: /アーカイブ/ }).click();
+  await expect(cards(page)).toHaveText(['在庫管理', '予約システム', '古い試作']);
+  await page.getByRole('button', { name: '選択', exact: true }).click();
+  await bar.getByRole('button', { name: /表示中の3件をすべて選択/ }).click();
+  await expect(bar.getByRole('status')).toHaveText('3件を選択中');
+  await bar.getByRole('button', { name: '完全に削除' }).click();
+  await expect(bar.getByRole('alert')).toHaveText('3件を完全に削除します。元に戻せません');
+  await bar.getByRole('button', { name: '削除する' }).click();
+  await expect(page.getByText('アーカイブは空です')).toBeVisible();
+  expect(api.all('DELETE', /^\/projects\//)).toHaveLength(3);
+});
+
+// An archived project is put away: its card has only restore and delete.
+test('an archived project cannot be opened', async ({ page }) => {
+  await page.goto('/');
+  await projectList(page).getByRole('tab', { name: /アーカイブ/ }).click();
+  await expect(page.getByText('古い試作', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '古い試作', exact: true })).toHaveCount(0);
+  await pressThumbnail(page, '古い試作');
+  await page.getByText('古い試作', { exact: true }).click();
+  await page.waitForTimeout(500);
+  await expect(page.getByRole('region', { name: 'プレビュー' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '古い試作 を復元' })).toBeVisible();
 });

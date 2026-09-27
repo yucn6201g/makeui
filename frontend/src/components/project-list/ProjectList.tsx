@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { startTransition, useEffect, useMemo, useRef, useState } from 'react';
 import { useProjects, type Project } from '../../hooks/useProjects';
 import { ProjectCard, type CardActions } from './ProjectCard';
 import {
@@ -21,7 +21,33 @@ import { activeJobProjectIds } from '../../utils/requests/activeJob';
 import { SlidingIndicator } from '../common/SlidingIndicator';
 import { useFlip, EXITING_ATTR } from '../../hooks/useFlip';
 import { usePresence, usePresenceList } from '../../hooks/usePresence';
+import { useProgressiveCount } from '../../hooks/useProgressiveCount';
 
+
+/**
+ * `value`, a painted frame late.
+ *
+ * `useDeferredValue` let the grid's update run before the frame that showed the
+ * click — the tab's underline then started its move only after the new grid was
+ * built. Waiting for one frame (requestAnimationFrame, then a task after it)
+ * puts the controls' answer on screen first; the grid follows as a transition
+ * React can still interrupt, so choosing again quickly skips the one between.
+ */
+function usePaintFirst<T>(value: T): T {
+  const [shown, setShown] = useState(value);
+  useEffect(() => {
+    if (Object.is(shown, value)) return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const frame = requestAnimationFrame(() => {
+      timer = setTimeout(() => startTransition(() => setShown(value)), 0);
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+      if (timer) clearTimeout(timer);
+    };
+  }, [value, shown]);
+  return shown;
+}
 
 interface ProjectListProps {
   onOpenProject: (project: Project) => void;
@@ -64,15 +90,6 @@ export function ProjectList({ onOpenProject, onNewProject }: ProjectListProps) {
   /** プロジェクト, 共有 or アーカイブ — see `tabOf` for which a project is on. */
   const [tab, setTab] = useState<ProjectTab>('active');
   const showArchive = tab === 'archive';
-  /*
-   * The tab the GRID is showing, a step behind the one just chosen.
-   *
-   * The tab row and its sliding underline answer the click at once; the grid —
-   * up to hundreds of cards — re-renders as a deferred update that React yields
-   * from, so the underline's move and the next frame are never held up by it.
-   */
-  const listTab = useDeferredValue(tab);
-  const listShowsArchive = listTab === 'archive';
   /**
    * The project a second click would destroy.
    *
@@ -143,22 +160,39 @@ export function ProjectList({ onOpenProject, onNewProject }: ProjectListProps) {
    * プロジェクト/共有 moved it (2026-09-27).
    */
   const favourites = useMemo(() => favouriteCount(projects, tab, framework), [projects, tab, framework]);
+  /*
+   * What the GRID is showing, a step behind what was just chosen.
+   *
+   * The controls — the tab row and its underline, the framework segments, the
+   * star — answer the click at once; the grid, up to hundreds of cards, follows
+   * as a deferred update that React yields from, so the controls' movement and
+   * the next frame are never held up by it. The tab alone was deferred at first
+   * (2026-09-27); framework, star, search and sort each redrew the grid inside
+   * the click, and were as slow as a tab change was.
+   */
+  const chosen = useMemo(
+    () => ({ tab, query, framework, favouriteOnly, sortKey, sortDir }),
+    [tab, query, framework, favouriteOnly, sortKey, sortDir]
+  );
+  const view = usePaintFirst(chosen);
+  const listTab = view.tab;
+  const listShowsArchive = listTab === 'archive';
   const shown = useMemo(
     () =>
       visibleProjects(projects, {
-        query,
-        framework,
-        favourite: favouriteOnly,
-        tab: listTab,
-        sort: { key: sortKey, direction: sortDir },
+        query: view.query,
+        framework: view.framework,
+        favourite: view.favouriteOnly,
+        tab: view.tab,
+        sort: { key: view.sortKey, direction: view.sortDir },
       }),
-    [projects, query, framework, favouriteOnly, listTab, sortKey, sortDir]
+    [projects, view]
   );
   /*
    * A filter that hides everything is not the same as an empty account, and the
    * two used to look alike because there was only ever one of them.
    */
-  const filtering = query.trim().length > 0 || framework !== 'all' || favouriteOnly;
+  const filtering = view.query.trim().length > 0 || view.framework !== 'all' || view.favouriteOnly;
 
   /*
    * The grid moves rather than redraws: a card filtered out fades where it
@@ -166,7 +200,10 @@ export function ProjectList({ onOpenProject, onNewProject }: ProjectListProps) {
    * tab, a framework, a search, a sort or a deletion alike. See useFlip.
    */
   const gridRef = useRef<HTMLDivElement>(null);
-  const cards = usePresenceList(shown, (p) => p.projectId);
+  // A screenful with the change, more as the end of the grid comes near — see useProgressiveCount.
+  const { count: drawn, sentinel } = useProgressiveCount(shown.length, view);
+  const drawnProjects = useMemo(() => (drawn >= shown.length ? shown : shown.slice(0, drawn)), [shown, drawn]);
+  const cards = usePresenceList(drawnProjects, (p) => p.projectId);
   const newCard = usePresence(listTab === 'active' && !selecting);
   // What is in the grid and in what order: the layout is measured when this changes, not on every render.
   const gridSignature = `${newCard.mounted}${newCard.closing}|${loading && projects.length === 0}|${cards.map((c) => (c.exiting ? '-' : '') + c.key).join(',')}`;
@@ -275,7 +312,8 @@ export function ProjectList({ onOpenProject, onNewProject }: ProjectListProps) {
   const latest = useRef({ selecting, toggleSelected, onOpenProject, handleArchive, handleFavourite, handleDelete });
   latest.current = { selecting, toggleSelected, onOpenProject, handleArchive, handleFavourite, handleDelete };
   const cardActions = useMemo<CardActions>(() => ({
-    activate: (project) => (latest.current.selecting ? latest.current.toggleSelected(project.projectId) : latest.current.onOpenProject(project)),
+    // An archived project is never opened, only restored or deleted (2026-09-27).
+    activate: (project) => (latest.current.selecting ? latest.current.toggleSelected(project.projectId) : !project.archivedAt && latest.current.onOpenProject(project)),
     archive: (e, projectId, archived) => latest.current.handleArchive(e, projectId, archived),
     favourite: (e, projectId, favourite) => latest.current.handleFavourite(e, projectId, favourite),
     askDelete: (projectId) => setConfirmingDelete(projectId),
@@ -563,7 +601,7 @@ export function ProjectList({ onOpenProject, onNewProject }: ProjectListProps) {
         {/* While the first load is in flight, show skeleton cards in the grid itself.
             Rendering a loading line above a grid that already had the "new project"
             card in it left the page looking half-built. */}
-        <div className="project-list__grid" ref={gridRef} aria-busy={tab !== listTab || undefined}>
+        <div className="project-list__grid" ref={gridRef} aria-busy={view !== chosen || undefined}>
           {/* New project card. Only on プロジェクト — nothing is created in the archive, and a new project is nobody else's yet. */}
           {newCard.mounted && (
             <button
@@ -612,6 +650,8 @@ export function ProjectList({ onOpenProject, onNewProject }: ProjectListProps) {
             />
           ))}
         </div>
+        {/* Where the next screenful is asked for. */}
+        {drawn < shown.length && <div className="project-list__more" ref={sentinel} aria-hidden="true" />}
 
         {/*
           * Three ways to have nothing to show, and they need different words.

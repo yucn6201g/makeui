@@ -49,6 +49,37 @@ const STATIC_REVEAL = `
   html, body { overflow: hidden !important; }
 </style>`;
 
+/** The `type` of the message a live thumbnail frame sends with its drawn page. */
+export const SNAPSHOT_MESSAGE = 'makeui-thumbnail-snapshot';
+
+/**
+ * Put in a live (React/Vue) thumbnail document: once the app has drawn and
+ * settled, send the page back as HTML, scripts removed and canvases turned into
+ * images, so the card can show that next time in a frame with no scripts.
+ *
+ * Why (2026-09-27): every time a card came back on screen — a tab, a filter, a
+ * scroll — its frame started the generated app from nothing, 10–25 ms of the
+ * host's main thread per card, four times that on a slower machine. The page it
+ * drew is the same each time; a static copy costs a parse and a layout.
+ */
+const SNAPSHOT_SCRIPT = `<script>(function(){
+  function send(){try{
+    var live=[].slice.call(document.querySelectorAll('canvas'));
+    var copy=document.documentElement.cloneNode(true);
+    var copies=copy.querySelectorAll('canvas');
+    live.forEach(function(c,i){try{var r=c.getBoundingClientRect();var img=document.createElement('img');img.src=c.toDataURL();img.className=c.className;img.style.cssText=c.style.cssText;img.style.width=r.width+'px';img.style.height=r.height+'px';copies[i].replaceWith(img);}catch(e){}});
+    [].forEach.call(copy.querySelectorAll('script'),function(s){s.remove();});
+    parent.postMessage({type:'${SNAPSHOT_MESSAGE}',html:'<!DOCTYPE html>'+copy.outerHTML},'*');
+  }catch(e){}}
+  addEventListener('load',function(){setTimeout(function(){requestAnimationFrame(function(){requestAnimationFrame(send);});},800);});
+})();</script>`;
+
+/** A compiled thumbnail document that reports its drawn page — see SNAPSHOT_SCRIPT. */
+export function withSnapshot(doc: string): string {
+  const at = doc.search(/<\/body>/i);
+  return at === -1 ? doc + SNAPSHOT_SCRIPT : doc.slice(0, at) + SNAPSHOT_SCRIPT + doc.slice(at);
+}
+
 /** Returns a thumbnail-safe document, or null when there is nothing to show. */
 export function toThumbnailDoc(html: string | undefined | null): string | null {
   if (!html || !html.trim()) return null;
