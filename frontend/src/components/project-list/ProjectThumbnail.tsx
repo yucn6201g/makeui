@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { toThumbnailDoc, needsCompileToRender } from '../../utils/preview/thumbnail';
 import { splitHtmlToFiles } from '../../utils/preview/virtualFs';
 import { buildReactPreview, enqueueBuild } from '../../utils/preview/reactPreview';
@@ -65,6 +65,63 @@ async function compile(html: string): Promise<string | null> {
   return doc;
 }
 
+/**
+ * Whether the card has come near the viewport, once and for good.
+ *
+ * Everything a thumbnail costs waits for this: fetching the document, compiling
+ * it, and the iframe itself — a frame that runs the generated app's React, so
+ * each one is a document to parse and a runtime to start. Measured on
+ * 2026-09-27 with 120 cards a tab: switching tabs mounted all 120 frames and
+ * held the main thread for about 0.9 s, most of it off screen.
+ *
+ * A hidden or non-compositing tab never reports an intersection, which once
+ * left every React card on 「読み込み中…」 for ever. So a card with no report at
+ * all after a short wait counts as near. A card the observer HAS reported as
+ * off screen is not forced: that used to start all 120 at once.
+ */
+function useNearViewport(ref: RefObject<HTMLElement | null>): boolean {
+  const [near, setNear] = useState(false);
+  // Before the first paint: a card already on screen shows its frame at once
+  // instead of flashing 「読み込み中…」 until the observer's first report.
+  useLayoutEffect(() => {
+    const node = ref.current;
+    if (!node) return;
+    const box = node.getBoundingClientRect();
+    if (box.bottom > -300 && box.top < window.innerHeight + 300 && box.width > 0) setNear(true);
+  }, [ref]);
+  useEffect(() => {
+    if (near) return;
+    const node = ref.current;
+    if (!node || typeof IntersectionObserver === 'undefined') {
+      setNear(true);
+      return;
+    }
+    let reported = false;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        reported = true;
+        if (entries.some((e) => e.isIntersecting)) {
+          observer.disconnect();
+          setNear(true);
+        }
+      },
+      { rootMargin: '300px' }
+    );
+    observer.observe(node);
+    const fallback = setTimeout(() => {
+      if (!reported) {
+        observer.disconnect();
+        setNear(true);
+      }
+    }, 1500);
+    return () => {
+      clearTimeout(fallback);
+      observer.disconnect();
+    };
+  }, [near, ref]);
+  return near;
+}
+
 interface ProjectThumbnailProps {
   /**
    * The document, when the caller happens to have it.
@@ -101,6 +158,7 @@ export function ProjectThumbnail({
   const staticDoc = isProject ? null : toThumbnailDoc(source);
 
   const holderRef = useRef<HTMLDivElement>(null);
+  const near = useNearViewport(holderRef);
   const [reactDoc, setReactDoc] = useState<string | null>(() =>
     html && needsCompileToRender(html) ? (cache.get(html) ?? null) : null
   );
@@ -133,11 +191,11 @@ export function ProjectThumbnail({
     (!source && Boolean(hasDocument) && Boolean(projectId) && Boolean(fetchHtml))
     || (isProject && !reactDoc);
 
+  // Cards below the fold are common; fetching and compiling them on mount would
+  // spend the budget on tiles the user may never scroll to. The serial queue
+  // still keeps a long list from compiling all at once.
   useEffect(() => {
-    if (!wanted || started.current) return;
-    const node = holderRef.current;
-    if (!node) return;
-
+    if (!wanted || started.current || !near) return;
     const start = () => {
       started.current = true;
       (async () => {
@@ -155,60 +213,28 @@ export function ProjectThumbnail({
       });
     };
 
-    let launched = false;
-    const startOnce = () => {
-      if (launched) return;
-      launched = true;
-      start();
-    };
-
-    // Cards below the fold are common; compiling them on mount would spend the
-    // budget on tiles the user may never scroll to.
-    if (typeof IntersectionObserver === 'undefined') {
-      startOnce();
-      return;
-    }
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((e) => e.isIntersecting)) {
-          observer.disconnect();
-          startOnce();
-        }
-      },
-      { rootMargin: '200px' }
-    );
-    observer.observe(node);
-
-    // A hidden or non-compositing tab never reports an intersection, which left
-    // every React card stuck on "読み込み中…" forever. The observer is an
-    // optimisation, not a gate — after a short wait, compile regardless. The
-    // serial queue still keeps a long list from doing it all at once.
-    const fallback = setTimeout(() => {
-      observer.disconnect();
-      startOnce();
-    }, 1500);
-
-    return () => {
-      clearTimeout(fallback);
-      observer.disconnect();
-    };
-  }, [wanted, source, projectId, fetchHtml]);
+    start();
+  }, [wanted, near, source, projectId, fetchHtml]);
 
   if (staticDoc) {
     return (
-      <iframe
-        srcDoc={staticDoc}
-        sandbox=""
-        title={title}
-        className="project-list__card-iframe"
-      />
+      <div ref={holderRef} className="project-list__card-frame">
+        {near && (
+          <iframe
+            srcDoc={staticDoc}
+            sandbox=""
+            title={title}
+            className="project-list__card-iframe"
+          />
+        )}
+      </div>
     );
   }
 
   if (isProject || wanted) {
     return (
       <div ref={holderRef} className="project-list__card-frame">
-        {reactDoc ? (
+        {reactDoc && near ? (
           // Scripts are required here: without them a React project has nothing to
           // paint. No same-origin, so the frame still cannot reach the host app.
           <iframe

@@ -4,6 +4,9 @@ import { prefersReducedMotion } from '../utils/motion/motion';
 /** How long something takes to leave. Kept short: leaving is never the point. */
 const EXIT_MS = 180;
 
+/** More leaving and arriving than this at once is a change of list, not of items (as useFlip's BULK). */
+const BULK_CHANGE = 6;
+
 /**
  * Something that is shown and hidden, kept on screen long enough to leave.
  *
@@ -58,6 +61,20 @@ export function usePresenceList<T>(items: T[], keyOf: (item: T) => string, exitM
   if (!reduced) {
     const present = new Set(out.map((e) => e.key));
     const prev = committed.current;
+    /*
+     * A change of the whole list — a tab, a filter, a page of results — has no
+     * one card to watch leave: useFlip hides a bulk exit at once anyway. Kept
+     * mounted for the exit, the old cards (each with a frame running its app)
+     * were torn down one timer at a time, a commit of the whole grid per card.
+     * Measured with 120 cards a tab: about 0.9 s of blocked main thread per
+     * switch (2026-09-27). So a bulk change drops them in the same render.
+     */
+    const was = new Set(prev.map((e) => e.key));
+    const newlyLeaving = prev.filter((e) => !e.exiting && !present.has(e.key) && !gone.current.has(e.key)).length;
+    const arriving = out.filter((e) => !was.has(e.key)).length;
+    if (newlyLeaving + arriving > BULK_CHANGE) {
+      for (const e of prev) if (!present.has(e.key)) gone.current.add(e.key);
+    }
     prev.forEach((entry, i) => {
       if (present.has(entry.key) || gone.current.has(entry.key)) return;
       // After the nearest earlier entry that is still in the list being built.
@@ -73,20 +90,27 @@ export function usePresenceList<T>(items: T[], keyOf: (item: T) => string, exitM
   useLayoutEffect(() => {
     committed.current = out;
     const live = new Set(out.map((e) => e.key));
+    // Everything that starts leaving in this commit leaves on one timer: one re-render, not one per card.
+    const starting: string[] = [];
     for (const entry of out) {
       if (!entry.exiting) {
-        // Back before it finished leaving: stop the clock on it.
-        const t = timers.current.get(entry.key);
-        if (t) { clearTimeout(t); timers.current.delete(entry.key); }
+        // Back before it finished leaving: forget its place on the timer (which others may share).
+        timers.current.delete(entry.key);
         gone.current.delete(entry.key);
         continue;
       }
-      if (timers.current.has(entry.key)) continue;
-      timers.current.set(entry.key, setTimeout(() => {
-        timers.current.delete(entry.key);
-        gone.current.add(entry.key);
+      if (!timers.current.has(entry.key)) starting.push(entry.key);
+    }
+    if (starting.length) {
+      const timer = setTimeout(() => {
+        for (const key of starting) {
+          if (timers.current.get(key) !== timer) continue;
+          timers.current.delete(key);
+          gone.current.add(key);
+        }
         bump();
-      }, exitMs));
+      }, exitMs);
+      for (const key of starting) timers.current.set(key, timer);
     }
     // A key that has left the list entirely no longer needs remembering.
     for (const key of gone.current) if (!live.has(key)) gone.current.delete(key);

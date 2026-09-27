@@ -26,12 +26,13 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ADMIN_FILES, readAdminPanel } from './lib/admin-source.mjs';
 import { APP_FILES, readApp } from './lib/app-source.mjs';
+import { readProjectList } from './lib/project-list-source.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
 const activeJob = read('src/utils/requests/activeJob.ts');
 const app = readApp();
-const list = read('src/components/project-list/ProjectList.tsx');
+const list = readProjectList();
 const admin = readAdminPanel();
 const css = read('src/index.css');
 const hooks = ['useGenerate', 'useModify', 'usePlan'].map((h) => [h, read(`src/hooks/${h}.ts`)]);

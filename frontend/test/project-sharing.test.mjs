@@ -8,6 +8,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { ADMIN_FILES, readAdminPanel } from './lib/admin-source.mjs';
 import { APP_FILES, readApp } from './lib/app-source.mjs';
+import { readProjectList } from './lib/project-list-source.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 execSync(
@@ -46,7 +47,7 @@ const check = (name, got, want) => {
 
 // --- the list ----------------------------------------------------------------------------
 {
-  const list = read('src/components/project-list/ProjectList.tsx');
+  const list = readProjectList();
   check('the tabs are プロジェクト, 共有, アーカイブ', /\['active', 'プロジェクト', activeCount\][\s\S]{0,200}\['shared', '共有', sharedCount\][\s\S]*アーカイブ/.test(list), true);
   check('a shared card says whose it is and the role', /\{project\.access\?\.ownerName\} さんから共有[\s\S]{0,200}ROLE_LABELS\[role\]/.test(list), true);
   check('and the owner\'s says it is shared', /project\.sharedAt \? \(\s*<div className="project-list__card-share">共有中<\/div>/.test(list), true);
@@ -87,7 +88,7 @@ const check = (name, got, want) => {
 // --- the top bar: Admin and Logout are header buttons like ZIP and 共有 -------------------------
 {
   const app = readApp();
-  const list = read('src/components/project-list/ProjectList.tsx');
+  const list = readProjectList();
   const admin = readAdminPanel();
   check('Logout in the workspace', /className="app__header-btn app__logout"/.test(app), true);
   check('Logout on the list', /className="app__header-btn project-list__logout"/.test(list), true);

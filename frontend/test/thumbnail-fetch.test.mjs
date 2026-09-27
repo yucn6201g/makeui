@@ -27,10 +27,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readProjectList } from './lib/project-list-source.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const src = fs.readFileSync(path.join(root, 'src/components/project-list/ProjectThumbnail.tsx'), 'utf8');
-const list = fs.readFileSync(path.join(root, 'src/components/project-list/ProjectList.tsx'), 'utf8');
+const list = readProjectList();
 
 let pass = 0, fail = 0;
 const check = (name, got, want) => {

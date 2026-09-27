@@ -14,6 +14,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { ADMIN_FILES, readAdminPanel } from './lib/admin-source.mjs';
 import { APP_FILES, readApp } from './lib/app-source.mjs';
+import { readProjectList } from './lib/project-list-source.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 execSync(
@@ -127,7 +128,7 @@ const check = (name, got, want) => {
 
 // --- lists that travel ------------------------------------------------------------------------
 {
-  const list = read('src/components/project-list/ProjectList.tsx');
+  const list = readProjectList();
   check('the project grid animates its layout', /useFlip\(gridRef, gridSignature\)/.test(list) && /className="project-list__grid" ref=\{gridRef\}/.test(list), true);
   // Measured when the list changes, not on every render: the list re-renders on a poll and on every keystroke.
   check('and measures only when what is in it changes', /\}, \[signature\]\);/.test(read('src/hooks/useFlip.ts')), true);
