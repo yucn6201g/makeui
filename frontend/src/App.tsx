@@ -11,7 +11,8 @@ import { navigate } from './utils/motion/viewTransition';
 import { LoginForm } from './auth/LoginForm';
 import { Workspace } from './components/workspace/Workspace';
 
-function AppContent() {
+// Exported for Storybook (App.stories.tsx), which renders it inside a mocked session and API.
+export function AppContent() {
   const { isAuthenticated, loading } = useAuth();
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
   const { updateProject, fetchProjectPreview } = useProjects();

@@ -88,3 +88,7 @@ CLAUDE.local.md
 frontend/dist-e2e/
 frontend/e2e/test-results/
 frontend/e2e/report/
+
+# Storybook (frontend/.storybook): the static build and its failure log
+frontend/storybook-static/
+frontend/debug-storybook.log

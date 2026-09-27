@@ -21,7 +21,7 @@ import type { MockApi } from '../fixtures/api';
  */
 async function expectAccessible(page: Page) {
   await page.waitForTimeout(300);
-  await page.evaluate(() => document.getAnimations().forEach((a) => a.finish()));
+  await page.evaluate(() => document.getAnimations().filter((a) => a.effect?.getComputedTiming().endTime !== Infinity).forEach((a) => a.finish()));
   const { violations } = await new AxeBuilder({ page }).exclude('iframe').analyze();
   expect(violations.map((v) => `${v.impact} ${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`)).toEqual([]);
 }

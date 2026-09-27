@@ -13,7 +13,7 @@ import { membershipOf, canOpenAdminPanel, type Membership } from '../utils/accou
 
 type AuthStep = 'idle' | 'new-password' | 'mfa-setup' | 'mfa-verify';
 
-interface AuthContextType {
+export interface AuthContextType {
   isAuthenticated: boolean;
   userEmail: string | null;
   token: string | null;
@@ -33,7 +33,8 @@ interface AuthContextType {
   logout: () => void;
 }
 
-const AuthContext = createContext<AuthContextType | null>(null);
+// Exported for Storybook (.storybook/mocks.tsx), which provides a signed-in value without a user pool.
+export const AuthContext = createContext<AuthContextType | null>(null);
 
 export function useAuth(): AuthContextType {
   const ctx = useContext(AuthContext);

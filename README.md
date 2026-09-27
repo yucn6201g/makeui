@@ -82,6 +82,12 @@ MakeUI 自身の画面は Playwright の E2E テストで確かめます。API �
 cd frontend && npx playwright install chromium && npm run e2e
 ```
 
+部品と画面は Storybook でも確かめられます（API とログインはモック。[docs/05_frontend.md](./docs/05_frontend.md) の「Storybook」）。
+
+```bash
+cd frontend && npm run storybook
+```
+
 ### デプロイ
 
 **push すればデプロイされます。**

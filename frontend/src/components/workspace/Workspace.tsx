@@ -1970,6 +1970,8 @@ export function Workspace({ project, onBackToProjects, onUpdateProject, fetchPro
             ref={setChatThread}
             role="log"
             aria-label="会話履歴"
+            // Scrolls on its own, so the keyboard has to be able to reach it (axe: scrollable-region-focusable).
+            tabIndex={0}
           >
             {messages.length === 0 && !isProcessing && (
               <div className="app__chat-empty">

@@ -48,6 +48,10 @@ phases:
       - echo "--- E2E (Playwright, mocked API)"
       - dnf install -y -q nss nspr atk at-spi2-atk cups-libs libdrm libxkbcommon libXcomposite libXdamage libXfixes libXrandr mesa-libgbm pango cairo alsa-lib libXext libX11 libxcb libxshmfence
       - cd frontend && npx playwright install chromium && npm run e2e && cd ..
+      # Every Storybook story renders without an error and without an axe violation
+      # (frontend/.storybook, e2e/storybook). Built with the E2E settings, never the real ones.
+      - echo "--- Storybook"
+      - cd frontend && npm run test-storybook && cd ..
       - echo "--- packaging the API Lambda bundle (dist/lambda.mjs)"
       - cd backend && npm run build && cd ..
       - echo "--- packaging the AgentCore Runtime bundle (dist/runtime/index.js)"
@@ -97,6 +101,7 @@ artifacts:
     - 'frontend/dist-e2e/**/*'
     - 'frontend/e2e/test-results/**/*'
     - 'frontend/e2e/report/**/*'
+    - 'frontend/storybook-static/**/*'
 
 cache:
   paths:
