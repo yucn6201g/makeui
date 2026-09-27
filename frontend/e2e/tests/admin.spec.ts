@@ -4,6 +4,19 @@ import { mockAdmin, THIS_MONTH } from '../fixtures/admin';
 
 const GROUP_ADMIN: TestUser = { email: 'e2e-grpadm@example.invalid', username: 'e2e-grpadm@example.invalid', groups: ['grpadm:design'] };
 
+/*
+ * Every tab carries its count as soon as the panel opens (2026-09-27). ユーザー管理
+ * and グループ fetched their lists only when first chosen, so their chips were
+ * empty until clicked. Asserted without clicking any tab.
+ */
+const tabCounts = async (page: import('@playwright/test').Page, names: string[]) => {
+  const panel = page.getByRole('region', { name: '管理画面' });
+  for (const name of names) {
+    await expect(panel.getByRole('button', { name: new RegExp(`^${name}`) }).locator('.adm-tab-badge'), `${name} has its count`).toHaveText(/^\d+$/);
+  }
+  return panel;
+};
+
 test.describe('an ordinary user', () => {
   test('has no way into the admin panel, and asks nothing of the admin routes', async ({ page, api }) => {
     await page.goto('/');
@@ -30,6 +43,15 @@ test.describe('the account administrator', () => {
 
     const usage = api.last('GET', '/admin/usage');
     expect([usage?.query.get('from'), usage?.query.get('to')]).toEqual([THIS_MONTH, THIS_MONTH]);
+  });
+
+  test('sees every tab\'s count on opening, before choosing any', async ({ page }) => {
+    await page.goto('/');
+    await page.getByRole('button', { name: '管理画面を開く' }).click();
+    const panel = await tabCounts(page, ['使用量', 'モデル', 'ユーザー管理', 'プロジェクト', 'グループ']);
+    await expect(panel.getByRole('button', { name: /^ユーザー管理/ }).locator('.adm-tab-badge')).toHaveText('2');
+    await expect(panel.getByRole('button', { name: /^グループ/ }).locator('.adm-tab-badge')).toHaveText('1');
+    await expect(panel.getByRole('button', { name: /^プロジェクト/ }).locator('.adm-tab-badge')).toHaveText('5');
   });
 
   test('sees every tab, the account-wide ones included, and each loads its own data', async ({ page, api }) => {
@@ -107,6 +129,13 @@ test.describe('creating an account', () => {
 test.describe('a group administrator', () => {
   test.use({ user: GROUP_ADMIN });
   test.beforeEach(({ api }) => mockAdmin(api));
+
+  test('sees the count of each of its tabs on opening, and asks nothing account-wide', async ({ page, api }) => {
+    await page.goto('/');
+    await page.getByRole('button', { name: '管理画面を開く' }).click();
+    await tabCounts(page, ['使用量', 'ユーザー管理', 'プロジェクト']);
+    expect(api.all('GET', '/admin/groups')).toEqual([]);
+  });
 
   test('gets the panel without the account-wide tabs', async ({ page, api }) => {
     await page.goto('/');

@@ -14,7 +14,7 @@ export const ADMIN_USAGE = [
   {
     userId: 'sub-taro', email: 'taro@example.invalid', displayName: '山田 太郎', month: MONTH,
     totalTokens: 120_000, inputTokens: 80_000, outputTokens: 40_000, requestCount: 12,
-    cost: 1.8, monthlyLimit: 10_000_000, group: 'design', lastUpdated: new Date().toISOString(),
+    cost: 1.8, monthlyLimit: 10_000_000, group: 'design', projectCount: 4, lastUpdated: new Date().toISOString(),
     byModel: [
       { model: 'haiku', inputTokens: 60_000, outputTokens: 30_000, cacheReadTokens: 0, cacheWriteTokens: 0, requestCount: 10, cost: 0.6 },
       { model: 'sonnet', inputTokens: 20_000, outputTokens: 10_000, cacheReadTokens: 0, cacheWriteTokens: 0, requestCount: 2, cost: 1.2 },
@@ -23,7 +23,7 @@ export const ADMIN_USAGE = [
   {
     userId: 'sub-hanako', email: 'hanako@example.invalid', displayName: '佐藤 花子', month: MONTH,
     totalTokens: 30_000, inputTokens: 20_000, outputTokens: 10_000, requestCount: 3,
-    cost: 0.3, monthlyLimit: -1, group: null, lastUpdated: new Date().toISOString(),
+    cost: 0.3, monthlyLimit: -1, group: null, projectCount: 1, lastUpdated: new Date().toISOString(),
   },
 ];
 

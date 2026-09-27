@@ -134,12 +134,25 @@ export function AdminPanel() {
       .finally(() => { if (current()) setInventoryBusy(false); });
   }, [visible, superAdmin, modelPeriod, fetchModelInventory]);
 
+  /*
+   * The accounts and the groups, when the panel opens (2026-09-27).
+   *
+   * They were fetched when their tab was first chosen, so the chips beside
+   * 「ユーザー管理」 and 「グループ」 stayed empty until somebody clicked each
+   * tab — the other three had their numbers from the start. Every chip counts
+   * something the panel has fetched on opening now, the way the models chip
+   * already did. Groups are super-admin only, like their route and their tab.
+   */
+  const [groupsLoaded, setGroupsLoaded] = useState(false);
   useEffect(() => {
-    if (visible && (tab === 'users' || tab === 'groups') && cognitoUsers.length === 0) {
-      fetchCognitoUsers();
-    }
-    if (visible && tab === 'groups') fetchGroups().catch(() => {});
-  }, [visible, tab, cognitoUsers.length, fetchCognitoUsers, fetchGroups]);
+    if (!visible) return;
+    fetchCognitoUsers();
+    if (superAdmin) fetchGroups().then(() => setGroupsLoaded(true)).catch(() => {});
+  }, [visible, superAdmin, fetchCognitoUsers, fetchGroups]);
+  // Choosing the groups tab still reads them afresh: membership moves under other administrators.
+  useEffect(() => {
+    if (visible && tab === 'groups') fetchGroups().then(() => setGroupsLoaded(true)).catch(() => {});
+  }, [visible, tab, fetchGroups]);
 
   // Kept on screen while it slides away — see usePresence.
   const sheet = usePresence(visible);
@@ -258,7 +271,8 @@ export function AdminPanel() {
               type="button"
             >
               グループ
-              {groups.length > 0 && <span className="adm-tab-badge">{groups.length}</span>}
+              {/* Zero is a count too, once the list has arrived. */}
+              {groupsLoaded && <span className="adm-tab-badge">{groups.length}</span>}
             </button>
           )}
         </div>
