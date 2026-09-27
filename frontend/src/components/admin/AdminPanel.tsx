@@ -17,6 +17,7 @@ import { UsersTab } from './UsersTab';
 import { ProjectsTab } from './ProjectsTab';
 import { GroupsTab } from './GroupsTab';
 import { ModelsTab } from './ModelsTab';
+import { requestErrorMessage } from '../../utils/requests/request';
 
 export function AdminPanel() {
   const { fetchModelInventory, users, loading, error, fetchUsers, setUserLimit, setUserAllowedModels, setGroupLimit, cognitoUsers, cognitoLoading, cognitoError, fetchCognitoUsers, createUser, renameUser, deleteUser, toggleUserEnabled, fetchProjects, fetchProjectVersions, fetchVersion, groups, fetchGroups, createGroup, deleteGroup, setMembership, setGroupAdmin } = useAdmin();
@@ -129,7 +130,7 @@ export function AdminPanel() {
     setInventoryError(null);
     fetchModelInventory(modelPeriod)
       .then((d) => { if (current()) setInventory(d); })
-      .catch((e) => { if (current()) setInventoryError((e as Error).message || '読み込みに失敗しました'); })
+      .catch((e) => { if (current()) setInventoryError(requestErrorMessage(e, 'モデルの情報を読み込めませんでした。もう一度お試しください。')); })
       .finally(() => { if (current()) setInventoryBusy(false); });
   }, [visible, superAdmin, modelPeriod, fetchModelInventory]);
 

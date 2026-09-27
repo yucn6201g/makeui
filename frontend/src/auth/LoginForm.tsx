@@ -5,6 +5,8 @@ import { useState, useEffect, type FormEvent } from 'react';
 import QRCode from 'qrcode';
 import { useAuth } from './AuthProvider';
 import { toHalfWidth, toDigits } from '../utils/requests/halfWidth';
+import { authErrorMessage } from './authErrors';
+import { PASSWORD_HINT, PASSWORD_RULE, passwordProblem } from '../utils/account/passwordPolicy';
 
 export function LoginForm() {
   const { authStep, mfaSecret, mfaEmail, login, submitNewPassword, submitMFACode } = useAuth();
@@ -33,7 +35,7 @@ export function LoginForm() {
     try {
       await login(email, password);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'ログインに失敗しました');
+      setError(authErrorMessage(err, 'sign-in'));
     } finally {
       setIsSubmitting(false);
     }
@@ -42,11 +44,17 @@ export function LoginForm() {
   const handleNewPassword = async (e: FormEvent) => {
     e.preventDefault();
     setError('');
+    // Refused here, in words, rather than by Cognito after a round trip.
+    const problem = passwordProblem(newPassword);
+    if (problem) {
+      setError(problem);
+      return;
+    }
     setIsSubmitting(true);
     try {
       await submitNewPassword(newPassword);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'パスワード変更に失敗しました');
+      setError(authErrorMessage(err, 'new-password'));
     } finally {
       setIsSubmitting(false);
     }
@@ -59,15 +67,21 @@ export function LoginForm() {
     try {
       await submitMFACode(mfaCode);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'MFA認証に失敗しました');
+      setError(authErrorMessage(err, 'mfa'));
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  /*
+   * Each step's root carries its own key. The steps have the same shape, so without one
+   * React reused the sign-in form's input as the code field: autoFocus, which only acts on
+   * mount, never ran, and the address field's element became the one-time-code field
+   * (found by the keyboard E2E test, 2026-09-27).
+   */
   if (authStep === 'new-password') {
     return (
-      <main className="login">
+      <main className="login" key="new-password">
         <div className="login__card">
           <h1 className="login__title">MakeUI</h1>
           <p className="login__subtitle">新しいパスワードを設定してください</p>
@@ -79,12 +93,13 @@ export function LoginForm() {
                 type="password"
                 value={newPassword}
                 onChange={(e) => setNewPassword(toHalfWidth(e.target.value))}
-                placeholder="12文字以上で入力"
+                placeholder={PASSWORD_HINT}
                 inputMode="text"
                 required
                 autoFocus
-                aria-describedby={error ? 'login-error' : undefined}
+                aria-describedby={error ? 'new-password-rule login-error' : 'new-password-rule'}
               />
+              <p className="login__hint" id="new-password-rule">{PASSWORD_RULE}</p>
             </div>
             {error && <p className="login__error" id="login-error" role="alert">{error}</p>}
             <button type="submit" className="login__button" disabled={isSubmitting}>
@@ -98,7 +113,7 @@ export function LoginForm() {
 
   if (authStep === 'mfa-setup') {
     return (
-      <main className="login">
+      <main className="login" key="mfa-setup">
         <div className="login__card">
           <h1 className="login__title">MakeUI</h1>
           <p className="login__subtitle">多要素認証の設定</p>
@@ -145,7 +160,7 @@ export function LoginForm() {
 
   if (authStep === 'mfa-verify') {
     return (
-      <main className="login">
+      <main className="login" key="mfa-verify">
         <div className="login__card">
           <h1 className="login__title">MakeUI</h1>
           <p className="login__subtitle">認証コードを入力してください</p>
@@ -177,7 +192,7 @@ export function LoginForm() {
   }
 
   return (
-    <main className="login">
+    <main className="login" key="sign-in">
       <div className="login__card">
         <h1 className="login__title">MakeUI</h1>
         <p className="login__subtitle">AIによるUIデザイン生成</p>

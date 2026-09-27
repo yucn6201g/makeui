@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '../auth/AuthProvider';
-import { requestErrorMessage } from '../utils/requests/request';
+import { requestErrorMessage, readableMessage } from '../utils/requests/request';
 import { appendPhase, closeTranscript, type PhaseEntry } from '../utils/chat/phaseTranscript';
 import { pollAuthToken, isAuthRefusal, AUTH_RETRY_BUDGET } from '../utils/requests/pollAuth';
 
@@ -107,7 +107,7 @@ export function usePlan(): UsePlanReturn {
 
   const pollJob = useCallback((jobId: string, apiUrl: string) => {
     if (pollAttemptsRef.current >= POLL_MAX_ATTEMPTS) {
-      setError('プランの作成がタイムアウトしました');
+      setError('プランの作成に時間がかかっています。処理はサーバー側で続いています。しばらく待ってから、このプロジェクトを開き直すと結果が表示されます。');
       setIsPlanning(false);
       return;
     }
@@ -151,7 +151,7 @@ export function usePlan(): UsePlanReturn {
           setPhases(closeTranscript);
           setIsPlanning(false);
         } else if (data.status === 'failed') {
-          setError(data.error || 'プランの作成に失敗しました');
+          setError(readableMessage(data.error, 'プランを作成できませんでした。もう一度お試しください。'));
           setPhases(closeTranscript);
           setIsPlanning(false);
         } else {
@@ -167,7 +167,7 @@ export function usePlan(): UsePlanReturn {
           return;
         }
         if (err.status && err.status >= 400 && err.status < 500 && err.status !== 429) {
-          setError('認証エラーが発生しました。再度ログインしてください。');
+          setError('ログインの有効期限が切れています。再度ログインしてください。');
           setIsPlanning(false);
           return;
         }

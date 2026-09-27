@@ -65,7 +65,7 @@ export function ProjectList({ onOpenProject, onNewProject }: ProjectListProps) {
    * is shown as such. The list did not fetch it before — the panel had nothing
    * to say about limits — so this is a new call on this screen, made once.
    */
-  const { usage: ledger, refresh: refreshLedger } = useUsage();
+  const { usage: ledger, error: ledgerError, refresh: refreshLedger } = useUsage();
   const [creating, setCreating] = useState(false);
   const [query, setQuery] = useState('');
   const [framework, setFramework] = useState<FrameworkFilter>('all');
@@ -304,6 +304,8 @@ export function ProjectList({ onOpenProject, onNewProject }: ProjectListProps) {
             }
             // An administrator can change a limit while the page is open, and
             // the number people come here to check is the one that just moved.
+            // Without it a failed fetch read 「読み込み中…」 for ever (found by the E2E test, 2026-09-27).
+            error={ledgerError}
             onOpen={refreshLedger}
           />
           {isAdmin && <AdminPanel />}
@@ -311,7 +313,7 @@ export function ProjectList({ onOpenProject, onNewProject }: ProjectListProps) {
         </div>
       </header>
 
-      <div className="project-list__body">
+      <main className="project-list__body">
         <div className="project-list__toolbar">
           <div className="project-list__tabs motion-track" role="tablist" aria-label="表示するプロジェクト">
             <SlidingIndicator active={tab} variant="underline" />
@@ -614,18 +616,8 @@ export function ProjectList({ onOpenProject, onNewProject }: ProjectListProps) {
             <div
               key={project.projectId}
               className={`project-list__card${archived ? ' project-list__card--archived' : ''}${running ? ' project-list__card--running' : ''}${isSelected ? ' project-list__card--selected' : ''}`}
-              onClick={activate}
-              role={selecting ? 'checkbox' : 'button'}
-              aria-checked={selecting ? isSelected : undefined}
-              tabIndex={exiting ? -1 : 0}
               aria-hidden={exiting || undefined}
               {...(exiting ? { [EXITING_ATTR]: '' } : {})}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || (selecting && e.key === ' ')) {
-                  e.preventDefault();
-                  activate();
-                }
-              }}
             >
               {selecting && (
                 <span className={`project-list__check${isSelected ? ' project-list__check--on' : ''}`} aria-hidden="true">
@@ -647,7 +639,24 @@ export function ProjectList({ onOpenProject, onNewProject }: ProjectListProps) {
               </div>
               <div className="project-list__card-info">
                 <div className="project-list__card-line">
-                  <span className="project-list__card-name">{project.name}</span>
+                  {/*
+                    The card's own control. It used to be the whole card as a
+                    role="button" div, which put the star and the archive button
+                    inside another button — two controls a screen reader cannot
+                    tell apart (axe: nested-interactive, 2026-09-27). The name is
+                    the button now, and its ::after covers the card, so a click
+                    anywhere on it still opens the project.
+                  */}
+                  <button
+                    type="button"
+                    className="project-list__card-name project-list__card-open"
+                    onClick={activate}
+                    role={selecting ? 'checkbox' : undefined}
+                    aria-checked={selecting ? isSelected : undefined}
+                    tabIndex={exiting ? -1 : 0}
+                  >
+                    {project.name}
+                  </button>
                   {/*
                     A run outlives this screen, so the list is where somebody
                     goes to see whether one is still going — and it said nothing.
@@ -838,7 +847,7 @@ export function ProjectList({ onOpenProject, onNewProject }: ProjectListProps) {
             )}
           </div>
         )}
-      </div>
+      </main>
     </div>
   );
 }

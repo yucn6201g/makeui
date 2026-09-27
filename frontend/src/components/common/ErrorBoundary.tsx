@@ -34,8 +34,15 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
           <div className="error-boundary__card">
             <h1 className="error-boundary__title">エラーが発生しました</h1>
             <p className="error-boundary__message">
-              {this.state.error?.message || '予期しないエラーが発生しました。'}
+              画面を表示できませんでした。「再試行」を押すか、ページを再読み込みしてください。
             </p>
+            {/* The exception itself, for whoever is asked to look into it — not the sentence a person reads. */}
+            {this.state.error?.message && (
+              <details className="error-boundary__detail">
+                <summary>詳細</summary>
+                <code>{this.state.error.message}</code>
+              </details>
+            )}
             <button
               className="error-boundary__btn"
               onClick={this.handleReset}

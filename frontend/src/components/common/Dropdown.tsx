@@ -57,10 +57,20 @@ export function Dropdown({ value, options, onChange, label, disabled, title, pla
   const [box, setBox] = useState<React.CSSProperties | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const listId = useId();
   const selected = options.find((o) => o.id === value) ?? options[0];
 
-  const close = useCallback(() => setOpen(false), []);
+  /*
+   * Closing hands the focus back to the trigger when it was inside the menu, so
+   * a keyboard user choosing an option or pressing Escape carries on from where
+   * they were instead of from the top of the page. A click outside leaves the
+   * focus with whatever was clicked.
+   */
+  const close = useCallback(() => {
+    setOpen(false);
+    if (listRef.current?.contains(document.activeElement)) triggerRef.current?.focus();
+  }, []);
   /* Stays for its closing animation, in the place it opened. */
   const shown = usePresence(open);
 
@@ -142,9 +152,13 @@ export function Dropdown({ value, options, onChange, label, disabled, title, pla
   useEffect(() => { if (!shown.mounted) setBox(null); }, [shown.mounted]);
 
   // Move focus into the menu so arrow keys and type-ahead work from the keyboard.
+  // Once the list is placed: until `box` is measured it is visibility:hidden, and a hidden
+  // element cannot take focus — keyed on `open` alone the focus stayed on the trigger and the
+  // arrow keys did nothing (found by the keyboard E2E test, 2026-09-27).
+  const placed = box !== null;
   useEffect(() => {
-    if (open) listRef.current?.querySelector<HTMLElement>('[data-selected="true"], button')?.focus();
-  }, [open]);
+    if (open && placed) listRef.current?.querySelector<HTMLElement>('[data-selected="true"], button')?.focus();
+  }, [open, placed]);
 
   const onListKeyDown = (e: React.KeyboardEvent) => {
     if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
@@ -158,6 +172,7 @@ export function Dropdown({ value, options, onChange, label, disabled, title, pla
   return (
     <div className="dd" ref={rootRef}>
       <button
+        ref={triggerRef}
         type="button"
         className={`dd__trigger${open ? ' dd__trigger--open' : ''}`}
         onClick={() => setOpen((v) => !v)}
@@ -187,9 +202,13 @@ export function Dropdown({ value, options, onChange, label, disabled, title, pla
           aria-label={label}
         >
           {options.map((o) => (
-            <li key={o.id} role="option" aria-selected={o.id === value}>
+            // The button is the option; the item is only its place in the list.
+            // An option holding a button was two controls to a screen reader (axe: nested-interactive).
+            <li key={o.id} role="none">
               <button
                 type="button"
+                role="option"
+                aria-selected={o.id === value}
                 className={`dd__opt${o.id === value ? ' dd__opt--selected' : ''}`}
                 data-selected={o.id === value}
                 onClick={() => {

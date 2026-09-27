@@ -2,7 +2,7 @@ import { useState, useCallback, useRef, useEffect } from 'react'
 import { useAuth } from '../auth/AuthProvider'
 import type { StreamEvent } from './useGenerate'
 import { appendPhase, closeTranscript, type PhaseEntry } from '../utils/chat/phaseTranscript'
-import { postJson, requestErrorMessage } from '../utils/requests/request'
+import { postJson, requestErrorMessage, readableMessage } from '../utils/requests/request'
 import { pollAuthToken, isAuthRefusal, AUTH_RETRY_BUDGET } from '../utils/requests/pollAuth';
 
 interface UseModifyReturn {
@@ -126,7 +126,7 @@ export function useModify(): UseModifyReturn {
   const pollJob = useCallback(
     (jobId: string, apiUrl: string, authToken: string) => {
       if (pollAttemptsRef.current >= POLL_MAX_ATTEMPTS) {
-        setError('修正に時間がかかっています。処理はサーバー側で続いています。少し待ってから、バージョン履歴をご確認ください。')
+        setError('修正に時間がかかっています。処理はサーバー側で続いています。しばらく待ってから、バージョン履歴を確認してください。')
         setIsModifying(false)
         return
       }
@@ -183,7 +183,7 @@ export function useModify(): UseModifyReturn {
             setPhases(closeTranscript)
             setIsModifying(false)
           } else if (data.status === 'failed') {
-            setError(data.error || '修正に失敗しました。もう一度お試しください。')
+            setError(readableMessage(data.error, '修正できませんでした。もう一度お試しください。'))
             setPhases(closeTranscript)
             setIsModifying(false)
           } else {
@@ -203,7 +203,7 @@ export function useModify(): UseModifyReturn {
             return
           }
           if ((err as any).status >= 400 && (err as any).status < 500 && (err as any).status !== 429) {
-            setError('認証エラーが発生しました。再度ログインしてください。')
+            setError('ログインの有効期限が切れています。再度ログインしてください。')
             setIsModifying(false)
             return
           }

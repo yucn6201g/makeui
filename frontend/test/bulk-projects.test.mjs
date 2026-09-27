@@ -91,9 +91,10 @@ check('and the destructive call is only on the confirming button',
 // --- while choosing, a click has one meaning ---------------------------------------------
 check('the card selects instead of opening',
   /const activate = \(\) => \(selecting \? toggleSelected\(project\.projectId\) : onOpenProject\(project\)\)/.test(list), true);
-check('and is announced as a checkbox', /role=\{selecting \? 'checkbox' : 'button'\}/.test(list), true);
+check('and is announced as a checkbox', /role=\{selecting \? 'checkbox' : undefined\}/.test(list), true);
 check('with its state', /aria-checked=\{selecting \? isSelected : undefined\}/.test(list), true);
-check('Space toggles it from the keyboard', /selecting && e\.key === ' '/.test(list), true);
+// A native button since 2026-09-27, so Space and Enter both toggle it without a key handler.
+check('Space toggles it from the keyboard', /<button\s+type="button"\s+className="project-list__card-name project-list__card-open"\s+onClick=\{activate\}/.test(list), true);
 check('the per-card star steps aside', /!archived && !selecting &&/.test(list), true);
 // And for a viewer of a shared project, who may not archive or delete either (2026-09-23).
 check('and so do the per-card archive and delete', /\{selecting \|\| !canWrite \? null : !archived \? \(/.test(list), true);

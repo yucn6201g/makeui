@@ -240,7 +240,7 @@ export function ProjectThumbnail({
               <circle cx="5.6" cy="6.25" r="0.6" fill="currentColor" stroke="none" />
               <circle cx="7.6" cy="6.25" r="0.6" fill="currentColor" stroke="none" />
             </svg>
-            <span>{failed ? 'プレビューを生成できませんでした' : '読み込み中…'}</span>
+            <span>{failed ? 'プレビューを表示できませんでした' : '読み込み中…'}</span>
           </div>
         )}
       </div>

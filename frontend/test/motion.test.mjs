@@ -133,8 +133,10 @@ const check = (name, got, want) => {
   check('and measures only when what is in it changes', /\}, \[signature\]\);/.test(read('src/hooks/useFlip.ts')), true);
   check('a change of page arrives as one, not card by card', /const bulk = leaving\.length \+ arriving\.length > BULK;/.test(read('src/hooks/useFlip.ts')), true);
   check('and keeps a removed card long enough to leave', /const cards = usePresenceList\(shown, \(p\) => p\.projectId\)/.test(list), true);
+  // The card is marked; its control (the name button since 2026-09-27) leaves the tab order.
   check('a leaving card is marked for useFlip and out of the tab order',
-    /tabIndex=\{exiting \? -1 : 0\}[\s\S]{0,120}\[EXITING_ATTR\]: ''/.test(list), true);
+    /aria-hidden=\{exiting \|\| undefined\}\s*\{\.\.\.\(exiting \? \{ \[EXITING_ATTR\]: '' \}/.test(list)
+      && /className="project-list__card-name project-list__card-open"[\s\S]{0,200}tabIndex=\{exiting \? -1 : 0\}/.test(list), true);
   const flip = read('src/hooks/useFlip.ts');
   check('leaving cards are lifted out before the rest are measured',
     flip.indexOf('1. Lift the leaving ones out first') < flip.indexOf('2. Measure everything that stays'), true);

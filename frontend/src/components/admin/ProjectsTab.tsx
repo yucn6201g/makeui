@@ -4,6 +4,7 @@ import { Preview } from '../workspace/Preview';
 import { isOlderScoreScale } from '../../utils/projects/scoreScale';
 import { versionQualityLabel, versionQualityTitle } from '../../utils/projects/versionQuality';
 import { formatNumber, formatDate } from './shared';
+import { requestErrorMessage } from '../../utils/requests/request';
 
 /**
  * What a user actually made.
@@ -56,7 +57,7 @@ export function ProjectsTab({
     try {
       await f();
     } catch (e) {
-      setErr((e as Error).message || '読み込みに失敗しました');
+      setErr(requestErrorMessage(e, 'プロジェクトを読み込めませんでした。もう一度お試しください。'));
     } finally {
       setBusy(null);
     }
@@ -336,7 +337,7 @@ export function ProjectsTab({
                       <th className="adm-th adm-th--num adm-th--quality">要件・指摘</th>
                       <th className="adm-th adm-th--model">モデル</th>
                       <th className="adm-th adm-th--date">実行日時</th>
-                      <th className="adm-th adm-th--act"></th>
+                      <th className="adm-th adm-th--act"><span className="sr-only">操作</span></th>
                     </tr>
                   </thead>
                   <tbody>

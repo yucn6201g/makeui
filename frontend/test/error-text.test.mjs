@@ -47,7 +47,7 @@ check('a size refusal keeps its own message, which names the size',
   /送信サイズ/.test(requestErrorMessage(new PayloadTooLargeError(9 * 1024 * 1024, true), FALLBACK)));
 
 check('a dropped request is named as a connection problem',
-  /通信に失敗/.test(requestErrorMessage(new TypeError('Failed to fetch'), FALLBACK)));
+  /通信できませんでした/.test(requestErrorMessage(new TypeError('Failed to fetch'), FALLBACK)));
 
 for (const raw of [
   'HTTP 502',
@@ -98,14 +98,14 @@ check('no hook feeding the chat bubble shows English',
 // than filtered out silently, because an allowlist nobody can read is how the
 // next one gets added.
 const KEEPS_THE_RAW_MESSAGE = {
-  // Cognito's messages distinguish a wrong password from an unknown user from
-  // an expired code. Replacing them with one sentence would leave someone
-  // retyping a password that was never the problem.
-  'src/auth/LoginForm.tsx': 'Cognito auth errors — the distinctions are what the user needs',
-  // An operator surface. The raw text is the useful one.
-  'src/hooks/useAdmin.ts': 'admin panel — raw message is the point',
-  // `error` is never destructured at the call site, so nothing renders it.
-  'src/hooks/useHistory.ts': 'not rendered anywhere',
+  // Reads Cognito's English to tell a disabled account from an expired temporary
+  // password — matching, not showing. What it returns is Japanese (checked below).
+  // Until 2026-09-27 the sign-in form and the admin panel showed their raw
+  // messages on purpose; both now translate, keeping the distinctions.
+  'src/auth/authErrors.ts': 'matches on Cognito’s message to choose a Japanese sentence',
+  // A publish that could not build says so in a sentence, then gives the
+  // compiler's own words in brackets — the part that locates the problem.
+  'src/utils/preview/shareDocument.ts': 'cause in brackets after a sentence written for a reader',
   // The classifier itself.
   'src/utils/requests/request.ts': 'this is requestErrorMessage',
   // Two different reasons in one file. `isStaleChunk` reads the message to
@@ -145,6 +145,65 @@ const stale = Object.keys(KEEPS_THE_RAW_MESSAGE).filter(
   (f) => !sources.some(([rel]) => rel === f)
 );
 check('every allowlisted file still exists', stale.length === 0, stale.join(', '));
+
+// --- and every message is written the same way ------------------------------
+//
+// The house style, shared with the API (backend/test/error-style.test.mjs):
+// Japanese, polite, ending in 「。」; what could not be done as 「〜できませんでした」,
+// never 「失敗しました」; the next step in fixed words — 「もう一度お試しください。」,
+// 「しばらく待ってから、もう一度お試しください。」, 「再度ログインしてください。」,
+// 「管理者にお問い合わせください。」. Measured on 2026-09-27 before the change:
+// half the messages had no full stop, 「失敗しました」 and 「できませんでした」 were
+// used for the same thing, and the network message said both.
+//
+// Read from every call that puts a message on screen, whatever the variable.
+const MESSAGE_CALL = /\b(?:set\w*Error|setErr|setProblem|setMessage|showError|alert|requestErrorMessage|readableMessage)\(/g;
+const DIAGNOSTICS = new Set([
+  // The generated app's own compile and runtime errors, shown verbatim on purpose (see above).
+  'src/utils/preview/reactPreview.ts',
+  'src/utils/preview/frameworkCompile.ts',
+]);
+/** The argument text of the call starting at `at`, by bracket depth, strings skipped. */
+function argsOf(src, at) {
+  let depth = 0;
+  for (let i = at; i < src.length; i++) {
+    const c = src[i];
+    if (c === "'" || c === '`' || c === '"') {
+      const q = c;
+      for (i++; i < src.length && src[i] !== q; i++) if (src[i] === '\\') i++;
+      continue;
+    }
+    if (c === '(') depth++;
+    else if (c === ')' && --depth === 0) return src.slice(at, i + 1);
+  }
+  return '';
+}
+const literalsIn = (text) => [...text.matchAll(/'((?:[^'\\\n]|\\.)*)'|`([^`]*)`/g)].map((m) => (m[1] ?? m[2]).replace(/\$\{[^}]*\}/g, 'X'));
+const offences = [];
+const judge = (rel, t) => {
+  if (!JAPANESE.test(t)) return;
+  const why = [];
+  if (!/[。）]$/.test(t) && !/X$/.test(t)) why.push('no closing 。');
+  if (/失敗しました/.test(t) && !/^通信/.test(t)) why.push('「失敗しました」');
+  if (/再試行|しばらくしてから|少し待ってから|再度お試し/.test(t)) why.push('not a fixed phrase');
+  if (why.length) offences.push(`${rel}: ${t} — ${why.join(', ')}`);
+};
+let seen = 0;
+for (const [rel, src] of sources) {
+  if (DIAGNOSTICS.has(rel)) continue;
+  for (const m of src.matchAll(MESSAGE_CALL)) {
+    const args = argsOf(src, m.index + m[0].length - 1);
+    for (const t of literalsIn(args)) { seen++; judge(rel, t); }
+    // An English sentence handed straight to the screen.
+    if (/^\(\s*'[A-Z][a-z]+ [a-z]/.test(args) && !/requestErrorMessage|readableMessage/.test(m[0])) offences.push(`${rel}: ${args.slice(0, 60)} — English on screen`);
+  }
+}
+// The sign-in sentences are returned rather than set.
+const auth = sources.find(([rel]) => rel === 'src/auth/authErrors.ts')[1];
+for (const m of auth.matchAll(/(?:return |: |'[\w-]+': |^\s+mfa: )'((?:[^'\\\n]|\\.)*)'/gm)) { seen++; judge('src/auth/authErrors.ts', m[1]); }
+for (const m of auth.matchAll(/return `([^`]*)`/g)) { seen++; judge('src/auth/authErrors.ts', m[1].replace(/\$\{[^}]*\}/g, 'X')); }
+check('the on-screen messages were found', seen > 80, `${seen}`);
+check('every on-screen message follows the house style', offences.length === 0, offences.join('\n      '));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

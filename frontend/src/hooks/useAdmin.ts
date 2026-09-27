@@ -1,5 +1,6 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { useAuth } from '../auth/AuthProvider';
+import { requestErrorMessage } from '../utils/requests/request';
 
 /**
  * A model a user may be permitted, each one independently.
@@ -301,7 +302,7 @@ export function useAdmin(): UseAdminReturn {
       })
       .catch((err) => {
         if (err.name !== 'AbortError') {
-          setError(err.message);
+          setError(requestErrorMessage(err, '利用状況を読み込めませんでした。もう一度お試しください。'));
         }
       })
       .finally(() => {
@@ -380,7 +381,7 @@ export function useAdmin(): UseAdminReturn {
       })
       .catch((err) => {
         if (err.name !== 'AbortError') {
-          setCognitoError(err.message);
+          setCognitoError(requestErrorMessage(err, 'ユーザーの一覧を読み込めませんでした。もう一度お試しください。'));
         }
       })
       .finally(() => {

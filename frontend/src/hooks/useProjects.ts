@@ -72,7 +72,7 @@ export function useProjects() {
       const data = await res.json();
       setProjects(data.projects ?? []);
     } catch (e) {
-      setError(requestErrorMessage(e, 'プロジェクトを読み込めませんでした。'));
+      setError(requestErrorMessage(e, 'プロジェクトを読み込めませんでした。もう一度お試しください。'));
     } finally {
       setLoading(false);
     }
@@ -80,7 +80,7 @@ export function useProjects() {
 
   const createProject = useCallback(async (name: string): Promise<Project | null> => {
     if (!token) {
-      setError('認証トークンが取得できません。ページを再読み込みしてください。');
+      setError('ログイン情報を読み取れませんでした。ページを再読み込みしてください。');
       return null;
     }
     setError(null);
@@ -92,16 +92,16 @@ export function useProjects() {
       });
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || `プロジェクト作成失敗 (HTTP ${res.status})`);
+        throw new Error(errData.error || `HTTP ${res.status}`);
       }
       const project: Project = await res.json();
       if (!project.projectId) {
-        throw new Error('サーバーから不正なレスポンスが返されました');
+        throw new Error('Unexpected response');
       }
       setProjects((prev) => [project, ...prev]);
       return project;
     } catch (e) {
-      const msg = requestErrorMessage(e, 'プロジェクトを作成できませんでした。');
+      const msg = requestErrorMessage(e, 'プロジェクトを作成できませんでした。もう一度お試しください。');
       console.error('createProject failed:', msg);
       setError(msg);
       return null;
@@ -118,13 +118,13 @@ export function useProjects() {
       });
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || `プロジェクト更新失敗 (HTTP ${res.status})`);
+        throw new Error(errData.error || `HTTP ${res.status}`);
       }
       setProjects((prev) =>
         prev.map((p) => (p.projectId === projectId ? { ...p, ...updates, updatedAt: new Date().toISOString() } : p))
       );
     } catch (e) {
-      setError(requestErrorMessage(e, 'プロジェクトの更新に失敗しました'));
+      setError(requestErrorMessage(e, 'プロジェクトを更新できませんでした。もう一度お試しください。'));
     }
   }, [apiUrl, token]);
 
@@ -187,11 +187,11 @@ export function useProjects() {
         body: JSON.stringify({ archived }),
       });
       if (!res.ok) {
-        setError(archived ? 'アーカイブに失敗しました' : '復元に失敗しました');
+        setError(archived ? 'アーカイブできませんでした。もう一度お試しください。' : '復元できませんでした。もう一度お試しください。');
         fetchProjects();
       }
     } catch {
-      setError(archived ? 'アーカイブに失敗しました' : '復元に失敗しました');
+      setError(archived ? 'アーカイブできませんでした。もう一度お試しください。' : '復元できませんでした。もう一度お試しください。');
       fetchProjects();
     }
   }, [apiUrl, token, fetchProjects]);
@@ -210,11 +210,11 @@ export function useProjects() {
         body: JSON.stringify({ favourite }),
       });
       if (!res.ok) {
-        setError('お気に入りの更新に失敗しました');
+        setError('お気に入りを更新できませんでした。もう一度お試しください。');
         fetchProjects();
       }
     } catch {
-      setError('お気に入りの更新に失敗しました');
+      setError('お気に入りを更新できませんでした。もう一度お試しください。');
       fetchProjects();
     }
   }, [apiUrl, token, fetchProjects]);
@@ -230,11 +230,11 @@ export function useProjects() {
       if (!res.ok) {
         // 409 is the server refusing to destroy a project that was never
         // archived. Saying so is better than a silent reappearance.
-        setError(res.status === 409 ? 'アーカイブしてから削除してください' : '削除に失敗しました');
+        setError(res.status === 409 ? 'アーカイブしてから削除してください。' : '削除できませんでした。もう一度お試しください。');
         fetchProjects();
       }
     } catch {
-      setError('削除に失敗しました');
+      setError('削除できませんでした。もう一度お試しください。');
       fetchProjects();
     }
   }, [apiUrl, token, fetchProjects]);
@@ -296,7 +296,7 @@ export function useProjects() {
       return res.ok;
     });
     if (failed > 0) {
-      setError(`${projectIds.length}件のうち${failed}件を${archived ? 'アーカイブ' : '復元'}できませんでした`);
+      setError(`${projectIds.length}件のうち${failed}件を${archived ? 'アーカイブ' : '復元'}できませんでした。もう一度お試しください。`);
       fetchProjects();
     }
     return failed;
@@ -320,8 +320,8 @@ export function useProjects() {
     if (failed > 0) {
       setError(
         refused > 0
-          ? `${refused}件はアーカイブされていないため削除できませんでした`
-          : `${projectIds.length}件のうち${failed}件を削除できませんでした`
+          ? `${refused}件はアーカイブされていないため削除できませんでした。アーカイブしてから削除してください。`
+          : `${projectIds.length}件のうち${failed}件を削除できませんでした。もう一度お試しください。`
       );
       fetchProjects();
     }

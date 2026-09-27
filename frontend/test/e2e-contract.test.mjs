@@ -128,6 +128,27 @@ const adminModels = await ask('GET', '/admin/models?from=2026-09&to=2026-09');
 check('GET /admin/models carries the inventory, the period and the series, and nothing else',
   Object.keys(adminModels.body).filter((k) => !['period', 'series'].includes(k) && !new RegExp(`\\b${k}\\??:`).test(inventory)), []);
 
+const published = await ask('POST', '/publish', { html: '<html></html>' });
+check('POST /publish carries only fields the backend sends', missingKeys(published.body, branch("method === 'POST' && path === '/publish'")), []);
+
+const refineSource = read(path.join(backend, 'orchestration/edit/refine-prompt.ts'));
+const refinedFields = /interface RefinedPrompt \{([\s\S]*?)\n\}/.exec(refineSource)?.[1] ?? '';
+const refined = await ask('POST', '/refine-prompt', { prompt: '在庫管理' });
+check('POST /refine-prompt answers with the RefinedPrompt fields and nothing else',
+  Object.keys(refined.body).filter((k) => !new RegExp(`\\b${k}\\??:`).test(refinedFields)), []);
+
+const found = await ask('GET', '/users/search?q=花子');
+check('GET /users/search carries only fields the backend sends', missingKeys(found.body, branch("method === 'GET' && path === '/users/search'")), []);
+const directory = read(path.join(backend, 'services/user-directory.ts'));
+check('and each person the fields the directory returns',
+  Object.keys(found.body.users[0]).filter((k) => !new RegExp(`\\b${k}\\b`).test(/return \{ userId: sub, email, name[^}]*\}/.exec(directory)?.[0] ?? '')), []);
+const granted = await ask('PUT', '/projects/p/shares', { type: 'user', id: 'sub-hanako', role: 'edit' });
+const shareRoutes = read(path.join(backend, 'handlers/share-routes.ts'));
+check('PUT /projects/{id}/shares answers with the grants, as the handler does',
+  [Object.keys(granted.body), /return respond\(200, \{ shares: grants \}\)/.test(shareRoutes)], [['shares'], true]);
+const grantFields = /target: \{ type: input\.type, id: input\.id, label, email \}[\s\S]{0,200}role:[\s\S]{0,200}grantedByName/.test(shareRoutes);
+check('and each grant the fields a grant is stored with', grantFields && Object.keys(granted.body.shares[0]).every((k) => ['type', 'id', 'label', 'email', 'role', 'grantedByName', 'grantedAt'].includes(k)), true);
+
 check('nothing the contract asked for went unanswered', api.unhandled, []);
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -49,12 +49,12 @@ export async function authenticateRequest(
   authorizationHeader: string | null | undefined
 ): Promise<AuthResult> {
   if (!authorizationHeader) {
-    throw new AuthError('Missing Authorization header', 401);
+    throw new AuthError('ログインが必要です。', 401);
   }
 
   const parts = authorizationHeader.split(' ');
   if (parts.length !== 2 || parts[0] !== 'Bearer') {
-    throw new AuthError('Invalid Authorization header format. Expected: Bearer <token>', 401);
+    throw new AuthError('ログイン情報を読み取れませんでした。再度ログインしてください。', 401);
   }
 
   const token = parts[1];
@@ -78,7 +78,7 @@ export async function authenticateRequest(
     };
   } catch (error) {
     logger.error('JWT verification failed', { error: String(error) });
-    throw new AuthError('Invalid or expired token', 401);
+    throw new AuthError('ログインの有効期限が切れています。再度ログインしてください。', 401);
   }
 }
 

@@ -5,6 +5,8 @@ import { useState } from 'react';
 import { type UserUsageSummary, type CognitoUser, type ModelId } from '../../hooks/useAdmin';
 import { UNLIMITED, ALL_MODELS, formatDate, asMoney, usd } from './shared';
 import { BudgetEditor, ModelPicker, NameEditor } from './editors';
+import { PASSWORD_HINT, PASSWORD_RULE, passwordProblem } from '../../utils/account/passwordPolicy';
+import { requestErrorMessage } from '../../utils/requests/request';
 
 export function UsersTab({
   cognitoUsers,
@@ -70,7 +72,13 @@ export function UsersTab({
 
   const handleCreate = async () => {
     if (!displayName.trim() || !email.trim() || !password.trim()) {
-      setFormError('ユーザー名・メールアドレス・仮パスワードは必須です');
+      setFormError('ユーザー名・メールアドレス・仮パスワードを入力してください。');
+      return;
+    }
+    // The pool's rule, checked before the request rather than refused after it.
+    const weak = passwordProblem(password.trim(), '仮パスワード');
+    if (weak) {
+      setFormError(weak);
       return;
     }
     setCreating(true);
@@ -82,7 +90,7 @@ export function UsersTab({
       setPassword('');
       setShowForm(false);
     } catch (e) {
-      setFormError((e as Error).message);
+      setFormError(requestErrorMessage(e, 'ユーザーを作成できませんでした。もう一度お試しください。'));
     } finally {
       setCreating(false);
     }
@@ -94,7 +102,7 @@ export function UsersTab({
     try {
       await onDeleteUser(username);
     } catch (e) {
-      alert(`削除に失敗しました: ${(e as Error).message}`);
+      alert(requestErrorMessage(e, 'ユーザーを削除できませんでした。もう一度お試しください。'));
     } finally {
       setDeletingUsername(null);
     }
@@ -105,7 +113,7 @@ export function UsersTab({
     try {
       await onToggleEnabled(u.username, !u.enabled);
     } catch (e) {
-      alert(`${u.enabled ? '無効化' : '有効化'}に失敗しました: ${(e as Error).message}`);
+      alert(requestErrorMessage(e, `ユーザーを${u.enabled ? '無効に' : '有効に'}できませんでした。もう一度お試しください。`));
     } finally {
       setTogglingUsername(null);
     }
@@ -198,8 +206,9 @@ export function UsersTab({
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="adm-input"
-                placeholder="Temp@1234"
+                placeholder={PASSWORD_HINT}
                 autoComplete="off"
+                aria-describedby="adm-password-rule"
               />
             </div>
             <button
@@ -211,6 +220,8 @@ export function UsersTab({
               {creating ? '作成中…' : '作成'}
             </button>
           </div>
+          {/* Under the row rather than under its field, so the three fields stay on one line. */}
+          <p className="adm-field__hint" id="adm-password-rule">仮パスワードは{PASSWORD_RULE}</p>
         </div>
       )}
 
@@ -243,7 +254,7 @@ export function UsersTab({
                 <th className="adm-th">ステータス</th>
                 <th className="adm-th">有効</th>
                 <th className="adm-th adm-th--date">作成日時</th>
-                <th className="adm-th adm-th--act"></th>
+                <th className="adm-th adm-th--act"><span className="sr-only">操作</span></th>
               </tr>
             </thead>
             <tbody>

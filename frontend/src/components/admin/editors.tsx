@@ -5,6 +5,8 @@
 import { useState } from 'react';
 import { type UserUsageSummary, type CognitoUser, type ModelId } from '../../hooks/useAdmin';
 import { UNLIMITED, ALL_MODELS, MODEL_OPTIONS, asMoney, asLimit, usd, Period, monthKey } from './shared';
+import { requestErrorMessage } from '../../utils/requests/request';
+import { isCommitEnter } from '../../utils/editing/enterKey';
 
 /**
  * The month's budget, editable where it is read.
@@ -49,7 +51,7 @@ export function BudgetEditor({
       await onSave(next);
       setEditing(false);
     } catch (e) {
-      setError((e as Error).message || '保存に失敗しました');
+      setError(requestErrorMessage(e, '保存できませんでした。もう一度お試しください。'));
     } finally {
       setSaving(false);
     }
@@ -100,7 +102,7 @@ export function BudgetEditor({
             // Zero is a budget nobody can spend, which is a different thing from
             // no budget set, and typing it by accident should not lock an account
             // out silently.
-            if (!Number.isFinite(n) || n <= 0) { setError('0より大きい金額を入力してください'); return; }
+            if (!Number.isFinite(n) || n <= 0) { setError('0より大きい金額を入力してください。'); return; }
             void save(asLimit(n));
           }}
           disabled={saving}
@@ -172,7 +174,7 @@ export function ModelPicker({
     try {
       await onSave(next);
     } catch (e) {
-      setSaveError((e as Error).message || '保存に失敗しました');
+      setSaveError(requestErrorMessage(e, '保存できませんでした。もう一度お試しください。'));
     } finally {
       setSaving(null);
     }
@@ -245,7 +247,7 @@ export function NameEditor({
 
   const save = async () => {
     const next = value.trim();
-    if (!next) { setError('ユーザー名を入力してください'); return; }
+    if (!next) { setError('ユーザー名を入力してください。'); return; }
     if (next === user.displayName && user.displayNameSet) { setEditing(false); return; }
     setSaving(true);
     setError(null);
@@ -253,7 +255,7 @@ export function NameEditor({
       await onRename(user.username, next);
       setEditing(false);
     } catch (e) {
-      setError((e as Error).message || '保存に失敗しました');
+      setError(requestErrorMessage(e, '保存できませんでした。もう一度お試しください。'));
     } finally {
       setSaving(false);
     }
@@ -294,7 +296,7 @@ export function NameEditor({
         // reach for a button to commit a single value is the sort of friction
         // that gets a rename left half-done.
         onKeyDown={(e) => {
-          if (e.key === 'Enter') save();
+          if (isCommitEnter(e)) save();
           if (e.key === 'Escape') { setEditing(false); setError(null); }
         }}
         aria-label="ユーザー名"

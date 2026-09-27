@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useAuth } from '../auth/AuthProvider';
 import { appendPhase, closeTranscript, type PhaseEntry } from '../utils/chat/phaseTranscript';
-import { postJson, requestErrorMessage } from '../utils/requests/request';
+import { postJson, requestErrorMessage, readableMessage } from '../utils/requests/request';
 import { pollAuthToken, isAuthRefusal, AUTH_RETRY_BUDGET } from '../utils/requests/pollAuth';
 
 
@@ -189,7 +189,7 @@ export function useGenerate(): UseGenerateReturn {
          * "timed out" unrecoverable.
          */
         setAbandoned(true);
-        setError('生成に時間がかかっています。処理はサーバー側で続いているので、少し待ってからこのプロジェクトを開き直すと結果が表示されます。');
+        setError('生成に時間がかかっています。処理はサーバー側で続いています。しばらく待ってから、このプロジェクトを開き直すと結果が表示されます。');
         setIsGenerating(false);
         return;
       }
@@ -246,7 +246,7 @@ export function useGenerate(): UseGenerateReturn {
             setPhases(closeTranscript);
             setIsGenerating(false);
           } else if (data.status === 'failed') {
-            setError(data.error || '生成に失敗しました。もう一度お試しください。');
+            setError(readableMessage(data.error, '生成できませんでした。もう一度お試しください。'));
             setPhases(closeTranscript);
             setIsGenerating(false);
           } else {
@@ -272,7 +272,7 @@ export function useGenerate(): UseGenerateReturn {
             return;
           }
           if ((err as any).status >= 400 && (err as any).status < 500 && (err as any).status !== 429) {
-            setError('認証エラーが発生しました。再度ログインしてください。');
+            setError('ログインの有効期限が切れています。再度ログインしてください。');
             setIsGenerating(false);
             return;
           }

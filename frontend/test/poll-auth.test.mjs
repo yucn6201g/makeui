@@ -109,10 +109,10 @@ every('and clears it when a poll answers',
   (s) => /authRetriesRef\.current = 0/.test(s));
 // The retry must come before the terminal 4xx branch or it is unreachable.
 every('the retry is reached before the branch that gives up',
-  (s) => s.indexOf('isAuthRefusal') < s.indexOf('認証エラーが発生しました'));
+  (s) => s.indexOf('isAuthRefusal') < s.indexOf('ログインの有効期限が切れています。再度ログインしてください。'));
 // And a session that really is gone still says so.
 every('a spent budget still ends in a message',
-  (s) => /認証エラーが発生しました。再度ログインしてください。/.test(s));
+  (s) => /ログインの有効期限が切れています。再度ログインしてください。/.test(s));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -51,9 +51,10 @@ export async function shareDocument(
   try {
     built = await build(files);
   } catch (e) {
-    return { html: null, error: `公開用ドキュメントの生成に失敗しました: ${String(e)}` };
+    // The cause goes in brackets, as the compiler's does below: it is what someone looking into it needs.
+    return { html: null, error: `公開用のページを作成できませんでした。もう一度お試しください。（${e instanceof Error ? e.message : String(e)}）` };
   }
-  if (built.error) return { html: null, error: `公開用ドキュメントをビルドできませんでした: ${built.error}` };
-  if (!built.html) return { html: null, error: '公開用ドキュメントを生成できませんでした。' };
+  if (built.error) return { html: null, error: `公開用のページを作成できませんでした。プレビューのエラーを直してから、もう一度お試しください。（${built.error}）` };
+  if (!built.html) return { html: null, error: '公開用のページを作成できませんでした。もう一度お試しください。' };
   return { html: built.html, error: null };
 }

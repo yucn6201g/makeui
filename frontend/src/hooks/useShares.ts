@@ -70,7 +70,7 @@ export function useShares(projectId: string | undefined, open: boolean) {
       setState({ role: data.role ?? null, self: data.self ?? null, owner: data.owner ?? null, shares: data.shares ?? [] });
       setGroups(g.groups ?? []);
     } catch (e) {
-      setError(requestErrorMessage(e, '共有の情報を読み込めませんでした'));
+      setError(requestErrorMessage(e, '共有の情報を読み込めませんでした。もう一度お試しください。'));
     } finally {
       setLoading(false);
     }
@@ -91,7 +91,7 @@ export function useShares(projectId: string | undefined, open: boolean) {
       setState((s) => ({ ...s, shares: data.shares ?? s.shares }));
       return true;
     } catch (e) {
-      setError(requestErrorMessage(e, '共有できませんでした'));
+      setError(requestErrorMessage(e, '共有できませんでした。もう一度お試しください。'));
       return false;
     } finally {
       setBusy(false);
@@ -110,7 +110,7 @@ export function useShares(projectId: string | undefined, open: boolean) {
       setState((s) => ({ ...s, shares: data.shares ?? s.shares }));
       return true;
     } catch (e) {
-      setError(requestErrorMessage(e, '共有を解除できませんでした'));
+      setError(requestErrorMessage(e, '共有を解除できませんでした。もう一度お試しください。'));
       return false;
     } finally {
       setBusy(false);

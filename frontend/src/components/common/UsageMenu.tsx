@@ -65,6 +65,13 @@ interface UsageLimits {
  */
 const PER_UNIT_CURRENCY = 1_000_000;
 const asMoney = (limit: number): number => limit / PER_UNIT_CURRENCY;
+/**
+ * A stored limit as money, with unlimited kept as the -1 `Allowance` reads.
+ *
+ * Converted first, -1 became -0.000001 and the panel of an unlimited account
+ * with any spend read 「予算 $-0.00 USD」 (found by the E2E test, 2026-09-27).
+ */
+const asMoneyLimit = (limit: number): number => (limit === -1 ? -1 : asMoney(limit));
 const money = (n: number): string => n.toFixed(2);
 /**
  * Money with its unit attached, everywhere money is drawn.
@@ -205,7 +212,7 @@ export function UsageMenu({ name, group = null, limits, error = null, onOpen }: 
               {group && <span className="usage-menu__group">{group}</span>}
             </p>
             {error ? (
-              <p className="usage-menu__error" role="alert">使用状況を取得できませんでした。</p>
+              <p className="usage-menu__error" role="alert">使用状況を読み込めませんでした。</p>
             ) : limits === null ? (
               <p className="usage-menu__loading" aria-live="polite">読み込み中...</p>
             ) : (
@@ -222,7 +229,7 @@ export function UsageMenu({ name, group = null, limits, error = null, onOpen }: 
                   <Allowance
                     label="あなたの利用金額"
                     used={limits.cost}
-                    limit={asMoney(limits.tokensLimit)}
+                    limit={asMoneyLimit(limits.tokensLimit)}
                     approx={limits.costEstimated === true}
                   />
                 )}
@@ -238,7 +245,7 @@ export function UsageMenu({ name, group = null, limits, error = null, onOpen }: 
                     <Allowance
                       label="グループ合計の利用金額"
                       used={limits.groupBudget.cost}
-                      limit={asMoney(limits.groupBudget.limit)}
+                      limit={asMoneyLimit(limits.groupBudget.limit)}
                     />
                   </>
                 )}

@@ -30,6 +30,8 @@ export interface CognitoCall {
 export class CognitoMock {
   readonly calls: CognitoCall[] = [];
   flow: SignInFlow = 'tokens';
+  /** Refuse the authenticator code, as Cognito does for a wrong one. */
+  refuseCode = false;
 
   constructor(private readonly user: TestUser) {}
 
@@ -92,6 +94,9 @@ export class CognitoMock {
           return { body: tokens };
         }
         if (challenge === 'NEW_PASSWORD_REQUIRED') return { body: { ChallengeName: 'MFA_SETUP', Session: session, ChallengeParameters: {} } };
+        if (challenge === 'SOFTWARE_TOKEN_MFA' && this.refuseCode) {
+          return { status: 400, body: { __type: 'CodeMismatchException', message: 'Invalid code received for user' } };
+        }
         // SOFTWARE_TOKEN_MFA after the code, MFA_SETUP after the device was verified.
         return { body: tokens };
       }

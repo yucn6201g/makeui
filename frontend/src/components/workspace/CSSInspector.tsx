@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { readOverrides, readText } from '../../utils/editing/directEdit';
+import { isCommitEnter } from '../../utils/editing/enterKey';
 
 interface CSSInspectorProps {
   selector: string | null;
@@ -190,7 +191,7 @@ export function CSSInspector({ selector, html, onEdit, onEditText }: CSSInspecto
                     onBlur={(e) => {
                       if (e.target.value.trim() !== value.trim()) onEdit!(selector, prop, e.target.value);
                     }}
-                    onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                    onKeyDown={(e) => { if (isCommitEnter(e)) (e.target as HTMLInputElement).blur(); }}
                   />
                 </div>
               </div>

@@ -75,7 +75,7 @@ check('runPlan amends before it would run the design phase',
 check('the amendment is its own ledger stage', /'plan:revise'/.test(planBody), true);
 check('and every plan writer call is attributed', (planBody.match(/invokeModel\(/g) ?? []).length, (planBody.match(/'plan:(?:write|write-change|revise)'/g) ?? []).length);
 const handler = fs.readFileSync(path.join(root, 'src/handlers/lambda-handler.ts'), 'utf8');
-check('the route checks the revision', /revision must carry spec/.test(handler), true);
+check('the route checks the revision', /手直しする提案の内容が正しくありません。/.test(handler), true);
 check('and sends a long specification through S3', /uploadSpecIfNeeded\(jobId, r\.spec\)/.test(handler), true);
 const runner = fs.readFileSync(path.join(root, 'src/handlers/job-runner.ts'), 'utf8');
 check('the job passes it to planUI', /revision: await resolveJobRevision\(input\)/.test(runner), true);

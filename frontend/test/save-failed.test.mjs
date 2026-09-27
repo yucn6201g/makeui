@@ -61,9 +61,9 @@ const check = (name, got, want) => {
    * own, so "try again" is true; a document over the row limit will be just as
    * large next time, so it is not.
    */
-  check('a burst is called temporary', /保存が混み合って失敗しました/.test(flat), true);
+  check('a burst is called temporary', /保存が混み合っていて保存できませんでした/.test(flat), true);
   check('and too large is called permanent', /保存できる大きさを超えています/.test(flat), true);
-  check('anything else is not guessed at', /保存に失敗しました。編集は画面に残っています/.test(flat), true);
+  check('anything else is not guessed at', /保存できませんでした。編集は画面に残っています/.test(flat), true);
 
   /*
    * Every one of them says the edit is still on screen. That is the question

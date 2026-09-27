@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
 import { useAuth } from '../auth/AuthProvider';
+import { requestErrorMessage } from '../utils/requests/request';
 
 interface Refinement {
   /** The rewritten brief, ready to replace what is in the composer. */
@@ -76,7 +77,7 @@ export function useRefinePrompt(): UseRefinePromptReturn {
       }
     } catch (e) {
       if ((e as Error).name === 'AbortError') return;
-      setMessage((e as Error).message || '添削に失敗しました');
+      setMessage(requestErrorMessage(e, '添削できませんでした。もう一度お試しください。'));
     } finally {
       if (!controller.signal.aborted) setRefining(false);
     }

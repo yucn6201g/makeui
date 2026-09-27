@@ -84,7 +84,7 @@ const RULES: Rule[] = [
   },
   {
     test: /InternalServerException|ServiceUnavailable|InternalFailure|503|502/i,
-    message: 'モデル側で一時的な障害が起きています。少し待ってから、もう一度お試しください。',
+    message: 'モデル側で一時的な障害が起きています。しばらく待ってから、もう一度お試しください。',
   },
   {
     /*
@@ -109,7 +109,7 @@ const RULES: Rule[] = [
     test: /NoSuchBucket|NoSuchKey|AccessDenied|UnrecognizedClient|ExpiredToken|InvalidSignature|CredentialsError|ResourceNotFoundException|not authorized/i,
     message:
       'サーバー側の設定に問題があり、処理を完了できませんでした。'
-      + 'この失敗は記録されています。お手数ですが、しばらくしてからご確認ください。',
+      + 'この問題は記録されています。解決しない場合は管理者にお問い合わせください。',
   },
 ];
 

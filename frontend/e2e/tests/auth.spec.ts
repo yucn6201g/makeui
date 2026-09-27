@@ -59,11 +59,12 @@ test('a first sign-in sets a new password, then sets up MFA with the secret show
   expect(cognito.sent('VerifySoftwareToken')[0].UserCode).toBe(TEST_TOTP_CODE);
 });
 
-test('a refused password is reported and the form stays', async ({ page, cognito }) => {
+test('a refused password is reported in Japanese and the form stays', async ({ page, cognito }) => {
   cognito.flow = 'wrong-password';
   await submitCredentials(page);
 
-  await expect(page.getByRole('alert')).toBeVisible();
+  // Cognito's English, in the screens' own words.
+  await expect(page.getByRole('alert')).toHaveText('メールアドレスまたはパスワードが正しくありません。');
   await expect(page.getByRole('button', { name: 'ログイン' })).toBeEnabled();
   await expect(projectList(page)).toHaveCount(0);
 });
@@ -77,4 +78,25 @@ test('signing out returns to the sign-in form, and stays there after a reload', 
   await expect(page.getByRole('button', { name: 'ログイン' })).toBeVisible();
   await page.reload();
   await expect(page.getByRole('button', { name: 'ログイン' })).toBeVisible();
+});
+
+test('a new password that breaks the rule is refused before it is sent, saying what is missing', async ({ page, cognito }) => {
+  cognito.flow = 'first-login';
+  await submitCredentials(page);
+
+  // The rule is on screen before anything is typed, not only in a placeholder.
+  await expect(page.getByText('12文字以上で、大文字・小文字・数字・記号をそれぞれ1文字以上含めてください。')).toBeVisible();
+  await page.getByLabel('新しいパスワード').fill('short-pass');
+  await page.getByRole('button', { name: 'パスワードを設定' }).click();
+  await expect(page.getByRole('alert')).toHaveText('パスワードが条件を満たしていません。12文字以上にしてください（今は10文字です）。大文字・数字を含めてください。');
+  expect(cognito.sent('RespondToAuthChallenge').map((a) => a.ChallengeName)).toEqual(['PASSWORD_VERIFIER']);
+});
+
+test('a wrong authenticator code is reported in Japanese', async ({ page, cognito }) => {
+  cognito.flow = 'totp';
+  cognito.refuseCode = true;
+  await submitCredentials(page);
+  await page.getByLabel('認証コード').fill(TEST_TOTP_CODE);
+  await page.getByRole('button', { name: '確認', exact: true }).click();
+  await expect(page.getByRole('alert')).toHaveText('認証コードが正しくありません。認証アプリに表示されている6桁のコードを入力してください。');
 });

@@ -24,7 +24,7 @@ test('a request is sent as the composer shows it, and the result runs in the pre
   expect(request?.headers.authorization).toMatch(/^Bearer ey/);
 
   // It is an app, not a picture of one: its own navigation works.
-  await preview(page).getByRole('button', { name: '設定' }).click();
+  await preview(page).getByRole('link', { name: '設定' }).click();
   await expect(preview(page).getByRole('heading', { name: '設定' })).toBeVisible();
 });
 

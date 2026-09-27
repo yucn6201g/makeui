@@ -56,12 +56,13 @@ const tokens = Object.fromEntries([...css.matchAll(/(--[\w-]+)\s*:\s*([^;]+);/g)
 {
   const used = new Set([...css.matchAll(/var\(\s*(--[\w-]+)/g)].map((m) => m[1]));
   /*
-   * `--i` is set inline from the markup for a stagger delay, and the two below
+   * `--i` is set inline from the markup for a stagger delay, `--chat-w` is the
+   * chat column's width, set inline by the resize handle, and the two below
    * are third-party surfaces that carry their own. Everything else that is read
    * has to exist, because a variable that does not silently becomes whatever
    * fallback happens to be written at that one call site.
    */
-  const supplied = new Set(['--i', '--vsc-guide-left', '--figma-font']);
+  const supplied = new Set(['--i', '--chat-w', '--vsc-guide-left', '--figma-font']);
   const undefinedVars = [...used].filter((v) => !(v in tokens) && !supplied.has(v));
   check('no colour or size variable is used without being defined', undefinedVars.sort(), []);
 }

@@ -33,8 +33,19 @@ export const ADMIN_USERS = [
 ];
 
 export function mockAdmin(api: MockApi): void {
+  const users = ADMIN_USERS.map((u) => ({ ...u }));
   api.on('GET', '/admin/usage', { body: { users: ADMIN_USAGE } });
-  api.on('GET', '/admin/users', { body: { users: ADMIN_USERS } });
+  api.on('GET', '/admin/users', () => ({ body: { users } }));
+  // Creating an account, as the handler answers it (201 and the new user).
+  api.on('POST', '/admin/users', (req) => {
+    if (users.some((u) => u.email === req.body?.email)) return { status: 409, body: { error: 'このメールアドレスはすでに登録されています。' } };
+    const user = {
+      username: req.body.email, email: req.body.email, displayName: req.body.displayName, displayNameSet: true,
+      group: null, isGroupAdmin: false, status: 'FORCE_CHANGE_PASSWORD', enabled: true, createdAt: new Date().toISOString(),
+    };
+    users.push(user);
+    return { status: 201, body: { user } };
+  });
   api.on('GET', '/admin/groups', {
     body: { groups: [{ name: 'design', admin: 'taro@example.invalid', memberCount: 1, monthlyLimit: null, usedTokens: 120_000, cost: 1.8 }] },
   });

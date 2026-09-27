@@ -66,6 +66,7 @@ import { localPartOf } from '../../utils/account/displayName';
 import { useRefinePrompt } from '../../hooks/useRefinePrompt';
 import { isOlderRubric } from '../../utils/projects/scoreScale';
 import { SlidingIndicator } from '../common/SlidingIndicator';
+import { isCommitEnter } from '../../utils/editing/enterKey';
 
 /**
  * A text box whose value is the document's until the user takes it.
@@ -90,7 +91,7 @@ function TextField({ initial, onCommit }: { initial: string; onCommit: (text: st
         value={value}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={commit}
-        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); commit(); (e.target as HTMLInputElement).blur(); } }}
+        onKeyDown={(e) => { if (isCommitEnter(e)) { e.preventDefault(); commit(); (e.target as HTMLInputElement).blur(); } }}
       />
     </div>
   );
@@ -478,7 +479,7 @@ export function Workspace({ project, onBackToProjects, onUpdateProject, fetchPro
   const { result, score, runInfo: genRunInfo, abandoned: genAbandoned, tokenUsage, isGenerating, plan, streamPhase, phases, error, generate, reset, stop: stopGenerate, resume: resumeGenerate, jobId: generateJobId } = useGenerate();
   const { modifiedHtml, runInfo: modifyRunInfo, toolsUsed, tokenUsage: modifyTokenUsage, isModifying, plan: modifyPlan, streamPhase: modifyStreamPhase, phases: modifyPhases, error: modifyError, modify, reset: resetModify, stop: stopModify, resume: resumeModify, jobId: modifyJobId } = useModify();
   const { result: planResult, isPlanning, phases: planPhases, error: planError, plan: proposePlan, resume: resumePlan, reset: resetPlan, stop: stopPlan, jobId: planJobId } = usePlan();
-  const { usage, answered: usageAnswered, refresh: refreshUsage } = useUsage();
+  const { usage, answered: usageAnswered, error: usageError, refresh: refreshUsage } = useUsage();
   /*
    * This account's role on the project — its own, or one shared with it. A
    * viewer reads and does nothing else; the server refuses anything more, and
@@ -932,7 +933,7 @@ export function Workspace({ project, onBackToProjects, onUpdateProject, fetchPro
         setMessages((prev) => [...prev, {
           id: crypto.randomUUID(),
           role: 'assistant',
-          content: '変更を適用できませんでした。指示を変えて再度お試しください。',
+          content: '変更を適用できませんでした。指示を変えて、もう一度お試しください。',
           timestamp: Date.now(),
         }]);
       } else {
@@ -1393,7 +1394,7 @@ export function Workspace({ project, onBackToProjects, onUpdateProject, fetchPro
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (isCommitEnter(e) && !e.shiftKey) {
       e.preventDefault();
       handleSend();
     }
@@ -1686,14 +1687,14 @@ export function Workspace({ project, onBackToProjects, onUpdateProject, fetchPro
             const images = picked.filter((f) => isImageAttachment(f.name) && !tooLarge.includes(f));
             if (tooLarge.length > 0) {
               // The API refuses a picture over 5MB; saying so now keeps the others.
-              setImageError(`画像は1枚${Math.round(MAX_IMAGE_BYTES / 1024 / 1024)}MBまでです（${tooLarge.map((f) => f.name).join('、')} は追加されませんでした）`);
+              setImageError(`画像は1枚${Math.round(MAX_IMAGE_BYTES / 1024 / 1024)}MBまでです（${tooLarge.map((f) => f.name).join('、')} は追加されませんでした）。`);
               setTimeout(() => setImageError(null), 6000);
               if (images.length === 0) { el.value = ''; return; }
             }
             const room = roomForImages(image, extraImages);
             if (room <= 0) {
               el.value = '';
-              setImageError(`画像は${MAX_UI_IMAGES}枚までです`);
+              setImageError(`画像は${MAX_UI_IMAGES}枚までです。`);
               setTimeout(() => setImageError(null), 4000);
               return;
             }
@@ -1708,7 +1709,7 @@ export function Workspace({ project, onBackToProjects, onUpdateProject, fetchPro
               el.value = '';
               const usable = read.filter((d): d is string => Boolean(d));
               if (usable.length === 0) {
-                setImageError('画像の読み込みに失敗しました');
+                setImageError('画像を読み込めませんでした。別の画像でお試しください。');
                 setTimeout(() => setImageError(null), 3000);
                 return;
               }
@@ -1721,8 +1722,8 @@ export function Workspace({ project, onBackToProjects, onUpdateProject, fetchPro
               if (refused > 0 || failed > 0) {
                 setImageError(
                   refused > 0
-                    ? `画像は${MAX_UI_IMAGES}枚までです（${refused}枚は追加されませんでした）`
-                    : `${failed}枚の画像を読み込めませんでした`
+                    ? `画像は${MAX_UI_IMAGES}枚までです（${refused}枚は追加されませんでした）。`
+                    : `${failed}枚の画像を読み込めませんでした。別の画像でお試しください。`
                 );
                 setTimeout(() => setImageError(null), 4000);
               }
@@ -1760,7 +1761,7 @@ export function Workspace({ project, onBackToProjects, onUpdateProject, fetchPro
               if (out.problem) { showError(out.problem); return; }
               setDataFile({ name: file.name, content: out.text, pages: out.pages });
             };
-            reader.onerror = () => { setPdfReading(false); showError('ファイルの読み込みに失敗しました'); };
+            reader.onerror = () => { setPdfReading(false); showError('ファイルを読み込めませんでした。別のファイルでお試しください。'); };
             reader.readAsArrayBuffer(file);
             return;
           }
@@ -1776,7 +1777,7 @@ export function Workspace({ project, onBackToProjects, onUpdateProject, fetchPro
             if (!content.trim()) { showError('ファイルが空です。'); return; }
             setDataFile({ name: file.name, content });
           };
-          reader.onerror = () => showError('ファイルの読み込みに失敗しました');
+          reader.onerror = () => showError('ファイルを読み込めませんでした。別のファイルでお試しください。');
           reader.readAsText(file);
         }}
       />
@@ -1848,7 +1849,7 @@ export function Workspace({ project, onBackToProjects, onUpdateProject, fetchPro
               : displayHtml && formatDetected
                 ? 'この文書の形式です。別の形式を選ぶと、次のメッセージは編集ではなく新しい文書の生成になります'
                 : displayHtml
-                  ? 'この文書の形式は判別できませんでした。編集を送る形式を選んでください'
+                  ? 'この文書の形式を判別できませんでした。編集を送る形式を選んでください。'
                   : undefined
           }
           options={OUTPUT_KINDS}
@@ -1859,6 +1860,8 @@ export function Workspace({ project, onBackToProjects, onUpdateProject, fetchPro
   return (
     <div className={`app${isResizing ? ' app--resizing' : ''}`}>
       <header className="app__header">
+        {/* The page's one heading, for navigation by headings; the name field shows it to everyone else. */}
+        <h1 className="sr-only">{projectTitle || project.name}</h1>
         <div className="app__header-left">
           <button className="app__logo" onClick={onBackToProjects} type="button" title="プロジェクト一覧に戻る">MakeUI</button>
           <span className="app__header-sep">/</span>
@@ -1883,6 +1886,11 @@ export function Workspace({ project, onBackToProjects, onUpdateProject, fetchPro
                 onUpdateProject(project.projectId, { name: projectTitle });
               }
             }}
+            // Enter commits, as the element text field in this screen does; Escape puts the name back.
+            onKeyDown={(e) => {
+              if (isCommitEnter(e)) { e.preventDefault(); e.currentTarget.blur(); }
+              if (e.key === 'Escape') { setProjectTitle(project.name); requestAnimationFrame(() => (e.target as HTMLInputElement).blur()); }
+            }}
             // Renaming is a change to the project, which a viewer may not make.
             readOnly={readOnly}
             aria-label="プロジェクト名"
@@ -1901,7 +1909,7 @@ export function Workspace({ project, onBackToProjects, onUpdateProject, fetchPro
                 <polyline points="7 10 12 15 17 10" />
                 <line x1="12" y1="15" x2="12" y2="3" />
               </svg>
-              {zipState === 'done' ? 'ダウンロードしました' : zipState === 'error' ? '失敗しました' : 'ZIPでダウンロード'}
+              {zipState === 'done' ? 'ダウンロードしました' : zipState === 'error' ? 'ダウンロードできませんでした' : 'ZIPでダウンロード'}
             </button>
           )}
           {/*
@@ -1943,6 +1951,7 @@ export function Workspace({ project, onBackToProjects, onUpdateProject, fetchPro
                 groupBudget: usage.groupBudget,
               }
             }
+            error={usageError}
             onOpen={refreshUsage}
           />
           {isAdmin && <AdminPanel />}
@@ -1951,9 +1960,11 @@ export function Workspace({ project, onBackToProjects, onUpdateProject, fetchPro
           </button>
         </div>
       </header>
-      <div className="app__body" style={{ gridTemplateColumns: `${chatWidth ?? 420}px 1fr` }}>
+      {/* The width as a variable, not as grid-template-columns: an inline template beat the phone
+          layout's single column, and the preview was pushed off a 390px screen (E2E, 2026-09-27). */}
+      <div className="app__body" style={{ ['--chat-w' as string]: `${chatWidth ?? 420}px` }}>
         {/* Left: Chat */}
-        <div className="app__chat-pane">
+        <section className="app__chat-pane" aria-label="チャット">
           <div
             className="app__chat-thread"
             ref={setChatThread}
@@ -2511,22 +2522,26 @@ export function Workspace({ project, onBackToProjects, onUpdateProject, fetchPro
             </div>
           </div>
           )}
-        </div>
 
-        {/* Resize handle */}
-        <div
-          className={`app__resize-handle${isResizing ? ' app__resize-handle--active' : ''}`}
-          style={{ left: chatWidth ? `${chatWidth - 2}px` : '40%' }}
-          role="separator"
-          aria-label="チャット幅を調整"
-          aria-orientation="vertical"
-          tabIndex={0}
-          onMouseDown={() => setIsResizing(true)}
-          onKeyDown={(e) => {
-            if (e.key === 'ArrowLeft') setChatWidth((w) => Math.max(280, (w ?? window.innerWidth * 0.4) - 20));
-            if (e.key === 'ArrowRight') setChatWidth((w) => Math.min((w ?? window.innerWidth * 0.4) + 20, window.innerWidth - 400));
-          }}
-        />
+          {/* Resize handle: at the pane's right edge, inside the pane's landmark. */}
+          <div
+            className={`app__resize-handle${isResizing ? ' app__resize-handle--active' : ''}`}
+            role="separator"
+            aria-label="チャット幅を調整"
+            aria-orientation="vertical"
+            // A focusable separator is a slider to assistive technology: it needs its value and range.
+            aria-valuenow={Math.round(chatWidth ?? 420)}
+            aria-valuemin={280}
+            aria-valuemax={Math.max(280, window.innerWidth - 400)}
+            aria-valuetext={`チャット幅 ${Math.round(chatWidth ?? 420)}px`}
+            tabIndex={0}
+            onMouseDown={() => setIsResizing(true)}
+            onKeyDown={(e) => {
+              if (e.key === 'ArrowLeft') setChatWidth((w) => Math.max(280, (w ?? window.innerWidth * 0.4) - 20));
+              if (e.key === 'ArrowRight') setChatWidth((w) => Math.min((w ?? window.innerWidth * 0.4) + 20, window.innerWidth - 400));
+            }}
+          />
+        </section>
 
         {/* Right: Preview / Code */}
         <main className="app__preview-pane">
@@ -2659,7 +2674,7 @@ export function Workspace({ project, onBackToProjects, onUpdateProject, fetchPro
           {directEdit.status === 'error' && (
             <div className="app__save-failed" role="alert">
               <span className="app__save-failed-text">
-                {directEdit.error ?? '保存に失敗しました。'}
+                {directEdit.error ?? '保存できませんでした。'}
               </span>
               <button type="button" className="app__save-failed-retry" onClick={directEdit.retry}>
                 再試行

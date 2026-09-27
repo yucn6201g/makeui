@@ -50,6 +50,60 @@ test.describe('the account administrator', () => {
   });
 });
 
+test.describe('creating an account', () => {
+  test.use({ user: SUPER_ADMIN });
+  test.beforeEach(({ api }) => mockAdmin(api));
+
+  async function openForm(page: import('@playwright/test').Page) {
+    await page.goto('/');
+    await page.getByRole('button', { name: '管理画面を開く' }).click();
+    const panel = page.getByRole('region', { name: '管理画面' });
+    await panel.getByRole('button', { name: 'ユーザー管理' }).click();
+    await panel.getByRole('button', { name: '+ ユーザーを追加' }).click();
+    return panel;
+  }
+
+  test('the temporary password field states the pool\'s rule, not a sample password', async ({ page }) => {
+    const panel = await openForm(page);
+    const field = panel.getByRole('textbox', { name: '仮パスワード' });
+    // 「Temp@1234」 was nine characters for a pool that requires twelve.
+    await expect(field).toHaveAttribute('placeholder', '12文字以上・大文字・小文字・数字・記号を含む');
+    await expect(panel.getByText('仮パスワードは12文字以上で、大文字・小文字・数字・記号をそれぞれ1文字以上含めてください。')).toBeVisible();
+  });
+
+  test('a temporary password that breaks the rule is refused before it is sent', async ({ page, api }) => {
+    const panel = await openForm(page);
+    await panel.getByRole('textbox', { name: 'ユーザー名', exact: true }).fill('鈴木 一郎');
+    await panel.getByRole('textbox', { name: 'メールアドレス（ログインID）' }).fill('ichiro@example.invalid');
+    await panel.getByRole('textbox', { name: '仮パスワード' }).fill('Temp@1234');
+    await panel.getByRole('button', { name: '作成', exact: true }).click();
+    await expect(panel.getByRole('alert')).toHaveText('仮パスワードが条件を満たしていません。12文字以上にしてください（今は9文字です）。');
+    expect(api.all('POST', '/admin/users')).toEqual([]);
+  });
+
+  test('one that meets it creates the account, which then appears in the list', async ({ page, api }) => {
+    const panel = await openForm(page);
+    await panel.getByRole('textbox', { name: 'ユーザー名', exact: true }).fill('鈴木 一郎');
+    await panel.getByRole('textbox', { name: 'メールアドレス（ログインID）' }).fill('ichiro@example.invalid');
+    // A made-up value for the mocked API; the pool never sees it.
+    await panel.getByRole('textbox', { name: '仮パスワード' }).fill('E2e-Temporary-Pass1');
+    await panel.getByRole('button', { name: '作成', exact: true }).click();
+    await expect(panel.getByText('ichiro@example.invalid')).toBeVisible();
+    expect(api.last('POST', '/admin/users')?.body).toEqual({
+      displayName: '鈴木 一郎', email: 'ichiro@example.invalid', temporaryPassword: 'E2e-Temporary-Pass1',
+    });
+  });
+
+  test('the server refusing it is reported in the server\'s words', async ({ page }) => {
+    const panel = await openForm(page);
+    await panel.getByRole('textbox', { name: 'ユーザー名', exact: true }).fill('佐藤 花子');
+    await panel.getByRole('textbox', { name: 'メールアドレス（ログインID）' }).fill('hanako@example.invalid');
+    await panel.getByRole('textbox', { name: '仮パスワード' }).fill('E2e-Temporary-Pass1');
+    await panel.getByRole('button', { name: '作成', exact: true }).click();
+    await expect(panel.getByRole('alert')).toHaveText('このメールアドレスはすでに登録されています。');
+  });
+});
+
 test.describe('a group administrator', () => {
   test.use({ user: GROUP_ADMIN });
   test.beforeEach(({ api }) => mockAdmin(api));

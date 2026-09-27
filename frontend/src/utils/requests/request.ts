@@ -69,9 +69,19 @@ const WRITTEN_FOR_A_READER = /[぀-ヿ㐀-鿿]/;
 export function requestErrorMessage(err: unknown, fallback: string): string {
   if (err instanceof PayloadTooLargeError) return err.message;
   if (isTransientNetworkError(err)) {
-    return '通信に失敗しました。接続を確認して、もう一度お試しください。';
+    return '通信できませんでした。接続を確認して、もう一度お試しください。';
   }
   const message = err instanceof Error ? err.message.trim() : '';
+  return WRITTEN_FOR_A_READER.test(message) ? message : fallback;
+}
+
+/**
+ * A message the server sent as data rather than as a thrown error — a job's
+ * `error` field, read while polling — by the same rule: kept when it was
+ * written for a reader, replaced when it was not.
+ */
+export function readableMessage(text: unknown, fallback: string): string {
+  const message = typeof text === 'string' ? text.trim() : '';
   return WRITTEN_FOR_A_READER.test(message) ? message : fallback;
 }
 

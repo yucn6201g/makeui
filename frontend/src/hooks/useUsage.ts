@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../auth/AuthProvider';
+import { requestErrorMessage } from '../utils/requests/request';
 
 interface UsageData {
   /**
@@ -127,7 +128,7 @@ export function useUsage(): UseUsageReturn {
       })
       .catch((err) => {
         if (err.name !== 'AbortError') {
-          setError(err.message || 'Failed to fetch usage');
+          setError(requestErrorMessage(err, '使用状況を読み込めませんでした。'));
           // A failure is an answer for this purpose: the header has waited long
           // enough and should fall back rather than hold a placeholder for ever.
           setAnswered(true);

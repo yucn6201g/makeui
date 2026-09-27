@@ -101,7 +101,7 @@ function PeopleSection({ projectId, role }: { projectId: string; role: ProjectRo
 
   return (
     <section className="share-panel__section" aria-label="ユーザー・グループと共有">
-      <h3 className="share-panel__heading">ユーザー・グループと共有</h3>
+      <h2 className="share-panel__heading">ユーザー・グループと共有</h2>
 
       {manage && (
         <div className="share-panel__add">
@@ -298,12 +298,12 @@ function LinkSection({ html, title, allowed }: { html: string | null; title?: st
   const label =
     phase === 'working' || isPublishing ? '生成中…'
       : phase === 'copied' ? 'リンクをコピーしました'
-      : phase === 'failed' ? '失敗しました'
+      : phase === 'failed' ? '作成できませんでした'
       : '公開リンクを作成してコピー';
 
   return (
     <section className="share-panel__section" aria-label="リンクで公開">
-      <h3 className="share-panel__heading">リンクで公開</h3>
+      <h2 className="share-panel__heading">リンクで公開</h2>
       <p className="share-panel__note">MakeUI のアカウントがない人にも見せられる公開ページを作ります（30日間有効）。</p>
       <button
         className="app__header-btn"

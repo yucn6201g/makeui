@@ -364,7 +364,7 @@ export function CodeEditor({ html, onEditFile }: CodeEditorProps) {
   }, []);
 
   const closeTab = useCallback(
-    (path: string, e: React.MouseEvent) => {
+    (path: string, e: React.SyntheticEvent) => {
       e.stopPropagation();
       // Unsaved work is never thrown away by a click on an ×.
       if (dirtyRef.current.has(path)) {
@@ -627,6 +627,10 @@ export function CodeEditor({ html, onEditFile }: CodeEditorProps) {
           role="separator"
           aria-orientation="vertical"
           aria-label="エクスプローラーの幅を調整"
+          aria-valuenow={sidebarWidth}
+          aria-valuemin={140}
+          aria-valuemax={520}
+          aria-valuetext={`エクスプローラーの幅 ${sidebarWidth}px`}
           tabIndex={0}
           onKeyDown={(e) => {
             if (e.key === 'ArrowLeft') setSidebarWidth((w) => Math.max(w - 20, 140));
@@ -637,7 +641,15 @@ export function CodeEditor({ html, onEditFile }: CodeEditorProps) {
 
       {/* Editor */}
       <div className="vsc__main">
-        <div className="vsc__tabs" role="tablist" aria-label="開いているファイル">
+        <div className="vsc__tabs">
+          {/*
+            The tablist holds tabs and nothing else, and a tab holds no other
+            control: the copy and save buttons used to sit inside the tablist and
+            each close button inside its tab (axe: aria-required-children,
+            nested-interactive, 2026-09-27). Each tab is now a wrapper holding the
+            tab's own button and its close button side by side.
+          */}
+          <div className="vsc__tablist" role="tablist" aria-label="開いているファイル">
           {openPaths.map((path) => {
             const f = files.find((x) => x.path === path);
             if (!f) return null;
@@ -647,30 +659,37 @@ export function CodeEditor({ html, onEditFile }: CodeEditorProps) {
                 key={path}
                 className={`vsc__tab${path === activePath ? ' vsc__tab--active' : ''}`}
                 onClick={() => setActivePath(path)}
-                role="tab"
-                aria-selected={path === activePath}
-                tabIndex={0}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    setActivePath(path);
-                  }
-                }}
+                role="presentation"
               >
-                <FileIcon lang={f.lang} />
-                <span className={`vsc__tab-name${dirtyPaths.has(path) ? ' vsc__tab-name--dirty' : ''}`}>
-                  {name}
-                </span>
+                <button
+                  type="button"
+                  className="vsc__tab-main"
+                  role="tab"
+                  aria-selected={path === activePath}
+                  // Delete closes the focused tab, as editors do; the × beside it is the pointer's way.
+                  aria-keyshortcuts="Delete"
+                  aria-description={dirtyPaths.has(path) ? '未保存の変更があります' : undefined}
+                  onKeyDown={(e) => { if (e.key === 'Delete') { e.preventDefault(); closeTab(path, e); } }}
+                >
+                  <FileIcon lang={f.lang} />
+                  <span className={`vsc__tab-name${dirtyPaths.has(path) ? ' vsc__tab-name--dirty' : ''}`}>
+                    {name}
+                  </span>
+                </button>
                 {/*
                   The dot replaces the close button while there is something to
                   lose, and turns back into one on hover — the arrangement every
                   editor uses, and the reason is that a × where a dot belongs
                   invites exactly the click that discards the work.
                 */}
+                {/* Out of the tab order and the accessibility tree: a control inside the tablist that is
+                    not a tab breaks the list for a screen reader. The keyboard closes with Delete instead. */}
                 <button
                   className={`vsc__tab-close${dirtyPaths.has(path) ? ' vsc__tab-close--dirty' : ''}`}
                   onClick={(e) => closeTab(path, e)}
-                  aria-label={dirtyPaths.has(path) ? `${name} を閉じる（未保存）` : `${name} を閉じる`}
+                  title={dirtyPaths.has(path) ? `${name} を閉じる（未保存）` : `${name} を閉じる`}
+                  tabIndex={-1}
+                  aria-hidden="true"
                   type="button"
                 >
                   <svg className="vsc__tab-x" width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6">
@@ -681,6 +700,7 @@ export function CodeEditor({ html, onEditFile }: CodeEditorProps) {
               </div>
             );
           })}
+          </div>
           <div className="vsc__tabs-actions">
             {/*
               Markdown is the one language here whose rendered form is the point

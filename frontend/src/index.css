@@ -319,6 +319,8 @@ a:active {
 
 .app__body {
   display: grid;
+  /* --chat-w is set by the resize handle; the phone layout below replaces the template. */
+  grid-template-columns: var(--chat-w, 420px) 1fr;
   /* A single row that cannot be grown by its children's content. Without this a
      pane with tall content stretches the row and the whole page scrolls. */
   grid-template-rows: minmax(0, 1fr);
@@ -411,6 +413,10 @@ a:active {
   top: 0;
   bottom: 0;
   z-index: 50;
+}
+/* Inside the chat pane (so it is inside the pane's landmark), on its right edge. */
+.app__chat-pane > .app__resize-handle {
+  right: 0;
 }
 
 /*
@@ -1158,6 +1164,13 @@ a.preview__chrome-btn {
   color: var(--figma-text-dim);
 }
 
+/* A rule the field must meet, shown under it while typing — a placeholder disappears on the first key. */
+.login__hint {
+  font-size: 0.75rem;
+  color: var(--figma-text-dim);
+  line-height: 1.5;
+}
+
 .login__error {
   font-size: 0.8125rem;
   font-weight: 500;
@@ -1478,10 +1491,9 @@ fieldset {
   height: auto;
 }
 
-/* Body layout */
-.app__body {
-  grid-template-columns: minmax(300px, 380px) 1fr;
-}
+/* Body layout: the chat width comes from --chat-w (see the first .app__body rule). This
+   380px template used to be overridden by an inline style; with the style gone it would
+   have fixed the column and ignored the resize handle. */
 
 /* Chat pane — white sidebar */
 .app__chat-pane {
@@ -1978,9 +1990,24 @@ fieldset legend {
 
   .app__header {
     padding: 0 16px;
+    /* Two rows rather than controls cut off at the right edge; the rows get their own air. */
+    padding-block: 6px;
+    flex-wrap: wrap;
+    row-gap: 6px;
+    height: auto;
+  }
+
+  .app__header-actions {
+    margin-right: 0;
+    flex-wrap: wrap;
   }
 
   .app__viewport-chips {
+    display: none;
+  }
+
+  /* One column: there is no width to drag. */
+  .app__resize-handle {
     display: none;
   }
 }
@@ -2521,7 +2548,8 @@ fieldset legend {
 }
 
 .adm-toggle-btn--on:hover:not(:disabled) {
-  background: var(--color-success-1);
+  /* White on the success green measured 3.45:1; on the darker success token it is 5.4:1. */
+  background: var(--color-success-2);
   color: #ffffff;
 }
 
@@ -2884,7 +2912,8 @@ fieldset legend {
 .app__edit-revert {
   background: none;
   border: 0;
-  color: var(--figma-blue-on-white-text);
+  /* On the tinted panel (#eaf5ff), not on white: the white-ground blue measured 4.27:1 here; this is 5.65:1. */
+  color: #0a63a8;
   cursor: pointer;
   font-size: 0.6875rem;
   margin-left: 8px;
@@ -2940,6 +2969,18 @@ fieldset legend {
   color: var(--figma-text-muted);
   margin-bottom: 24px;
   line-height: 1.7;
+}
+
+/* The exception text, folded away: for whoever is asked to look into it. */
+.error-boundary__detail {
+  margin: -12px 0 24px;
+  font-size: 0.75rem;
+  color: var(--figma-text-dim);
+}
+.error-boundary__detail code {
+  display: block;
+  margin-top: 6px;
+  word-break: break-all;
 }
 
 .error-boundary__btn {
@@ -3023,6 +3064,9 @@ fieldset legend {
 
 @media (max-width: 480px) {
   .project-list__header { padding: 0 8px; }
+  /* The tabs keep their words whole and the selection control moves under them. */
+  .project-list__toolbar { flex-wrap: wrap; }
+  .project-list__tab { margin-right: 10px; }
 }
 
 .project-list__logo {
@@ -3324,6 +3368,29 @@ fieldset legend {
   color: #1e1e1e;
 }
 
+/* The name is the card's button; its ::after makes the whole card the target. */
+.project-list__card-open {
+  background: none;
+  border: 0;
+  padding: 0;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.project-list__card-open::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+.project-list__card-open:focus-visible {
+  outline: none;
+}
+/* The ring goes round the card, as it did when the card was the button. */
+.project-list__card:has(.project-list__card-open:focus-visible) {
+  outline: 2px solid var(--figma-blue);
+  outline-offset: 2px;
+}
+
 .project-list__card-date {
   font-size: 0.6875rem;
   color: var(--figma-text-dim);
@@ -3337,6 +3404,7 @@ fieldset legend {
 }
 
 .project-list__tab {
+  white-space: nowrap;
   position: relative;
   background: transparent;
   border: none;
@@ -4244,6 +4312,28 @@ button.app__logo:hover {
 .vsc__tabs::-webkit-scrollbar {
   display: none;
 }
+.vsc__tablist {
+  display: flex;
+  align-items: stretch;
+  flex: none;
+}
+/* The tab's own control: the icon and the name, filling the tab it sits in. */
+.vsc__tab-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 100%;
+  padding: 0;
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.vsc__tab-main:focus-visible {
+  outline: 1px solid #007acc;
+  outline-offset: 2px;
+}
 .vsc__tab {
   display: flex;
   align-items: center;
@@ -4734,6 +4824,13 @@ button.app__logo:hover {
 .adm-field__label {
   font-size: 0.6875rem;
   color: var(--figma-text-muted);
+}
+/* The rule a field must meet, shown while typing; the placeholder is gone once typing starts. */
+.adm-field__hint {
+  margin-top: 8px;
+  font-size: 0.6875rem;
+  color: var(--figma-text-dim);
+  line-height: 1.5;
 }
 
 /* Table */
@@ -5441,6 +5538,11 @@ button.app__logo:hover {
   color: var(--figma-text-dim);
   flex: 0 0 auto;
 }
+/* On the hover and open ground (#ebebeb) the dim grey measured 4.15:1; muted is 4.82:1. */
+.dd__trigger:hover:not(:disabled) .dd__trigger-label,
+.dd__trigger--open .dd__trigger-label {
+  color: var(--figma-text-muted);
+}
 
 .dd__trigger-value {
   font-weight: 600;
@@ -5454,7 +5556,8 @@ button.app__logo:hover {
   padding: 0 5px;
   border-radius: var(--radius-4);
   background: var(--figma-bg-active);
-  color: var(--figma-text-muted);
+  /* Muted grey on the active ground measured 4.36:1 (caught by axe in CI, 2026-09-27); this is 5.7:1. */
+  color: #555555;
   font-size: 0.625rem;
   font-variant-numeric: tabular-nums;
   font-weight: 600;
@@ -5538,7 +5641,8 @@ button.app__logo:hover {
   padding: 0 5px;
   border-radius: var(--radius-4);
   background: var(--figma-bg-active);
-  color: var(--figma-text-muted);
+  /* As .dd__trigger-badge: muted grey on this ground is 4.35:1, #555555 is 5.7:1. */
+  color: #555555;
   font-size: 0.625rem;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
@@ -8581,8 +8685,8 @@ button.app__logo:hover {
   font-weight: 400;
   text-transform: none;
   letter-spacing: 0;
-  color: var(--figma-text-muted);
-  opacity: 0.75;
+  /* Quiet by colour rather than by opacity: at 0.75 it measured 3.26:1; this is 4.74:1. */
+  color: var(--figma-text-dim);
 }
 
 /* --- Roles in the admin panel -------------------------------------------------

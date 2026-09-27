@@ -85,7 +85,7 @@ export function usePublish(): UsePublishReturn {
         return published;
       })
       .catch((err) => {
-        if (err.name !== 'AbortError') setError(requestErrorMessage(err, '公開に失敗しました。もう一度お試しください。'));
+        if (err.name !== 'AbortError') setError(requestErrorMessage(err, '公開できませんでした。もう一度お試しください。'));
         return null;
       })
       .finally(() => setIsPublishing(false));

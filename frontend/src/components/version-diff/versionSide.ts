@@ -70,7 +70,7 @@ export function useVersionSide(
       setFetched(data.html ?? null);
     } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') return;
-      setError(requestErrorMessage(err, '読み込みに失敗しました'));
+      setError(requestErrorMessage(err, 'このバージョンを読み込めませんでした。もう一度お試しください。'));
       setFetched(null);
     } finally {
       if (abortRef.current === controller) setLoading(false);

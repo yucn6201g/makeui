@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useAuth } from '../auth/AuthProvider';
+import { requestErrorMessage } from '../utils/requests/request';
 
 export interface VersionEntry {
   versionId: string;
@@ -54,7 +55,7 @@ export function useHistory(): UseHistoryReturn {
       })
       .catch((err) => {
         if (err.name !== 'AbortError') {
-          setError(err.message);
+          setError(requestErrorMessage(err, 'バージョン履歴を読み込めませんでした。'));
         }
       })
       .finally(() => {

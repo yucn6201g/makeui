@@ -111,7 +111,7 @@ export async function handleShareRoutes(
 
   const projectId = decodeURIComponent((sharesMatch ?? revokeMatch)![1]);
   const access = await projectAccess({ userId: caller.userId, group: caller.group }, projectId);
-  if (!access) return respond(404, { error: 'Project not found' });
+  if (!access) return respond(404, { error: 'プロジェクトが見つかりません。' });
 
   if (sharesMatch && method === 'GET') {
     const { grants } = await readShares(projectId);
@@ -125,25 +125,25 @@ export async function handleShareRoutes(
   }
 
   if (sharesMatch && method === 'PUT') {
-    if (!CAN.manage(access.role)) return respond(403, { error: '共有ユーザーを追加できるのは所有者と全権限のユーザーだけです' });
+    if (!CAN.manage(access.role)) return respond(403, { error: '共有ユーザーを追加できるのは所有者と全権限のユーザーだけです。' });
     let input: { type?: unknown; id?: unknown; role?: unknown };
-    try { input = JSON.parse(body); } catch { return respond(400, { error: 'Invalid JSON body' }); }
-    if (input.type !== 'user' && input.type !== 'group') return respond(400, { error: 'type must be "user" or "group"' });
-    if (typeof input.id !== 'string' || !input.id) return respond(400, { error: 'id is required' });
-    if (!isShareRole(input.role)) return respond(400, { error: 'role must be "full", "edit" or "view"' });
+    try { input = JSON.parse(body); } catch { return respond(400, { error: 'リクエストの形式が正しくありません。' }); }
+    if (input.type !== 'user' && input.type !== 'group') return respond(400, { error: '共有先の種類が正しくありません。' });
+    if (typeof input.id !== 'string' || !input.id) return respond(400, { error: '共有先が指定されていません。' });
+    if (!isShareRole(input.role)) return respond(400, { error: '権限の指定が正しくありません。' });
 
     let label: string;
     let email: string | undefined;
     if (input.type === 'user') {
-      if (input.id === access.ownerId) return respond(400, { error: '所有者とは共有できません' });
+      if (input.id === access.ownerId) return respond(400, { error: '所有者とは共有できません。' });
       const user = await userBySub(input.id);
       // Out of scope reads as absent, as it does in the search.
-      if (!user || !(await inScope(caller, input.id))) return respond(404, { error: 'ユーザーが見つかりません' });
+      if (!user || !(await inScope(caller, input.id))) return respond(404, { error: 'ユーザーが見つかりません。' });
       label = user.name;
       email = user.email;
     } else {
       const group = (await listUserGroups()).find((g) => g.name === input.id);
-      if (!group || !groupInScope(caller, group.name)) return respond(404, { error: 'グループが見つかりません' });
+      if (!group || !groupInScope(caller, group.name)) return respond(404, { error: 'グループが見つかりません。' });
       label = group.name;
     }
     await grantShare({
@@ -163,11 +163,11 @@ export async function handleShareRoutes(
     const type = revokeMatch[2] as 'user' | 'group';
     const id = decodeURIComponent(revokeMatch[3]);
     const leaving = type === 'user' && id === caller.userId;
-    if (!leaving && !CAN.manage(access.role)) return respond(403, { error: '共有を解除できるのは所有者と全権限のユーザーだけです' });
+    if (!leaving && !CAN.manage(access.role)) return respond(403, { error: '共有を解除できるのは所有者と全権限のユーザーだけです。' });
     await revokeShare(projectId, { type, id });
     const { grants } = await readShares(projectId);
     return respond(200, { shares: grants });
   }
 
-  return respond(405, { error: 'Method not allowed' });
+  return respond(405, { error: 'この操作はできません。' });
 }

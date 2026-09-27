@@ -83,6 +83,15 @@ export class MockApi {
   readonly projects: MockProject[] = [];
   readonly versions: Array<Record<string, unknown>> = [];
   readonly messages = new Map<string, unknown[]>();
+  /** Who the share search can find. Made-up people. */
+  readonly people = [
+    { userId: 'sub-hanako', name: '佐藤 花子', email: 'hanako@example.invalid' },
+    { userId: 'sub-jiro', name: '鈴木 次郎', email: 'jiro@example.invalid' },
+  ];
+  private readonly shares = new Map<string, Array<Record<string, unknown>>>();
+  private sharesOf(projectId: string) {
+    return this.shares.get(projectId) ?? [];
+  }
   /** What the next job started by /generate, /modify or /plan will report, poll by poll. */
   nextJob: JobStep[] = JOB_OK;
   private readonly jobs = new Map<string, { steps: JobStep[]; polls: number }>();
@@ -232,8 +241,39 @@ export class MockApi {
       this.messages.set(m[1], req.body?.messages ?? []);
       return { body: { message: 'Messages saved' } };
     });
-    this.on('GET', /^\/projects\/([^/]+)\/shares$/, () => ({
-      body: { role: 'owner', self: 'sub-e2e', owner: { userId: 'sub-e2e', name: 'E2E 利用者' }, shares: [] },
+    // Sharing, as handlers/share-routes.ts answers it.
+    this.on('GET', /^\/projects\/([^/]+)\/shares$/, (_req, m) => ({
+      body: { role: 'owner', self: 'sub-e2e', owner: { userId: 'sub-e2e', name: 'E2E 利用者' }, shares: this.sharesOf(m[1]) },
+    }));
+    this.on('PUT', /^\/projects\/([^/]+)\/shares$/, (req, m) => {
+      const person = this.people.find((p) => p.userId === req.body?.id);
+      const label = req.body?.type === 'group' ? String(req.body.id) : person?.name ?? String(req.body?.id);
+      const grants = this.sharesOf(m[1]).filter((g) => !(g.type === req.body?.type && g.id === req.body?.id));
+      grants.push({ type: req.body?.type, id: req.body?.id, label, email: person?.email, role: req.body?.role, grantedByName: 'E2E 利用者', grantedAt: iso() });
+      this.shares.set(m[1], grants);
+      return { body: { shares: grants } };
+    });
+    this.on('DELETE', /^\/projects\/([^/]+)\/shares\/(user|group)\/([^/]+)$/, (_req, m) => {
+      const grants = this.sharesOf(m[1]).filter((g) => !(g.type === m[2] && g.id === decodeURIComponent(m[3])));
+      this.shares.set(m[1], grants);
+      return { body: { shares: grants } };
+    });
+    this.on('GET', '/users/search', (req) => {
+      const q = (req.query.get('q') ?? '').trim();
+      // Two characters at least, as the handler requires.
+      const users = q.length < 2 ? [] : this.people.filter((p) => p.name.includes(q) || p.email.includes(q));
+      return { body: { users } };
+    });
+    this.on('GET', '/share-groups', { body: { groups: [{ name: 'design', memberCount: 4 }] } });
+
+    // Publishing: the page is stored and a link comes back.
+    this.on('POST', '/publish', () => {
+      const siteId = `site-e2e-${++this.seq}`;
+      return { body: { siteId, url: `https://share.e2e.test/${siteId}/index.html`, domain: 'https://share.e2e.test' } };
+    });
+    // Refining the brief (orchestration/edit/refine-prompt.ts): the rewrite and what it added.
+    this.on('POST', '/refine-prompt', (req) => ({
+      body: { prompt: `${req.body?.prompt ?? ''}\n\n画面: 一覧・詳細・設定の3画面。`, notes: ['画面の一覧を明記しました'] },
     }));
 
     // Versions

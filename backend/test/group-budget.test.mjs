@@ -114,7 +114,7 @@ function route(marker) {
   check('the group total route exists', groupLimit.length > 0, true);
   check('and is account-administrator only', /isSuperAdmin\(auth\.membership\)/.test(groupLimit), true);
   // A budget on a name nobody belongs to binds nothing and reports nothing.
-  check('it refuses a group that does not exist', /そのグループはありません/.test(groupLimit), true);
+  check('it refuses a group that does not exist', /そのグループは見つかりません。/.test(groupLimit), true);
 
   const userLimit = route("path === '/admin/usage/limit'");
   check('a group administrator may reach the per-user budget',

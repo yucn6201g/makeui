@@ -51,7 +51,7 @@ function usageRefusal(r: { currentUsage: number; limit: number; group: { name: s
 } {
   if (r.group?.exceeded) {
     return {
-      error: `グループ「${r.group.name}」全体の今月の予算を使い切りました`,
+      error: `グループ「${r.group.name}」全体の今月の予算を使い切りました。管理者にお問い合わせください。`,
       currentUsage: r.group.used,
       limit: r.group.limit,
       scope: 'group',
@@ -59,7 +59,7 @@ function usageRefusal(r: { currentUsage: number; limit: number; group: { name: s
     };
   }
   return {
-    error: 'Monthly token usage limit exceeded',
+    error: '今月の予算を使い切りました。管理者にお問い合わせください。',
     currentUsage: r.currentUsage,
     limit: r.limit,
     scope: 'user',
@@ -154,7 +154,7 @@ const AGENT_RUNTIME_ARN = process.env.AGENT_RUNTIME_ARN || '';
 function ledgerUnavailable(): APIGatewayProxyResultV2 {
   return jsonResponse(
     503,
-    { error: '利用状況を確認できませんでした。少し待ってから、もう一度お試しください。' },
+    { error: '利用状況を確認できませんでした。しばらく待ってから、もう一度お試しください。' },
     { 'Retry-After': '30' }
   );
 }
@@ -219,8 +219,8 @@ async function dispatchJob(jobId: string, payload: Record<string, unknown>): Pro
     return null;
   } catch (err) {
     logger.error('Lambda async invoke failed', { jobId, error: String(err) });
-    await updateJobStatus(jobId, 'failed', undefined, 'Job dispatch failed').catch(() => {});
-    return jsonResponse(503, { error: 'Service temporarily unavailable. Please try again.' });
+    await updateJobStatus(jobId, 'failed', undefined, '処理を開始できませんでした。しばらく待ってから、もう一度お試しください。').catch(() => {});
+    return jsonResponse(503, { error: '処理を開始できませんでした。しばらく待ってから、もう一度お試しください。' });
   }
 }
 
@@ -280,17 +280,17 @@ function keepRuntimeSessionAlive(jobId: string): void {
  * come to disagree.
  */
 function validateImages(images: unknown): { valid: boolean; error?: string } {
-  if (!Array.isArray(images)) return { valid: false, error: 'images must be a list' };
+  if (!Array.isArray(images)) return { valid: false, error: '画像の指定が正しくありません。' };
   if (images.length > MAX_CONTENT_IMAGES) {
-    return { valid: false, error: `images must be ${MAX_CONTENT_IMAGES} or fewer` };
+    return { valid: false, error: `画像は${MAX_CONTENT_IMAGES}枚までです。` };
   }
   for (let i = 0; i < images.length; i += 1) {
     const one = images[i];
     if (typeof one !== 'string') {
-      return { valid: false, error: `images[${i}] must be a base64 string or data URI` };
+      return { valid: false, error: `${i + 1}枚目の画像を読み取れませんでした。` };
     }
     const v = validateImage(one);
-    if (!v.valid) return { valid: false, error: `images[${i}]: ${v.error}` };
+    if (!v.valid) return { valid: false, error: `${i + 1}枚目の${v.error}` };
   }
   return { valid: true };
 }
@@ -306,10 +306,10 @@ function validateImages(images: unknown): { valid: boolean; error?: string } {
 function validateImageCaptions(captions: unknown): { valid: boolean; error?: string } {
   if (captions === undefined) return { valid: true };
   if (!Array.isArray(captions) || captions.length > MAX_CONTENT_IMAGES) {
-    return { valid: false, error: `imageCaptions must be a list of ${MAX_CONTENT_IMAGES} or fewer` };
+    return { valid: false, error: `画像の説明は${MAX_CONTENT_IMAGES}件までです。` };
   }
   if (captions.some((c) => typeof c !== 'string' || c.length > 500)) {
-    return { valid: false, error: 'imageCaptions must be strings of 500 characters or fewer' };
+    return { valid: false, error: '画像の説明は1件500文字までです。' };
   }
   return { valid: true };
 }
@@ -318,12 +318,12 @@ function validateImage(image: string): { valid: boolean; error?: string } {
   const hasDataPrefix = VALID_IMAGE_PREFIXES.some((prefix) => image.startsWith(prefix));
   const isRawBase64 = /^[A-Za-z0-9+/]+=*$/.test(image.slice(0, 100));
   if (!hasDataPrefix && !isRawBase64) {
-    return { valid: false, error: 'Image must be a valid base64 string or data URI (png, jpeg, gif, webp)' };
+    return { valid: false, error: '画像は PNG・JPEG・GIF・WebP のいずれかにしてください。' };
   }
   const base64Part = hasDataPrefix ? image.split(',')[1] : image;
   const estimatedSize = (base64Part.length * 3) / 4;
   if (estimatedSize > MAX_IMAGE_SIZE) {
-    return { valid: false, error: 'Image must be 5MB or smaller' };
+    return { valid: false, error: '画像は5MBまでです。' };
   }
   return { valid: true };
 }
@@ -338,25 +338,25 @@ function validateImage(image: string): { valid: boolean; error?: string } {
  * unlike the image, which is 5MB of base64 and goes via S3.
  */
 function validateAttachment(a: unknown): { valid: boolean; error?: string } {
-  if (typeof a !== 'object' || a === null) return { valid: false, error: 'attachment must be an object' };
+  if (typeof a !== 'object' || a === null) return { valid: false, error: '添付ファイルの指定が正しくありません。' };
   const { name, content } = a as { name?: unknown; content?: unknown };
-  if (typeof name !== 'string' || !name.trim()) return { valid: false, error: 'attachment.name is required' };
-  if (typeof content !== 'string' || !content.trim()) return { valid: false, error: 'attachment.content is required' };
+  if (typeof name !== 'string' || !name.trim()) return { valid: false, error: '添付ファイルの名前がありません。' };
+  if (typeof content !== 'string' || !content.trim()) return { valid: false, error: '添付ファイルが空です。' };
   if (content.length > MAX_ATTACHMENT_CHARS) {
-    return { valid: false, error: `attachment.content must be ${MAX_ATTACHMENT_CHARS} characters or fewer` };
+    return { valid: false, error: `添付ファイルは${MAX_ATTACHMENT_CHARS.toLocaleString()}文字までです。` };
   }
   // Text formats only. An image already has its own field and its own route.
   // `.pdf` is here because the browser extracts a PDF's text and sends THAT
   // under the original filename — the name records where the text came from,
   // which the prompt then says. No PDF bytes ever reach this endpoint.
   if (!/\.(csv|tsv|json|md|markdown|txt|pdf)$/i.test(name)) {
-    return { valid: false, error: 'attachment must be a .csv, .tsv, .json, .md, .txt or .pdf file' };
+    return { valid: false, error: '添付できるのは CSV・TSV・JSON・Markdown・テキスト・PDF のファイルです。' };
   }
   // Which is exactly why this check exists: a caller that skipped the browser
   // and posted the file itself would have its bytes read as text and distilled
   // into nonsense that looks like data. A PDF says so in its first five bytes.
   if (content.startsWith('%PDF-')) {
-    return { valid: false, error: 'attachment.content must be text — PDF はブラウザ側でテキストに変換してから送信してください' };
+    return { valid: false, error: 'PDF はテキストに変換してから送信してください。' };
   }
   return { valid: true };
 }
@@ -429,9 +429,9 @@ async function requireProject(
   need: keyof typeof CAN
 ): Promise<{ access: ProjectAccess } | { refused: APIGatewayProxyResultV2 }> {
   const access = await projectAccess({ userId: auth.userId, group: auth.membership.group }, projectId);
-  if (!access) return { refused: jsonResponse(404, { error: 'Project not found' }) };
+  if (!access) return { refused: jsonResponse(404, { error: 'プロジェクトが見つかりません。' }) };
   if (!CAN[need](access.role)) {
-    return { refused: jsonResponse(403, { error: need === 'read' ? 'Project not found' : 'この操作を行う権限がありません' }) };
+    return { refused: jsonResponse(403, { error: need === 'read' ? 'プロジェクトが見つかりません。' : 'この操作を行う権限がありません。' }) };
   }
   return { access };
 }
@@ -508,17 +508,17 @@ export const handler = async (
       const auth = await authenticateRequest(authorization);
       const body = getBodyString(event);
       let input: { prompt?: unknown };
-      try { input = JSON.parse(body); } catch { return jsonResponse(400, { error: 'Invalid JSON body' }); }
+      try { input = JSON.parse(body); } catch { return jsonResponse(400, { error: 'リクエストの形式が正しくありません。' }); }
       if (!input.prompt || typeof input.prompt !== 'string') {
-        return jsonResponse(400, { error: 'prompt is required and must be a string' });
+        return jsonResponse(400, { error: '依頼文を入力してください。' });
       }
       if (input.prompt.length > MAX_PROMPT_LENGTH) {
-        return jsonResponse(400, { error: `prompt must be ${MAX_PROMPT_LENGTH} characters or fewer` });
+        return jsonResponse(400, { error: `依頼文は${MAX_PROMPT_LENGTH.toLocaleString()}文字までです。` });
       }
       const rate = await checkRateLimit(auth.userId, 'haiku');
       if (rate.known === false) return ledgerUnavailable();
       if (!rate.allowed) {
-        return jsonResponse(429, { error: 'Rate limit exceeded', retryAfter: rate.retryAfter }, { 'Retry-After': String(rate.retryAfter) });
+        return jsonResponse(429, { error: 'リクエストが多すぎます。しばらく待ってから、もう一度お試しください。', retryAfter: rate.retryAfter }, { 'Retry-After': String(rate.retryAfter) });
       }
       await applyInputGuardrail(input.prompt);
       const { refinePrompt } = await import('../orchestration/edit/refine-prompt.js');
@@ -555,10 +555,10 @@ export const handler = async (
       const auth = await authenticateRequest(authorization);
       const body = getBodyString(event);
       let input: { prompt: string; preset?: string; model?: string; image?: string; projectId?: string; outputKind?: string; approvedPlan?: string; effort?: string; attachment?: { name: string; content: string } };
-      try { input = JSON.parse(body); } catch { return jsonResponse(400, { error: 'Invalid JSON body' }); }
-      if (!input.prompt || typeof input.prompt !== 'string') return jsonResponse(400, { error: 'prompt is required and must be a string' });
-      if (input.prompt.length > MAX_PROMPT_LENGTH) return jsonResponse(400, { error: `prompt must be ${MAX_PROMPT_LENGTH} characters or fewer` });
-      if (input.model && !['auto', 'sonnet', 'opus', 'haiku'].includes(input.model)) return jsonResponse(400, { error: 'model must be "auto", "sonnet", "opus", or "haiku"' });
+      try { input = JSON.parse(body); } catch { return jsonResponse(400, { error: 'リクエストの形式が正しくありません。' }); }
+      if (!input.prompt || typeof input.prompt !== 'string') return jsonResponse(400, { error: '依頼文を入力してください。' });
+      if (input.prompt.length > MAX_PROMPT_LENGTH) return jsonResponse(400, { error: `依頼文は${MAX_PROMPT_LENGTH.toLocaleString()}文字までです。` });
+      if (input.model && !['auto', 'sonnet', 'opus', 'haiku'].includes(input.model)) return jsonResponse(400, { error: 'モデルの指定が正しくありません。' });
       /**
        * How much this build may spend.
        *
@@ -568,12 +568,12 @@ export const handler = async (
        * would be billed for it without anything saying so. A 400 is visible.
        */
       if (input.effort !== undefined && !isEffort(input.effort)) {
-        return jsonResponse(400, { error: 'effort must be "draft" or "checked"' });
+        return jsonResponse(400, { error: 'モードの指定が正しくありません。' });
       }
       // The plan travels as a design specification; it is model input, not markup,
       // so cap it rather than letting an arbitrary payload through to the job.
       if (input.approvedPlan !== undefined && (typeof input.approvedPlan !== 'string' || input.approvedPlan.length > 120_000)) {
-        return jsonResponse(400, { error: 'approvedPlan must be a string of 120,000 characters or fewer' });
+        return jsonResponse(400, { error: '承認した設計は120,000文字までです。' });
       }
       /*
        * A run against a shared project is the caller's run on the owner's project:
@@ -607,7 +607,7 @@ export const handler = async (
       }
       const rateResult = await checkRateLimit(auth.userId, input.model || 'sonnet');
       if (rateResult.known === false) return ledgerUnavailable();
-      if (!rateResult.allowed) return jsonResponse(429, { error: 'Rate limit exceeded', retryAfter: rateResult.retryAfter }, { 'Retry-After': String(rateResult.retryAfter) });
+      if (!rateResult.allowed) return jsonResponse(429, { error: 'リクエストが多すぎます。しばらく待ってから、もう一度お試しください。', retryAfter: rateResult.retryAfter }, { 'Retry-After': String(rateResult.retryAfter) });
       await applyInputGuardrail(input.prompt);
       const usageResult = await checkUsageLimit(auth.userId, auth.membership.group);
       if (!usageResult.known) return ledgerUnavailable();
@@ -633,7 +633,7 @@ export const handler = async (
           jobId, (input as { images?: string[] }).images);
         if (input.approvedPlan) planForPayload = await uploadPlanIfNeeded(jobId, input.approvedPlan);
       } catch (e) {
-        await updateJobStatus(jobId, 'failed', undefined, 'S3 upload failed');
+        await updateJobStatus(jobId, 'failed', undefined, '依頼を保存できませんでした。しばらく待ってから、もう一度お試しください。');
         throw e;
       }
       const jobPayload = {
@@ -657,12 +657,12 @@ export const handler = async (
       const auth = await authenticateRequest(authorization);
       const body = getBodyString(event);
       let input: { prompt?: string; preset?: string; model?: string; outputKind?: string; html?: string; projectId?: string; image?: string; images?: string[]; imageCaptions?: string[]; attachment?: { name: string; content: string }; revision?: { spec?: unknown; plan?: unknown; prompt?: unknown } };
-      try { input = JSON.parse(body); } catch { return jsonResponse(400, { error: 'Invalid JSON body' }); }
-      if (!input.prompt || typeof input.prompt !== 'string') return jsonResponse(400, { error: 'prompt is required and must be a string' });
-      if (input.prompt.length > MAX_PROMPT_LENGTH) return jsonResponse(400, { error: `prompt must be ${MAX_PROMPT_LENGTH} characters or fewer` });
-      if (input.model && !['auto', 'sonnet', 'opus', 'haiku'].includes(input.model)) return jsonResponse(400, { error: 'model must be "auto", "sonnet", "opus", or "haiku"' });
+      try { input = JSON.parse(body); } catch { return jsonResponse(400, { error: 'リクエストの形式が正しくありません。' }); }
+      if (!input.prompt || typeof input.prompt !== 'string') return jsonResponse(400, { error: '依頼文を入力してください。' });
+      if (input.prompt.length > MAX_PROMPT_LENGTH) return jsonResponse(400, { error: `依頼文は${MAX_PROMPT_LENGTH.toLocaleString()}文字までです。` });
+      if (input.model && !['auto', 'sonnet', 'opus', 'haiku'].includes(input.model)) return jsonResponse(400, { error: 'モデルの指定が正しくありません。' });
       if (input.html && (typeof input.html !== 'string' || input.html.length > MAX_DOCUMENT_CHARS)) {
-        return jsonResponse(400, { error: `html must be a string of ${MAX_DOCUMENT_CHARS} characters or fewer` });
+        return jsonResponse(400, { error: `文書は${MAX_DOCUMENT_CHARS.toLocaleString()}文字までです。` });
       }
       if (input.image) {
         const v = validateImage(input.image);
@@ -685,13 +685,13 @@ export const handler = async (
         const r = input.revision;
         if (!r || typeof r.spec !== 'string' || typeof r.plan !== 'string' || typeof r.prompt !== 'string'
           || r.spec.length > 120_000 || r.plan.length > 20_000 || r.prompt.length > MAX_PROMPT_LENGTH) {
-          return jsonResponse(400, { error: 'revision must carry spec (≤120,000), plan (≤20,000) and prompt strings' });
+          return jsonResponse(400, { error: '手直しする提案の内容が正しくありません。' });
         }
-        if (input.html) return jsonResponse(400, { error: 'revision is for a proposal without a document' });
+        if (input.html) return jsonResponse(400, { error: '手直しできるのは、まだ文書のない提案だけです。' });
       }
       const rateResult = await checkRateLimit(auth.userId, input.model || 'sonnet');
       if (rateResult.known === false) return ledgerUnavailable();
-      if (!rateResult.allowed) return jsonResponse(429, { error: 'Rate limit exceeded', retryAfter: rateResult.retryAfter }, { 'Retry-After': String(rateResult.retryAfter) });
+      if (!rateResult.allowed) return jsonResponse(429, { error: 'リクエストが多すぎます。しばらく待ってから、もう一度お試しください。', retryAfter: rateResult.retryAfter }, { 'Retry-After': String(rateResult.retryAfter) });
       await applyInputGuardrail(input.prompt);
       const usageResult = await checkUsageLimit(auth.userId, auth.membership.group);
       if (!usageResult.known) return ledgerUnavailable();
@@ -713,7 +713,7 @@ export const handler = async (
         planImagesPayload = await uploadContentImages(
           jobId, (input as { images?: string[] }).images);
       } catch (e) {
-        await updateJobStatus(jobId, 'failed', undefined, 'S3 upload failed');
+        await updateJobStatus(jobId, 'failed', undefined, '依頼を保存できませんでした。しばらく待ってから、もう一度お試しください。');
         throw e;
       }
       const invokeErr = await dispatchJob(jobId, {
@@ -744,17 +744,17 @@ export const handler = async (
       const auth = await authenticateRequest(authorization);
       const body = getBodyString(event);
       let input: { html?: string; currentHtml?: string; instruction?: string; prompt?: string; preset?: string; model?: string; selector?: string; image?: string; images?: string[]; imageCaptions?: string[]; projectId?: string; effort?: string; attachment?: { name: string; content: string } };
-      try { input = JSON.parse(body); } catch { return jsonResponse(400, { error: 'Invalid JSON body' }); }
+      try { input = JSON.parse(body); } catch { return jsonResponse(400, { error: 'リクエストの形式が正しくありません。' }); }
       const html = input.html || input.currentHtml;
       const instruction = input.instruction || input.prompt;
-      if (!html || typeof html !== 'string') return jsonResponse(400, { error: 'html is required and must be a string' });
-      if (html.length > MAX_DOCUMENT_CHARS) return jsonResponse(400, { error: `html must be ${MAX_DOCUMENT_CHARS} characters or fewer` });
-      if (!instruction || typeof instruction !== 'string') return jsonResponse(400, { error: 'instruction is required and must be a string' });
-      if (instruction.length > MAX_PROMPT_LENGTH) return jsonResponse(400, { error: `instruction must be ${MAX_PROMPT_LENGTH} characters or fewer` });
-      if (input.model && !['auto', 'sonnet', 'opus', 'haiku'].includes(input.model)) return jsonResponse(400, { error: 'model must be "auto", "sonnet", "opus", or "haiku"' });
+      if (!html || typeof html !== 'string') return jsonResponse(400, { error: '文書がありません。' });
+      if (html.length > MAX_DOCUMENT_CHARS) return jsonResponse(400, { error: `文書は${MAX_DOCUMENT_CHARS.toLocaleString()}文字までです。` });
+      if (!instruction || typeof instruction !== 'string') return jsonResponse(400, { error: '修正の指示を入力してください。' });
+      if (instruction.length > MAX_PROMPT_LENGTH) return jsonResponse(400, { error: `修正の指示は${MAX_PROMPT_LENGTH.toLocaleString()}文字までです。` });
+      if (input.model && !['auto', 'sonnet', 'opus', 'haiku'].includes(input.model)) return jsonResponse(400, { error: 'モデルの指定が正しくありません。' });
       // The mode applies to edits too — see the note on the modifyUI option.
       if (input.effort !== undefined && !isEffort(input.effort)) {
-        return jsonResponse(400, { error: 'effort must be "draft" or "checked"' });
+        return jsonResponse(400, { error: 'モードの指定が正しくありません。' });
       }
       /*
        * A run against a shared project is the caller's run on the owner's project:
@@ -802,12 +802,12 @@ export const handler = async (
        */
       let finalInstruction = instruction;
       if (input.selector && typeof input.selector === 'string') {
-        if (input.selector.length > 200) return jsonResponse(400, { error: 'selector must be 200 characters or fewer' });
+        if (input.selector.length > 200) return jsonResponse(400, { error: '選択した要素の指定が長すぎます。' });
         finalInstruction = `Target element: ${input.selector}. ${finalInstruction}`;
       }
       const rateResult = await checkRateLimit(auth.userId, input.model || 'sonnet');
       if (rateResult.known === false) return ledgerUnavailable();
-      if (!rateResult.allowed) return jsonResponse(429, { error: 'Rate limit exceeded', retryAfter: rateResult.retryAfter });
+      if (!rateResult.allowed) return jsonResponse(429, { error: 'リクエストが多すぎます。しばらく待ってから、もう一度お試しください。', retryAfter: rateResult.retryAfter });
       await applyInputGuardrail(finalInstruction);
       const usageResult = await checkUsageLimit(auth.userId, auth.membership.group);
       if (!usageResult.known) return ledgerUnavailable();
@@ -827,7 +827,7 @@ export const handler = async (
         // valid — it never left the browser.
         modifyImagePayload = await uploadImageIfNeeded(jobId, input.image);
       } catch (e) {
-        await updateJobStatus(jobId, 'failed', undefined, 'S3 upload failed');
+        await updateJobStatus(jobId, 'failed', undefined, '依頼を保存できませんでした。しばらく待ってから、もう一度お試しください。');
         throw e;
       }
       const jobPayload = {
@@ -889,14 +889,14 @@ export const handler = async (
     if (method === 'POST' && path === '/versions') {
       const auth = await authenticateRequest(authorization);
       const body = getBodyString(event);
-      if (body.length > MAX_BODY_SIZE) return jsonResponse(413, { error: 'Request body too large' });
+      if (body.length > MAX_BODY_SIZE) return jsonResponse(413, { error: '送信サイズが大きすぎます。' });
       let input: { html: string; projectId?: string; note?: string; preset?: string; score?: number };
-      try { input = JSON.parse(body); } catch { return jsonResponse(400, { error: 'Invalid JSON body' }); }
+      try { input = JSON.parse(body); } catch { return jsonResponse(400, { error: 'リクエストの形式が正しくありません。' }); }
       if (!input.html || typeof input.html !== 'string') {
-        return jsonResponse(400, { error: 'html is required' });
+        return jsonResponse(400, { error: '文書がありません。' });
       }
       if (input.html.length > MAX_EDITED_HTML) {
-        return jsonResponse(413, { error: `html must be ${MAX_EDITED_HTML} characters or fewer` });
+        return jsonResponse(413, { error: `文書は${MAX_EDITED_HTML.toLocaleString()}文字までです。` });
       }
       // Into the project's history, under its owner, naming who made the edit.
       let partition = auth.userId;
@@ -934,7 +934,7 @@ export const handler = async (
     if (method === 'GET' && path.startsWith('/versions/')) {
       const auth = await authenticateRequest(authorization);
       const versionId = decodeURIComponent(path.replace('/versions/', ''));
-      if (!versionId) return jsonResponse(400, { error: 'versionId is required' });
+      if (!versionId) return jsonResponse(400, { error: 'バージョンが指定されていません。' });
       // A shared project's versions are in its owner's partition; `projectId` says whose.
       const forProject = (event.queryStringParameters || {}).projectId;
       let partition = auth.userId;
@@ -945,8 +945,8 @@ export const handler = async (
       }
       const version = await getVersion(partition, versionId);
       // Only that project's: the owner's other versions are not the collaborator's to read.
-      if (version && forProject && version.projectId !== forProject) return jsonResponse(404, { error: 'Version not found' });
-      if (!version) return jsonResponse(404, { error: 'Version not found' });
+      if (version && forProject && version.projectId !== forProject) return jsonResponse(404, { error: 'バージョンが見つかりません。' });
+      if (!version) return jsonResponse(404, { error: 'バージョンが見つかりません。' });
       return jsonResponse(200, version);
     }
 
@@ -966,9 +966,9 @@ export const handler = async (
       const auth = await authenticateRequest(authorization);
       const body = getBodyString(event);
       let input: { html?: string };
-      try { input = JSON.parse(body); } catch { return jsonResponse(400, { error: 'Invalid JSON body' }); }
-      if (!input.html || typeof input.html !== 'string') return jsonResponse(400, { error: 'html is required' });
-      if (input.html.length > 2 * 1024 * 1024) return jsonResponse(400, { error: 'html exceeds the 2MB limit' });
+      try { input = JSON.parse(body); } catch { return jsonResponse(400, { error: 'リクエストの形式が正しくありません。' }); }
+      if (!input.html || typeof input.html !== 'string') return jsonResponse(400, { error: '文書がありません。' });
+      if (input.html.length > 2 * 1024 * 1024) return jsonResponse(400, { error: '文書が大きすぎます（2MBまで）。' });
 
       /*
        * Rated like the cheapest model, though it spends none.
@@ -983,7 +983,7 @@ export const handler = async (
       const rate = await checkRateLimit(auth.userId, 'haiku');
       if (rate.known === false) return ledgerUnavailable();
       if (!rate.allowed) {
-        return jsonResponse(429, { error: 'Rate limit exceeded', retryAfter: rate.retryAfter }, { 'Retry-After': String(rate.retryAfter) });
+        return jsonResponse(429, { error: 'リクエストが多すぎます。しばらく待ってから、もう一度お試しください。', retryAfter: rate.retryAfter }, { 'Retry-After': String(rate.retryAfter) });
       }
 
       const siteId = crypto.randomUUID();
@@ -1082,7 +1082,7 @@ export const handler = async (
 
     if (method === 'GET' && path === '/admin/usage') {
       const auth = await authenticateRequest(authorization);
-      if (!canOpenAdminPanel(auth.membership)) return jsonResponse(403, { error: 'Admin access required' });
+      if (!canOpenAdminPanel(auth.membership)) return jsonResponse(403, { error: 'この操作ができるのは管理者だけです。' });
       /*
        * With the group each account belongs to, which every screen that lists
        * people now shows. Keyed by the Cognito username — the email for this
@@ -1103,13 +1103,13 @@ export const handler = async (
       const from = q.from ?? getCurrentMonthKey();
       const to = q.to ?? from;
       if (!isMonthKey(from) || !isMonthKey(to)) {
-        return jsonResponse(400, { error: 'from と to は YYYY-MM 形式で指定してください' });
+        return jsonResponse(400, { error: '期間は年と月（例: 2026-09）で指定してください。' });
       }
       if (to < from) {
-        return jsonResponse(400, { error: '終了月は開始月より前にできません' });
+        return jsonResponse(400, { error: '終了月は開始月以降にしてください。' });
       }
       if (monthsBetween(from, to).length > 24) {
-        return jsonResponse(400, { error: '期間は24ヶ月までです' });
+        return jsonResponse(400, { error: '期間は24か月までです。' });
       }
 
       const placements = await groupByUsername();
@@ -1137,11 +1137,11 @@ export const handler = async (
 
     if (method === 'POST' && path === '/admin/usage/limit') {
       const auth = await authenticateRequest(authorization);
-      if (!canOpenAdminPanel(auth.membership)) return jsonResponse(403, { error: 'Admin access required' });
+      if (!canOpenAdminPanel(auth.membership)) return jsonResponse(403, { error: 'この操作ができるのは管理者だけです。' });
       const body = getBodyString(event);
       let input: { userId: string; limit: number };
-      try { input = JSON.parse(body); } catch { return jsonResponse(400, { error: 'Invalid JSON body' }); }
-      if (!input.userId || typeof input.userId !== 'string') return jsonResponse(400, { error: 'userId is required' });
+      try { input = JSON.parse(body); } catch { return jsonResponse(400, { error: 'リクエストの形式が正しくありません。' }); }
+      if (!input.userId || typeof input.userId !== 'string') return jsonResponse(400, { error: 'ユーザーが指定されていません。' });
       /*
        * A group's administrator may set the budgets of their own members.
        *
@@ -1152,9 +1152,9 @@ export const handler = async (
        * account's.
        */
       if (!(await mayActOnUser(auth, input.userId))) {
-        return jsonResponse(403, { error: '自分のグループのユーザーのみ設定できます' });
+        return jsonResponse(403, { error: '設定できるのは自分のグループのユーザーだけです。' });
       }
-      if (typeof input.limit !== 'number' || !Number.isInteger(input.limit) || (input.limit !== -1 && input.limit < 1)) return jsonResponse(400, { error: 'limit must be a positive integer or -1 (unlimited)' });
+      if (typeof input.limit !== 'number' || !Number.isInteger(input.limit) || (input.limit !== -1 && input.limit < 1)) return jsonResponse(400, { error: '予算の値が正しくありません。' });
 
       /*
        * What a group administrator may set, as opposed to whose budget.
@@ -1174,14 +1174,14 @@ export const handler = async (
        */
       if (!isSuperAdmin(auth.membership)) {
         if (input.limit === -1) {
-          return jsonResponse(403, { error: '無制限に設定できるのはアカウント管理者のみです' });
+          return jsonResponse(403, { error: '予算を無制限にできるのはアカウント管理者だけです。' });
         }
         const ceiling = auth.membership.group ? await getGroupLimit(auth.membership.group) : -1;
         if (ceiling === null) {
-          return jsonResponse(503, { error: 'グループの予算を読み取れませんでした。しばらくしてからお試しください' });
+          return jsonResponse(503, { error: 'グループの予算を読み取れませんでした。しばらく待ってから、もう一度お試しください。' });
         }
         if (ceiling !== -1 && input.limit > ceiling) {
-          return jsonResponse(400, { error: 'グループ全体の予算を超える金額は設定できません' });
+          return jsonResponse(400, { error: 'グループ全体の予算を超える金額は設定できません。' });
         }
       }
 
@@ -1200,13 +1200,13 @@ export const handler = async (
      */
     if (method === 'POST' && path === '/admin/usage/model-allowance') {
       const auth = await authenticateRequest(authorization);
-      if (!canOpenAdminPanel(auth.membership)) return jsonResponse(403, { error: 'Admin access required' });
+      if (!canOpenAdminPanel(auth.membership)) return jsonResponse(403, { error: 'この操作ができるのは管理者だけです。' });
       const body = getBodyString(event);
       let input: { userId: string; models: unknown };
-      try { input = JSON.parse(body); } catch { return jsonResponse(400, { error: 'Invalid JSON body' }); }
-      if (!input.userId || typeof input.userId !== 'string') return jsonResponse(400, { error: 'userId is required' });
+      try { input = JSON.parse(body); } catch { return jsonResponse(400, { error: 'リクエストの形式が正しくありません。' }); }
+      if (!input.userId || typeof input.userId !== 'string') return jsonResponse(400, { error: 'ユーザーが指定されていません。' });
       if (!(await mayActOnUser(auth, input.userId))) {
-        return jsonResponse(403, { error: 'このユーザーはあなたのグループに属していません' });
+        return jsonResponse(403, { error: 'このユーザーはあなたのグループに属していません。' });
       }
       const models = normalizeModelSet(input.models);
       /**
@@ -1217,7 +1217,7 @@ export const handler = async (
        */
       if (!models) {
         return jsonResponse(400, {
-          error: 'models must be a subset of haiku, sonnet, opus, auto and include at least one of haiku, sonnet, opus',
+          error: '使えるモデルを1つ以上選んでください。',
         });
       }
       await setUserAllowedModels(input.userId, models);
@@ -1234,19 +1234,19 @@ export const handler = async (
        * they are not the one paying it.
        */
       if (!isSuperAdmin(auth.membership)) {
-        return jsonResponse(403, { error: 'この操作はアカウント管理者のみが実行できます' });
+        return jsonResponse(403, { error: 'この操作ができるのはアカウント管理者だけです。' });
       }
       const body = getBodyString(event);
       let input: { group: string; limit: number };
-      try { input = JSON.parse(body); } catch { return jsonResponse(400, { error: 'Invalid JSON body' }); }
-      if (!input.group || typeof input.group !== 'string') return jsonResponse(400, { error: 'group is required' });
+      try { input = JSON.parse(body); } catch { return jsonResponse(400, { error: 'リクエストの形式が正しくありません。' }); }
+      if (!input.group || typeof input.group !== 'string') return jsonResponse(400, { error: 'グループが指定されていません。' });
       if (typeof input.limit !== 'number' || !Number.isInteger(input.limit) || (input.limit !== -1 && input.limit < 1)) {
-        return jsonResponse(400, { error: 'limit must be a positive integer or -1 (unlimited)' });
+        return jsonResponse(400, { error: '予算の値が正しくありません。' });
       }
       // The group has to exist. A budget on a name nobody belongs to is a row
       // that never binds anything and never reports anything.
       if (!(await listUserGroups()).some((g) => g.name === input.group)) {
-        return jsonResponse(404, { error: 'そのグループはありません' });
+        return jsonResponse(404, { error: 'そのグループは見つかりません。' });
       }
       await setGroupLimit(input.group, input.limit);
       logger.info('Admin set a group budget', { adminId: auth.userId, group: input.group, limit: input.limit });
@@ -1255,9 +1255,9 @@ export const handler = async (
 
     if (method === 'GET' && path.startsWith('/admin/usage/')) {
       const auth = await authenticateRequest(authorization);
-      if (!canOpenAdminPanel(auth.membership)) return jsonResponse(403, { error: 'Admin access required' });
+      if (!canOpenAdminPanel(auth.membership)) return jsonResponse(403, { error: 'この操作ができるのは管理者だけです。' });
       const targetUserId = decodeURIComponent(path.replace('/admin/usage/', ''));
-      if (!(await mayActOnUser(auth, targetUserId))) return jsonResponse(403, { error: 'Forbidden' });
+      if (!(await mayActOnUser(auth, targetUserId))) return jsonResponse(403, { error: 'この操作を行う権限がありません。' });
       const history = await getUsageHistory(targetUserId);
       return jsonResponse(200, { userId: targetUserId, history });
     }
@@ -1280,9 +1280,9 @@ export const handler = async (
     const adminProjects = path.match(/^\/admin\/projects\/([^/]+)$/);
     if (method === 'GET' && adminProjects) {
       const auth = await authenticateRequest(authorization);
-      if (!canOpenAdminPanel(auth.membership)) return jsonResponse(403, { error: 'Admin access required' });
+      if (!canOpenAdminPanel(auth.membership)) return jsonResponse(403, { error: 'この操作ができるのは管理者だけです。' });
       const targetUserId = decodeURIComponent(adminProjects[1]);
-      if (!(await mayActOnUser(auth, targetUserId))) return jsonResponse(403, { error: 'Forbidden' });
+      if (!(await mayActOnUser(auth, targetUserId))) return jsonResponse(403, { error: 'この操作を行う権限がありません。' });
       const projects = await listProjects(targetUserId);
       return jsonResponse(200, {
         userId: targetUserId,
@@ -1300,9 +1300,9 @@ export const handler = async (
     const adminVersions = path.match(/^\/admin\/projects\/([^/]+)\/([^/]+)\/versions$/);
     if (method === 'GET' && adminVersions) {
       const auth = await authenticateRequest(authorization);
-      if (!canOpenAdminPanel(auth.membership)) return jsonResponse(403, { error: 'Admin access required' });
+      if (!canOpenAdminPanel(auth.membership)) return jsonResponse(403, { error: 'この操作ができるのは管理者だけです。' });
       const targetUserId = decodeURIComponent(adminVersions[1]);
-      if (!(await mayActOnUser(auth, targetUserId))) return jsonResponse(403, { error: 'Forbidden' });
+      if (!(await mayActOnUser(auth, targetUserId))) return jsonResponse(403, { error: 'この操作を行う権限がありません。' });
       const targetProjectId = decodeURIComponent(adminVersions[2]);
       // Metadata only, and prompts already cleaned of the internal scaffolding
       // older records embedded — `getVersionHistory` does both.
@@ -1313,12 +1313,12 @@ export const handler = async (
     const adminVersion = path.match(/^\/admin\/versions\/([^/]+)\/([^/]+)$/);
     if (method === 'GET' && adminVersion) {
       const auth = await authenticateRequest(authorization);
-      if (!canOpenAdminPanel(auth.membership)) return jsonResponse(403, { error: 'Admin access required' });
+      if (!canOpenAdminPanel(auth.membership)) return jsonResponse(403, { error: 'この操作ができるのは管理者だけです。' });
       const targetUserId = decodeURIComponent(adminVersion[1]);
-      if (!(await mayActOnUser(auth, targetUserId))) return jsonResponse(403, { error: 'Forbidden' });
+      if (!(await mayActOnUser(auth, targetUserId))) return jsonResponse(403, { error: 'この操作を行う権限がありません。' });
       const versionId = decodeURIComponent(adminVersion[2]);
       const version = await getVersion(targetUserId, versionId);
-      if (!version) return jsonResponse(404, { error: 'Version not found' });
+      if (!version) return jsonResponse(404, { error: 'バージョンが見つかりません。' });
       return jsonResponse(200, version);
     }
 
@@ -1329,7 +1329,7 @@ export const handler = async (
      */
     if (method === 'GET' && path === '/admin/groups') {
       const auth = await authenticateRequest(authorization);
-      if (!canOpenAdminPanel(auth.membership)) return jsonResponse(403, { error: 'Admin access required' });
+      if (!canOpenAdminPanel(auth.membership)) return jsonResponse(403, { error: 'この操作ができるのは管理者だけです。' });
       /*
        * Readable by a group-admin too, and narrowed to their own. The panel
        * needs the group's name and who administers it to say whose panel this
@@ -1366,18 +1366,18 @@ export const handler = async (
     if (method === 'POST' && path === '/admin/groups') {
       const auth = await authenticateRequest(authorization);
       if (!isSuperAdmin(auth.membership)) {
-        return jsonResponse(403, { error: 'この操作はアカウント管理者のみが実行できます' });
+        return jsonResponse(403, { error: 'この操作ができるのはアカウント管理者だけです。' });
       }
       const body = getBodyString(event);
       let input: { name?: unknown; description?: unknown };
-      try { input = JSON.parse(body); } catch { return jsonResponse(400, { error: 'Invalid JSON body' }); }
+      try { input = JSON.parse(body); } catch { return jsonResponse(400, { error: 'リクエストの形式が正しくありません。' }); }
       if (!isValidGroupName(input.name)) {
-        return jsonResponse(400, { error: 'グループ名は英数字で始まる63文字以内（英数字・空白・_ . -）で入力してください' });
+        return jsonResponse(400, { error: 'グループ名は英数字で始まる63文字以内（英数字・空白・_ . -）で入力してください。' });
       }
       const name = input.name.trim();
       const existing = await listUserGroups();
       if (existing.some((g) => g.name.toLowerCase() === name.toLowerCase())) {
-        return jsonResponse(409, { error: 'その名前のグループはすでに存在します' });
+        return jsonResponse(409, { error: 'その名前のグループはすでにあります。' });
       }
       await createUserGroup(name, typeof input.description === 'string' ? input.description.slice(0, 200) : undefined);
       logger.info('Admin created a user group', { adminId: auth.userId, group: name });
@@ -1388,7 +1388,7 @@ export const handler = async (
     if (method === 'DELETE' && groupPath) {
       const auth = await authenticateRequest(authorization);
       if (!isSuperAdmin(auth.membership)) {
-        return jsonResponse(403, { error: 'この操作はアカウント管理者のみが実行できます' });
+        return jsonResponse(403, { error: 'この操作ができるのはアカウント管理者だけです。' });
       }
       const name = decodeURIComponent(groupPath[1]);
       /*
@@ -1415,18 +1415,18 @@ export const handler = async (
     if (method === 'POST' && path === '/admin/groups/membership') {
       const auth = await authenticateRequest(authorization);
       if (!isSuperAdmin(auth.membership)) {
-        return jsonResponse(403, { error: 'この操作はアカウント管理者のみが実行できます' });
+        return jsonResponse(403, { error: 'この操作ができるのはアカウント管理者だけです。' });
       }
       const body = getBodyString(event);
       let input: { username?: unknown; group?: unknown };
-      try { input = JSON.parse(body); } catch { return jsonResponse(400, { error: 'Invalid JSON body' }); }
+      try { input = JSON.parse(body); } catch { return jsonResponse(400, { error: 'リクエストの形式が正しくありません。' }); }
       if (!input.username || typeof input.username !== 'string') {
-        return jsonResponse(400, { error: 'username is required' });
+        return jsonResponse(400, { error: 'ユーザーが指定されていません。' });
       }
       // `null` is "belongs to no group", which is a real thing to ask for and
       // the only way to take somebody out of one.
       if (input.group !== null && !isValidGroupName(input.group)) {
-        return jsonResponse(400, { error: 'group must be a valid group name or null' });
+        return jsonResponse(400, { error: 'グループの指定が正しくありません。' });
       }
       /*
        * 409, not 500. Removing a group's administrator while other members
@@ -1449,14 +1449,14 @@ export const handler = async (
     if (method === 'POST' && path === '/admin/groups/admin') {
       const auth = await authenticateRequest(authorization);
       if (!isSuperAdmin(auth.membership)) {
-        return jsonResponse(403, { error: 'この操作はアカウント管理者のみが実行できます' });
+        return jsonResponse(403, { error: 'この操作ができるのはアカウント管理者だけです。' });
       }
       const body = getBodyString(event);
       let input: { group?: unknown; username?: unknown };
-      try { input = JSON.parse(body); } catch { return jsonResponse(400, { error: 'Invalid JSON body' }); }
-      if (!isValidGroupName(input.group)) return jsonResponse(400, { error: 'group is required' });
+      try { input = JSON.parse(body); } catch { return jsonResponse(400, { error: 'リクエストの形式が正しくありません。' }); }
+      if (!isValidGroupName(input.group)) return jsonResponse(400, { error: 'グループが指定されていません。' });
       if (input.username !== null && (!input.username || typeof input.username !== 'string')) {
-        return jsonResponse(400, { error: 'username must be a string or null' });
+        return jsonResponse(400, { error: 'ユーザーの指定が正しくありません。' });
       }
       /*
        * One appointment, not an add and a remove the caller sequences. "One
@@ -1474,7 +1474,7 @@ export const handler = async (
     // GET /admin/users — Cognitoユーザー一覧
     if (method === 'GET' && path === '/admin/users') {
       const auth = await authenticateRequest(authorization);
-      if (!canOpenAdminPanel(auth.membership)) return jsonResponse(403, { error: 'Admin access required' });
+      if (!canOpenAdminPanel(auth.membership)) return jsonResponse(403, { error: 'この操作ができるのは管理者だけです。' });
       const allCognitoUsers: any[] = [];
       let cognitoPaginationToken: string | undefined;
       do {
@@ -1529,13 +1529,13 @@ export const handler = async (
     if (method === 'POST' && path === '/admin/users') {
       const auth = await authenticateRequest(authorization);
       if (!isSuperAdmin(auth.membership)) {
-        return jsonResponse(403, { error: 'この操作はアカウント管理者のみが実行できます' });
+        return jsonResponse(403, { error: 'この操作ができるのはアカウント管理者だけです。' });
       }
       const body = getBodyString(event);
       let input: { email?: string; temporaryPassword?: string; displayName?: string };
-      try { input = JSON.parse(body); } catch { return jsonResponse(400, { error: 'Invalid JSON' }); }
-      if (!input.email || typeof input.email !== 'string') return jsonResponse(400, { error: 'email is required' });
-      if (!input.temporaryPassword || typeof input.temporaryPassword !== 'string') return jsonResponse(400, { error: 'temporaryPassword is required' });
+      try { input = JSON.parse(body); } catch { return jsonResponse(400, { error: 'リクエストの形式が正しくありません。' }); }
+      if (!input.email || typeof input.email !== 'string') return jsonResponse(400, { error: 'メールアドレスを入力してください。' });
+      if (!input.temporaryPassword || typeof input.temporaryPassword !== 'string') return jsonResponse(400, { error: '仮パスワードを入力してください。' });
       /*
        * Required at creation, rather than defaulted from the address.
        *
@@ -1546,7 +1546,7 @@ export const handler = async (
        * decided by exactly one person.
        */
       if (!isValidDisplayName(input.displayName)) {
-        return jsonResponse(400, { error: `ユーザー名は1〜${DISPLAY_NAME_MAX}文字で入力してください` });
+        return jsonResponse(400, { error: `ユーザー名は1〜${DISPLAY_NAME_MAX}文字で入力してください。` });
       }
       const createCmd = new AdminCreateUserCommand({
         UserPoolId: USER_POOL_ID,
@@ -1565,12 +1565,12 @@ export const handler = async (
         createRes = await cognitoClient.send(createCmd);
       } catch (err: any) {
         const code: string = err.name || err.__type || '';
-        if (code === 'UsernameExistsException') return jsonResponse(409, { error: 'このメールアドレスはすでに登録されています' });
-        if (code === 'InvalidPasswordException') return jsonResponse(400, { error: `パスワードが要件を満たしていません: ${err.message}` });
-        if (code === 'InvalidParameterException') return jsonResponse(400, { error: err.message || '入力値が不正です' });
-        if (code === 'TooManyRequestsException') return jsonResponse(429, { error: 'リクエストが多すぎます。しばらくしてから再試行してください' });
+        if (code === 'UsernameExistsException') return jsonResponse(409, { error: 'このメールアドレスはすでに登録されています。' });
+        if (code === 'InvalidPasswordException') return jsonResponse(400, { error: '仮パスワードが条件を満たしていません。12文字以上で、大文字・小文字・数字・記号をそれぞれ1文字以上含めてください。' });
+        if (code === 'InvalidParameterException') return jsonResponse(400, { error: '入力内容が正しくありません。メールアドレスの形式を確認してください。' });
+        if (code === 'TooManyRequestsException') return jsonResponse(429, { error: 'リクエストが多すぎます。しばらく待ってから、もう一度お試しください。' });
         logger.error('AdminCreateUser failed', { error: String(err), code });
-        return jsonResponse(500, { error: `ユーザー作成に失敗しました: ${err.message || code}` });
+        return jsonResponse(500, { error: 'ユーザーを作成できませんでした。もう一度お試しください。' });
       }
       const user = createRes.User;
       logger.info('Admin created user', { adminId: auth.userId, newUserEmail: input.email });
@@ -1590,9 +1590,9 @@ export const handler = async (
     // PATCH /admin/users/:username — ユーザー有効/無効切り替え
     if (method === 'PATCH' && path.startsWith('/admin/users/')) {
       const auth = await authenticateRequest(authorization);
-      if (!canOpenAdminPanel(auth.membership)) return jsonResponse(403, { error: 'Admin access required' });
+      if (!canOpenAdminPanel(auth.membership)) return jsonResponse(403, { error: 'この操作ができるのは管理者だけです。' });
       const username = decodeURIComponent(path.replace('/admin/users/', ''));
-      if (!username) return jsonResponse(400, { error: 'username is required' });
+      if (!username) return jsonResponse(400, { error: 'ユーザーが指定されていません。' });
       /*
        * By Cognito username, which is the address — the same key the directory
        * listing above is filtered by, so a group-admin can only edit a row they
@@ -1600,11 +1600,11 @@ export const handler = async (
        */
       if (!isSuperAdmin(auth.membership)) {
         const mine = new Set(await membersOf(auth.membership.group ?? ''));
-        if (!mine.has(username)) return jsonResponse(403, { error: 'このユーザーはあなたのグループに属していません' });
+        if (!mine.has(username)) return jsonResponse(403, { error: 'このユーザーはあなたのグループに属していません。' });
       }
       const body = getBodyString(event);
       let input: { enabled?: boolean; displayName?: string };
-      try { input = JSON.parse(body); } catch { return jsonResponse(400, { error: 'Invalid JSON body' }); }
+      try { input = JSON.parse(body); } catch { return jsonResponse(400, { error: 'リクエストの形式が正しくありません。' }); }
 
       /*
        * One route, two edits, and exactly one of them per request.
@@ -1617,12 +1617,12 @@ export const handler = async (
       const wantsName = input.displayName !== undefined;
       const wantsEnabled = input.enabled !== undefined;
       if (wantsName === wantsEnabled) {
-        return jsonResponse(400, { error: 'enabled (boolean) または displayName のどちらか一方が必要です' });
+        return jsonResponse(400, { error: '変更する内容（有効・無効またはユーザー名）を指定してください。' });
       }
 
       if (wantsName) {
         if (!isValidDisplayName(input.displayName)) {
-          return jsonResponse(400, { error: `ユーザー名は1〜${DISPLAY_NAME_MAX}文字で入力してください` });
+          return jsonResponse(400, { error: `ユーザー名は1〜${DISPLAY_NAME_MAX}文字で入力してください。` });
         }
         /*
          * Only an administrator reaches this — the group check above is the
@@ -1642,7 +1642,7 @@ export const handler = async (
         return jsonResponse(200, { success: true, displayName: input.displayName.trim() });
       }
 
-      if (typeof input.enabled !== 'boolean') return jsonResponse(400, { error: 'enabled (boolean) is required' });
+      if (typeof input.enabled !== 'boolean') return jsonResponse(400, { error: '有効・無効の指定がありません。' });
       if (input.enabled) {
         await cognitoClient.send(new AdminEnableUserCommand({ UserPoolId: USER_POOL_ID, Username: username }));
       } else {
@@ -1656,11 +1656,11 @@ export const handler = async (
     if (method === 'DELETE' && path.startsWith('/admin/users/')) {
       const auth = await authenticateRequest(authorization);
       if (!isSuperAdmin(auth.membership)) {
-        return jsonResponse(403, { error: 'この操作はアカウント管理者のみが実行できます' });
+        return jsonResponse(403, { error: 'この操作ができるのはアカウント管理者だけです。' });
       }
       const username = decodeURIComponent(path.replace('/admin/users/', ''));
-      if (!username) return jsonResponse(400, { error: 'username is required' });
-      if (username.toLowerCase() === auth.email.toLowerCase()) return jsonResponse(400, { error: 'Cannot delete your own account' });
+      if (!username) return jsonResponse(400, { error: 'ユーザーが指定されていません。' });
+      if (username.toLowerCase() === auth.email.toLowerCase()) return jsonResponse(400, { error: '自分のアカウントは削除できません。' });
 
       /*
        * The `sub` first, while the account still exists to be asked.
@@ -1703,10 +1703,10 @@ export const handler = async (
     if (method === 'GET' && path.startsWith('/jobs/')) {
       const auth = await authenticateRequest(authorization);
       const jobId = decodeURIComponent(path.replace('/jobs/', ''));
-      if (!jobId) return jsonResponse(400, { error: 'jobId is required' });
+      if (!jobId) return jsonResponse(400, { error: 'ジョブが指定されていません。' });
       const job = await getJob(jobId);
-      if (!job) return jsonResponse(404, { error: 'Job not found' });
-      if (job.userId !== auth.userId) return jsonResponse(403, { error: 'Forbidden' });
+      if (!job) return jsonResponse(404, { error: 'ジョブが見つかりません。' });
+      if (job.userId !== auth.userId) return jsonResponse(403, { error: 'この操作を行う権限がありません。' });
 
       // Doubles as the Runtime session heartbeat while work is still in flight.
       if (job.status === 'pending' || job.status === 'running') keepRuntimeSessionAlive(jobId);
@@ -1764,7 +1764,7 @@ export const handler = async (
     if (method === 'GET' && path === '/admin/models') {
       const auth = await authenticateRequest(authorization);
       if (!isSuperAdmin(auth.membership)) {
-        return jsonResponse(403, { error: 'この情報はアカウント管理者のみが参照できます' });
+        return jsonResponse(403, { error: 'この情報を見られるのはアカウント管理者だけです。' });
       }
       /*
        * The same period rules as `/admin/usage`, stated once here rather than
@@ -1776,13 +1776,13 @@ export const handler = async (
       const from = q.from ?? getCurrentMonthKey();
       const to = q.to ?? from;
       if (!isMonthKey(from) || !isMonthKey(to)) {
-        return jsonResponse(400, { error: 'from と to は YYYY-MM 形式で指定してください' });
+        return jsonResponse(400, { error: '期間は年と月（例: 2026-09）で指定してください。' });
       }
       if (to < from) {
-        return jsonResponse(400, { error: '終了月は開始月より前にできません' });
+        return jsonResponse(400, { error: '終了月は開始月以降にしてください。' });
       }
       if (monthsBetween(from, to).length > 24) {
-        return jsonResponse(400, { error: '期間は24ヶ月までです' });
+        return jsonResponse(400, { error: '期間は24か月までです。' });
       }
       const [inventory, series] = await Promise.all([
         getModelInventory(),
@@ -1846,9 +1846,9 @@ export const handler = async (
       const auth = await authenticateRequest(authorization);
       const body = getBodyString(event);
       let input: { name: string };
-      try { input = JSON.parse(body); } catch { return jsonResponse(400, { error: 'Invalid JSON body' }); }
-      if (!input.name || typeof input.name !== 'string') return jsonResponse(400, { error: 'name is required' });
-      if (input.name.length > 100) return jsonResponse(400, { error: 'name must be 100 characters or fewer' });
+      try { input = JSON.parse(body); } catch { return jsonResponse(400, { error: 'リクエストの形式が正しくありません。' }); }
+      if (!input.name || typeof input.name !== 'string') return jsonResponse(400, { error: 'プロジェクト名を入力してください。' });
+      if (input.name.length > 100) return jsonResponse(400, { error: 'プロジェクト名は100文字までです。' });
       const project = await createProject(auth.userId, input.name);
       return jsonResponse(201, project);
     }
@@ -1889,8 +1889,8 @@ export const handler = async (
         if ('refused' in gate) return gate.refused;
         const body = getBodyString(event);
         let input: { messages: unknown[] };
-        try { input = JSON.parse(body); } catch { return jsonResponse(400, { error: 'Invalid JSON body' }); }
-        if (!Array.isArray(input.messages)) return jsonResponse(400, { error: 'messages must be an array' });
+        try { input = JSON.parse(body); } catch { return jsonResponse(400, { error: 'リクエストの形式が正しくありません。' }); }
+        if (!Array.isArray(input.messages)) return jsonResponse(400, { error: '会話の形式が正しくありません。' });
         /*
          * On a shared project two people can have the thread open, and each save
          * replaces it — the second would drop what the first just said. So a save
@@ -1910,7 +1910,7 @@ export const handler = async (
     if (method === 'PUT' && path.startsWith('/projects/')) {
       const auth = await authenticateRequest(authorization);
       const projectId = decodeURIComponent(path.replace('/projects/', ''));
-      if (!projectId) return jsonResponse(400, { error: 'projectId is required' });
+      if (!projectId) return jsonResponse(400, { error: 'プロジェクトが指定されていません。' });
       const body = getBodyString(event);
       let input: {
         name?: string;
@@ -1920,10 +1920,10 @@ export const handler = async (
         archived?: boolean;
         favourite?: boolean;
       };
-      try { input = JSON.parse(body); } catch { return jsonResponse(400, { error: 'Invalid JSON body' }); }
+      try { input = JSON.parse(body); } catch { return jsonResponse(400, { error: 'リクエストの形式が正しくありません。' }); }
       for (const flag of ['archived', 'favourite'] as const) {
         if (input[flag] !== undefined && typeof input[flag] !== 'boolean') {
-          return jsonResponse(400, { error: `${flag} must be a boolean` });
+          return jsonResponse(400, { error: '指定の形式が正しくありません。' });
         }
       }
       // Renaming, archiving, saving the document: writes, on the owner's row.
@@ -1936,7 +1936,7 @@ export const handler = async (
     if (method === 'DELETE' && path.startsWith('/projects/')) {
       const auth = await authenticateRequest(authorization);
       const projectId = decodeURIComponent(path.replace('/projects/', ''));
-      if (!projectId) return jsonResponse(400, { error: 'projectId is required' });
+      if (!projectId) return jsonResponse(400, { error: 'プロジェクトが指定されていません。' });
       const gate = await requireProject(auth, projectId, 'delete');
       if ('refused' in gate) return gate.refused;
       const existingProject = gate.access.project;
@@ -1952,22 +1952,22 @@ export const handler = async (
        */
       if (!existingProject.archivedAt) {
         return jsonResponse(409, {
-          error: 'Project must be archived before it can be deleted',
+          error: 'アーカイブしてから削除してください。',
         });
       }
       await deleteProject(gate.access.ownerId, projectId);
       return jsonResponse(200, { message: 'Project deleted' });
     }
 
-    return jsonResponse(404, { error: 'Not found' });
+    return jsonResponse(404, { error: '見つかりません。' });
 
   } catch (error) {
     if (error instanceof AuthError) return jsonResponse((error as any).statusCode, { error: (error as Error).message });
     if (error instanceof GuardrailBlockedError) return jsonResponse((error as any).statusCode, { error: (error as Error).message });
-    if ((error as Error).message === 'Request body too large') return jsonResponse(413, { error: 'Request body too large' });
-    if (error instanceof URIError) return jsonResponse(400, { error: 'Malformed URL encoding' });
+    if ((error as Error).message === 'Request body too large') return jsonResponse(413, { error: '送信サイズが大きすぎます。' });
+    if (error instanceof URIError) return jsonResponse(400, { error: 'URL の形式が正しくありません。' });
 
     logger.error('Unhandled Lambda error', { requestId, path, method, error: (error as Error).message });
-    return jsonResponse(500, { error: 'Internal server error' });
+    return jsonResponse(500, { error: 'サーバーでエラーが起きました。しばらく待ってから、もう一度お試しください。' });
   }
 };

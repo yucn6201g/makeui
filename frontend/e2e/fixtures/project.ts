@@ -1,7 +1,8 @@
 /**
  * A generated project small enough to read, in the transport a real job returns
- * (line-fenced files inside one HTML document). Two screens and a nav between
- * them, so a test can check both what the preview shows and that it runs.
+ * (line-fenced files inside one HTML document). Two screens behind hash links,
+ * as generated projects are, so a test can check what the preview shows, that it
+ * runs, and that a link moves between screens inside the frame.
  */
 export function reactProject({ title = '在庫一覧', items = ['ボールペン', 'ノート', 'クリップ'] } = {}): string {
   const file = (path: string, body: string) => `@@@makeui:file ${path}\n${body.trim()}\n@@@makeui:endfile\n`;
@@ -16,17 +17,25 @@ body { margin: 0; font-family: sans-serif; color: var(--color-text); background:
 .app-nav { display: flex; gap: 8px; padding: 8px; }
 `)}
 ${file('src/App.tsx', `
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 const ITEMS = ${JSON.stringify(items)};
 
+// Hash routes and plain links, the way generated projects navigate.
+const current = () => (location.hash === '#/settings' ? 'settings' : 'list');
+
 export default function App() {
-  const [screen, setScreen] = useState<'list' | 'settings'>('list');
+  const [screen, setScreen] = useState(current);
+  useEffect(() => {
+    const follow = () => setScreen(current());
+    window.addEventListener('hashchange', follow);
+    return () => window.removeEventListener('hashchange', follow);
+  }, []);
   return (
     <div>
       <nav className="app-nav" aria-label="メインナビゲーション">
-        <button aria-current={screen === 'list' ? 'page' : undefined} onClick={() => setScreen('list')}>一覧</button>
-        <button aria-current={screen === 'settings' ? 'page' : undefined} onClick={() => setScreen('settings')}>設定</button>
+        <a href="#/" aria-current={screen === 'list' ? 'page' : undefined}>一覧</a>
+        <a href="#/settings" aria-current={screen === 'settings' ? 'page' : undefined}>設定</a>
       </nav>
       <main>
         {screen === 'list' ? (

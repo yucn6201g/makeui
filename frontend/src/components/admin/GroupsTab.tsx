@@ -3,6 +3,8 @@ import { type UserUsageSummary, type CognitoUser, type ModelId, type UserGroup }
 import { Dropdown } from '../common/Dropdown';
 import { UNLIMITED, ALL_MODELS, asMoney, usd } from './shared';
 import { BudgetEditor, ModelPicker } from './editors';
+import { requestErrorMessage } from '../../utils/requests/request';
+import { isCommitEnter } from '../../utils/editing/enterKey';
 
 /**
  * User groups, and who administers each.
@@ -104,12 +106,12 @@ export function GroupsTab({
   const run = async (what: string, f: () => Promise<void>) => {
     setBusy(what);
     setErr(null);
-    try { await f(); } catch (e) { setErr((e as Error).message || '操作に失敗しました'); }
+    try { await f(); } catch (e) { setErr(requestErrorMessage(e, '操作できませんでした。もう一度お試しください。')); }
     finally { setBusy(null); }
   };
 
   const create = () => {
-    if (!name.trim()) { setErr('グループ名を入力してください'); return; }
+    if (!name.trim()) { setErr('グループ名を入力してください。'); return; }
     run('create', async () => { await onCreate(name.trim()); setName(''); setSelected(name.trim()); });
   };
 
@@ -162,7 +164,7 @@ export function GroupsTab({
           className="adm-input adm-input--search"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') create(); }}
+          onKeyDown={(e) => { if (isCommitEnter(e)) create(); }}
           placeholder="新しいグループ名"
           maxLength={63}
           aria-label="新しいグループ名"
@@ -204,7 +206,7 @@ export function GroupsTab({
                   <th className="adm-th">管理者</th>
                   <th className="adm-th adm-th--num adm-th--run">人数</th>
                   <th className="adm-th adm-th--num adm-th--money">今月の金額 / 予算</th>
-                  <th className="adm-th adm-th--act"></th>
+                  <th className="adm-th adm-th--act"><span className="sr-only">操作</span></th>
                 </tr>
               </thead>
               <tbody>
@@ -340,7 +342,7 @@ export function GroupsTab({
                       <th className="adm-th adm-th--grp">所属グループ</th>
                       <th className="adm-th adm-th--num adm-th--money">今月の金額 / 予算</th>
                       <th className="adm-th adm-th--models">利用可能モデル</th>
-                      <th className="adm-th adm-th--act2"></th>
+                      <th className="adm-th adm-th--act2"><span className="sr-only">操作</span></th>
                     </tr>
                   </thead>
                   <tbody>
