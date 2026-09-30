@@ -26,12 +26,19 @@
    * `--figma-text-dim` was #999999, which measures 2.85:1 on white — under AA,
    * and it is the colour of the timestamps, the token counts, the per-step
    * durations in the transcript and the meta row under every reply. All of that
-   * is 10 to 11px, where 4.5:1 is the requirement. #707070 is the lightest grey
-   * that clears it on every surface this app has (white, the #f5f5f5 inputs and
-   * the #f7f7f7 thumbnail wells); the only dark surface is the sign-in button,
-   * which carries white text and never this token.
+   * is 10 to 11px, where 4.5:1 is the requirement. The only dark surface is the
+   * sign-in button, which carries white text and never this token.
+   *
+   * #707070 cleared white and the #f5f5f5 inputs but not the surfaces a row or a
+   * control turns when it is chosen: 4.35:1 on the segmented track (#f0f0f0),
+   * 4.48:1 on a chosen admin row (#eaf5ff), 4.15:1 on a hovered one (#ebebeb).
+   * Found by the Storybook axe run on a list with counts and an admin table with
+   * a row chosen (2026-09-30) — the static sweep reads each rule alone, so a
+   * colour from one rule over a background from another's state went unseen.
+   * #696969 clears all of them; test/css-contrast.test.mjs now checks this token
+   * against every light surface the app paints.
    */
-  --figma-text-dim: #707070;
+  --figma-text-dim: #696969;
   /*
    * The brand blue, and the blue that can carry white text.
    *

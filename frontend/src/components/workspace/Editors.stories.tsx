@@ -29,6 +29,20 @@ export const PreviewEmpty: Story = {
   render: () => <div style={{ height: '100vh', display: 'flex' }}><Preview html={null} score={null} /></div>,
 };
 
+/** An existing project whose document is still on its way (it is not empty). */
+export const PreviewLoadingDocument: Story = {
+  render: () => <div style={{ height: '100vh', display: 'flex' }}><Preview html={null} score={null} documentState="loading" /></div>,
+};
+
+/** The document could not be fetched: said so, with a retry. */
+export const PreviewDocumentFailed: Story = {
+  render: () => <div style={{ height: '100vh', display: 'flex' }}><Preview html={null} score={null} documentState="failed" onRetryDocument={() => {}} /></div>,
+};
+
+export const PreviewTablet: Story = {
+  render: () => <div style={{ height: '100vh', display: 'flex' }}><Preview html={PROJECT} score={86} device="tablet" title="在庫管理" /></div>,
+};
+
 /** The code tab: the project's files, a tab per open file, and editing. */
 export const Code: Story = {
   render: () => <div style={{ height: '100vh', display: 'flex' }}><CodeEditor html={PROJECT} onEditFile={() => {}} /></div>,

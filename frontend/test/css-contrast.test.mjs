@@ -70,5 +70,26 @@ check('the pairs were found', measured > 40, true);
 check('every text colour on its own background reads at 4.5:1', low, []);
 check('the icon list names rules that exist', [...ICONS].filter((s) => !css.includes(`${s} {`)), []);
 
+/*
+ * The text tokens against every light surface a state paints (2026-09-30).
+ *
+ * The sweep above pairs the colour and the background of ONE rule. A muted cell
+ * in an admin row is coloured by `.adm-td--muted` and backed by `.adm-tr--active`
+ * — two rules — and #707070 read 4.48:1 there, 4.35:1 on the segmented track.
+ * Storybook's axe run found them; this finds the whole class without a browser.
+ */
+const TEXT_TOKENS = ['--figma-text', '--figma-text-muted', '--figma-text-dim'];
+const SURFACES = ['--figma-bg-panel', '--figma-bg-input', '--figma-bg-subtle', '--figma-bg-track', '--figma-bg-hover', '--figma-blue-tint'];
+check('the surfaces are all defined', SURFACES.filter((t) => !tokens[t]), []);
+const under = [];
+for (const t of TEXT_TOKENS) {
+  for (const b of SURFACES) {
+    if (!tokens[t] || !tokens[b]) continue;
+    const r = ratio(resolve(`var(${t})`), resolve(`var(${b})`));
+    if (r < 4.5) under.push(`${t} on ${b} = ${r.toFixed(2)}:1`);
+  }
+}
+check('every text token reads at 4.5:1 on every surface a row or control turns', under, []);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

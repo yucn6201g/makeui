@@ -158,6 +158,53 @@ check('PUT /projects/{id}/shares answers with the grants, as the handler does',
 const grantFields = /target: \{ type: input\.type, id: input\.id, label, email \}[\s\S]{0,200}role:[\s\S]{0,200}grantedByName/.test(shareRoutes);
 check('and each grant the fields a grant is stored with', grantFields && Object.keys(granted.body.shares[0]).every((k) => ['type', 'id', 'label', 'email', 'role', 'grantedByName', 'grantedAt'].includes(k)), true);
 
+// --- every call the app makes can be exercised end to end (2026-09-30) --------------------------
+/*
+ * The admin panel's writes — renaming, deleting and enabling accounts, budgets,
+ * models, groups — had no mock route, so no E2E test could reach them, and
+ * nothing said so: a test only fails on an unmocked call it happens to make.
+ * This reads every `${apiUrl}/…` call in the app's source, with its method, and
+ * requires the backend to serve it and the E2E mock to answer it.
+ */
+{
+  const files = [];
+  const walk = (dir) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, e.name);
+      if (e.isDirectory()) walk(full);
+      else if (/\.(ts|tsx)$/.test(e.name) && !/\.stories\.tsx$/.test(e.name)) files.push(full);
+    }
+  };
+  walk(path.join(root, 'src'));
+  const calls = [];
+  for (const f of files) {
+    const src = read(f);
+    const sites = [...src.matchAll(/\$\{apiUrl\}(\/[^`'"?$]*(?:\$\{[^}]*\}[^`'"?$]*)*)/g)];
+    sites.forEach((site, i) => {
+      const next = sites[i + 1]?.index ?? src.length;
+      const tail = src.slice(site.index, Math.min(next, site.index + 400));
+      // `postJson({ url: … })` posts; otherwise the literal method, or GET.
+      const before = src.slice(Math.max(0, site.index - 300), site.index);
+      const method = /postJson\b[\s\S]*\(\{\s*url: `$/.test(before) ? 'POST' : /method: '([A-Z]+)'/.exec(tail)?.[1] ?? 'GET';
+      // A sample path: each interpolation becomes one segment ('user' where it names a share type).
+      const sample = site[1]
+        // An interpolation straight after a word is a query string (`${query}`), not a segment.
+        .replace(/([^/])\$\{[^}]*\}/g, '$1')
+        .replace(/\$\{target\.type\}/g, 'user')
+        .replace(/\$\{[^}]*\}/g, 'sample-1')
+        .replace(/\/+$/, '');
+      calls.push({ method, path: sample, where: `${path.relative(root, f)}` });
+    });
+  }
+  const unique = [...new Map(calls.map((c) => [`${c.method} ${c.path}`, c])).values()];
+  check('the app\'s calls were found in its source', unique.length > 30, true);
+  const mockRoutes = api.routeList();
+  check('every call the app makes is a route the backend serves',
+    unique.filter((c) => !served.some((r) => r.method === c.method && r.test(c.path))).map((c) => `${c.method} ${c.path} (${c.where})`), []);
+  check('and one the E2E mock answers, so a test can reach it',
+    unique.filter((c) => !mockRoutes.some((r) => r.method === c.method && r.pattern.test(c.path))).map((c) => `${c.method} ${c.path} (${c.where})`), []);
+}
+
 check('nothing the contract asked for went unanswered', api.unhandled, []);
 
 console.log(`\n${pass} passed, ${fail} failed`);

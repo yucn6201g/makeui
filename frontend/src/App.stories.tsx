@@ -70,3 +70,52 @@ export const AdminPanelOpen: Story = {
     await userEvent.click(await within(canvasElement).findByRole('button', { name: '管理画面を開く' }));
   },
 };
+
+/** The project list could not be read: said so, with 再試行. */
+export const ProjectListCouldNotLoad: Story = {
+  decorators: [withApi((api) => { api.on('GET', '/projects', { status: 503, body: { message: 'Service Unavailable' } }); }), withAuth()],
+};
+
+/** A hundred and fifty projects a tab: a screenful drawn, more on scrolling. */
+export const ManyProjects: Story = {
+  decorators: [withApi((api) => {
+    const starred = new Date().toISOString();
+    for (let i = 0; i < 150; i++) {
+      api.addProject({ name: `案件 ${i}`, outputKind: i % 3 === 0 ? 'vue' : 'react', lastHtml: reactProject({ title: `在庫 ${i}` }), ...(i % 9 === 0 ? { favouritedAt: starred } : {}) });
+    }
+  }), withAuth()],
+};
+
+/** A long conversation: two hundred exchanges, each reply formatted. */
+export const LongConversation: Story = {
+  decorators: [withApi((api) => {
+    const now = Date.now();
+    const project = api.addProject({ name: '長い会話', lastHtml: reactProject() });
+    const messages = [];
+    for (let i = 0; i < 200; i++) {
+      messages.push({ id: `u${i}`, role: 'user', content: `一覧に機能 ${i} を足して`, timestamp: now - (200 - i) * 60_000 });
+      messages.push({ id: `a${i}`, role: 'assistant', content: `## 変更 ${i}\n\n一覧に**機能 ${i}**を追加しました。\n\n- 検索\n- 並び替え`, timestamp: now - (200 - i) * 60_000 + 30_000 });
+    }
+    api.messages.set(project.projectId, messages);
+  }), withAuth()],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole('button', { name: '長い会話' }));
+    await expect(await canvas.findByText('変更 199')).toBeInTheDocument();
+  },
+};
+
+/** A project shared with this account for viewing: readable, not editable. */
+export const SharedForViewing: Story = {
+  decorators: [withApi((api) => {
+    api.addProject({
+      name: '共有された案件', userId: 'sub-owner', lastHtml: reactProject(), sharedAt: new Date().toISOString(),
+      access: { role: 'view', ownerId: 'sub-owner', ownerName: '山田 太郎', via: 'user' },
+    });
+  }), withAuth()],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole('tab', { name: /共有/ }));
+    await userEvent.click(await canvas.findByRole('button', { name: '共有された案件' }));
+  },
+};
