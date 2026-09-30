@@ -2,7 +2,7 @@
  * The project workspace: chat and composer, preview, code, versions and sharing
  * for the one project that is open.
  */
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { memo, useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { uiImagesForSend, captionsForSend, roomForImages, MAX_UI_IMAGES } from '../../utils/requests/uiImages';
 import { promptProblem, oversizedImages, MAX_IMAGE_BYTES } from '../../utils/requests/requestLimits';
 import { titleFromResult, isUnnamed } from '../../utils/projects/projectTitle';
@@ -359,6 +359,271 @@ const effortLabel = (id: string | undefined): string => {
 const effortFullLabel = (id: string | undefined): string =>
   CHAT_MODES.find((m) => m.id === id)?.description
   ?? (id && id in LEGACY_MODES ? `${LEGACY_MODES[id] || '仕上げ'}（旧「${id}」）` : '');
+
+/**
+ * What a message's own buttons ask of the workspace. One object, stable for the
+ * workspace's lifetime, so a message can be memoised.
+ */
+interface MessageActions {
+  fixFinding: (finding: string) => void;
+  approvePlan: (proposal: { plan: string; spec: string; prompt: string }) => void;
+}
+
+const formatRelativeTime = (ts: number, now: number) => {
+  const diff = Math.floor((now - ts) / 1000);
+  if (diff < 60) return 'たった今';
+  if (diff < 3600) return `${Math.floor(diff / 60)}分前`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}時間前`;
+  return `${Math.floor(diff / 86400)}日前`;
+};
+
+interface ChatMessageItemProps {
+  msg: ChatMessage;
+  /** When the project was opened: messages after it enter with an animation. */
+  openedAt: number;
+  /** A shared project names who asked. */
+  showAuthor: boolean;
+  /** The document drawn under a reply, if any — see `thumbnailFor`. */
+  thumbnail: string | null;
+  /** A finding's 「修正を依頼」 can act: there is a document and nothing is running. */
+  canFix: boolean;
+  isProcessing: boolean;
+  /** The minute, so 「3分前」 moves on without the rest of the thread redrawing. */
+  clock: number;
+  actions: MessageActions;
+}
+
+/*
+ * One message of the thread (2026-09-27).
+ *
+ * Every keystroke in the composer re-rendered the workspace, and with it every
+ * message — each reply's markdown parsed again. Measured with 400 messages on a
+ * CPU slowed fourfold: up to 200 ms per keystroke, 2.3 s of blocked thread over
+ * twenty characters. Memoised, a message redraws when it, the clock, or one of
+ * the few things it shows changes; the reply is parsed once per content.
+ */
+const ChatMessageItem = memo(function ChatMessageItem({
+  msg, openedAt, showAuthor, thumbnail, canFix, isProcessing, clock, actions,
+}: ChatMessageItemProps) {
+  const blocks = useMemo(() => (msg.role === 'assistant' ? formatReply(msg.content) : null), [msg.role, msg.content]);
+  return (
+    <div className={`app__chat-msg app__chat-msg--${msg.role}${msg.timestamp >= openedAt ? ' app__chat-msg--new' : ''}`}>
+      {msg.role === 'assistant' && (
+        <span className="app__chat-avatar" aria-hidden="true">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 2l1.9 6.1L20 10l-6.1 1.9L12 18l-1.9-6.1L4 10l6.1-1.9z" />
+          </svg>
+        </span>
+      )}
+      <div className="app__chat-msg-body">
+        {showAuthor && msg.role === 'user' && msg.author?.name && (
+          <span className="app__message-author">{msg.author.name}</span>
+        )}
+        <div className="app__chat-msg-content">
+          {msg.role === 'assistant'
+            ? blocks!.map((block, i) =>
+                block.kind === 'findings' ? (
+                  /*
+                    Folded, with the count showing.
+
+                    After a first generation these were a paragraph of
+                    bullets under the description — eight on the
+                    verification run — so what the person asked for sat
+                    above a wall of review notes. Worth having, not
+                    worth reading first. A <details> rather than state:
+                    it opens and closes from the keyboard, is announced
+                    as expandable, and costs nothing to render closed.
+                  */
+                  <details className="app__findings" key={i}>
+                    <summary className="app__findings-summary">
+                      未解決の指摘 {block.count}件
+                    </summary>
+                    <ul className="app__chat-list app__findings-list">
+                      {block.items.map((item, j) => (
+                        <li key={j}>
+                          <span className="app__findings-text">{renderInline(item)}</span>
+                          {/*
+                            One finding, one request. The button acts
+                            on the CURRENT document, which is what
+                            typing the same sentence would do — so a
+                            finding read out of an older reply still
+                            asks about what is on screen now.
+                          */}
+                          <button
+                            type="button"
+                            className="app__findings-fix"
+                            onClick={() => actions.fixFinding(item)}
+                            disabled={!canFix}
+                            title="この指摘の修正を依頼します"
+                          >
+                            修正を依頼
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                ) : block.kind === 'opinions' ? (
+                  /*
+                    The critic's opinions the run does not repair — see
+                    ReplyBlock 'opinions'. Folded like the findings and
+                    with no fix button: measured, an edit does not move
+                    these, and a button would offer one that does not.
+                    They can still be asked for in words.
+                  */
+                  <details className="app__findings app__findings--opinions" key={i}>
+                    <summary className="app__findings-summary">
+                      デザインについての参考意見 {block.count}件
+                    </summary>
+                    <p className="app__findings-note">
+                      画面の見た目についての批評です。自動修正では改善しにくいことが分かっているため、未解決の指摘には含めていません。気になるものは、具体的に指示すると反映できます。
+                    </p>
+                    <ul className="app__chat-list app__findings-list">
+                      {block.items.map((item, j) => (
+                        <li key={j}>
+                          <span className="app__findings-text">{renderInline(item)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                ) : block.kind === 'list' ? (
+                  <ul className="app__chat-list" key={i}>
+                    {block.items.map((item, j) => (
+                      <li key={j}>{renderInline(item)}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="app__chat-para" key={i}>
+                    {block.lines.map((line, j) => (
+                      <span className="app__chat-line" key={j}>{renderInline(line)}</span>
+                    ))}
+                  </p>
+                )
+              )
+            : msg.content}
+        </div>
+        {msg.proposal && (
+          <div className="app__proposal-actions">
+            <button
+              className="app__proposal-btn app__proposal-btn--primary"
+              onClick={() => actions.approvePlan(msg.proposal!)}
+              disabled={isProcessing}
+              type="button"
+            >
+              このプランで作成
+            </button>
+            <span className="app__proposal-hint">
+              変更したい点があれば、そのまま入力してください
+            </span>
+          </div>
+        )}
+        {/*
+          Rendered through ProjectThumbnail rather than a raw iframe.
+          The raw frame used sandbox="" — no scripts — which paints blank
+          for everything this app produces: an HTML mock hides every screen
+          behind `.screen{display:none}` until its router runs, and a React
+          project is source blocks around an empty <div id="root">. So the
+          preview under each reply was blank in every case.
+        */}
+        {msg.role === 'assistant' && thumbnail && (
+          <div className="app__chat-thumbnail">
+            <ProjectThumbnail html={thumbnail} title="プレビューサムネイル" />
+          </div>
+        )}
+        {/*
+          The run that produced this reply, kept.
+          Closed by default — the reply is the answer and the
+          transcript is the working — and `<details>` rather than
+          component state so it survives re-renders and prints.
+        */}
+        {msg.phases && msg.phases.length > 0 && (
+          <details className="app__chat-transcript">
+            <summary className="app__chat-transcript-summary">
+              生成過程を表示
+              <span className="app__chat-transcript-count">{msg.phases.length}ステップ</span>
+            </summary>
+            <ReasoningTranscript phases={msg.phases} isActive={false} dense />
+          </details>
+        )}
+        <div className="app__chat-meta">
+          {/*
+            What produced this reply. The tier is the one that ran, so
+            a thread built with `auto` reads "Opus" rather than "自動"
+            — which is the question this answers.
+          */}
+          {msg.runInfo && (
+            <span
+              className="app__chat-run"
+              title={`このUIを生成したモデル: ${MODEL_LABELS[msg.runInfo.modelTier] ?? msg.runInfo.modelTier} / デザインプリセット: ${presetFullLabel(msg.runInfo.preset)}${effortLabel(msg.runInfo.effort) ? ` / モード: ${effortFullLabel(msg.runInfo.effort)}` : ''}`}
+            >
+              {MODEL_LABELS[msg.runInfo.modelTier] ?? msg.runInfo.modelTier}
+              <span className="app__chat-run-sep" aria-hidden="true">·</span>
+              {presetChip(msg.runInfo.preset)}
+              {/* Only when it is not the default: a chip on every reply
+                  saying 「構築」 is noise, and the thing worth noticing is
+                  that this one build was cheaper or dearer than usual. */}
+              {effortLabel(msg.runInfo.effort) && (
+                <>
+                  <span className="app__chat-run-sep" aria-hidden="true">·</span>
+                  {effortLabel(msg.runInfo.effort)}
+                </>
+              )}
+            </span>
+          )}
+          {/*
+            A score from a build that never rendered is not on the same
+            scale as one that did: every runtime deduction — dead
+            controls, empty containers, unreachable screens, contrast —
+            is unreachable without browser facts. Measured on one brief,
+            下書き scored 76 against 仕上げ's 52, and the unchecked one
+            was not better, it was unexamined. The mark says which
+            scale it is.
+          */}
+          {msg.score && (
+            <span
+              className="app__chat-score"
+              title={scoreTitle(msg.runInfo)}
+            >
+              Score {msg.score}
+              {msg.runInfo && msg.runInfo.scoreVerified === false && (
+                <span className="app__chat-score-unverified"> 静的のみ</span>
+              )}
+              {msg.runInfo && msg.runInfo.scoreVerified !== false && isOlderRubric(msg.runInfo.scoreParts?.rubric) && (
+                <span className="app__chat-score-unverified"> 旧基準</span>
+              )}
+            </span>
+          )}
+          {/*
+            No 「未修正」 count beside the score, and the reason is that
+            it answered a different question from the one next to it.
+
+            `unrepairedDefects` counts what the repair budget declined
+            to spend a call on. 「未解決の指摘」 in the reply counts what
+            was still open when the run ended. A defect can be in both,
+            in either, or in neither — a finding the budget skipped may
+            be fixed by another file's repair, and one it did spend a
+            call on may still be open. So two numbers sat a centimetre
+            apart, both labelled as things that were not fixed, and
+            disagreed. Reported by the user as exactly that.
+
+            The reply's count is the one that answers what a person is
+            asking, because it is the list they can act on — and every
+            item in it now has a button. The budget figure stays in the
+            job metadata and in the log, where the measurement lives.
+          */}
+          {msg.toolsUsed && msg.toolsUsed.length > 0 && (
+            <span className="app__chat-tools">{msg.toolsUsed.join(', ')}</span>
+          )}
+          {msg.tokenUsage && (
+            <span className="app__chat-tokens">
+              {(msg.tokenUsage.inputTokens + msg.tokenUsage.outputTokens).toLocaleString()} tokens
+            </span>
+          )}
+          <span className="app__chat-timestamp">{formatRelativeTime(msg.timestamp, clock)}</span>
+        </div>
+      </div>
+    </div>
+  );
+});
 
 export interface WorkspaceProps {
   project: Project;
@@ -1149,13 +1414,16 @@ export function Workspace({ project, onBackToProjects, onUpdateProject, fetchPro
     fetchVersions(project.projectId);
   }, [project.projectId, isGenerating, isModifying, fetchVersions]);
 
-  const formatRelativeTime = (ts: number) => {
-    const diff = Math.floor((Date.now() - ts) / 1000);
-    if (diff < 60) return 'たった今';
-    if (diff < 3600) return `${Math.floor(diff / 60)}分前`;
-    if (diff < 86400) return `${Math.floor(diff / 3600)}時間前`;
-    return `${Math.floor(diff / 86400)}日前`;
-  };
+  /*
+   * The time the thread's 「3分前」 is measured from, moved on once a minute.
+   * The thread used to read `Date.now()` on every render, which was right only
+   * because it redrew on every keystroke; the messages are memoised now.
+   */
+  const [clock, setClock] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setClock(Date.now()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
 
   /**
    * Download the project as a zip.
@@ -1901,6 +2169,14 @@ export function Workspace({ project, onBackToProjects, onUpdateProject, fetchPro
     </>
   );
 
+  // What a message's buttons call: one object for the thread's lifetime, reading the latest handlers.
+  const messageHandlers = useRef({ fixFinding: handleFixFinding, approvePlan: handleApprovePlan });
+  messageHandlers.current = { fixFinding: handleFixFinding, approvePlan: handleApprovePlan };
+  const messageActions = useMemo<MessageActions>(() => ({
+    fixFinding: (finding) => messageHandlers.current.fixFinding(finding),
+    approvePlan: (proposal) => messageHandlers.current.approvePlan(proposal),
+  }), []);
+
   return (
     <div className={`app${isResizing ? ' app--resizing' : ''}`}>
       <header className="app__header">
@@ -2062,221 +2338,17 @@ export function Workspace({ project, onBackToProjects, onUpdateProject, fetchPro
               </div>
             )}
             {messages.map((msg) => (
-              <div key={msg.id} className={`app__chat-msg app__chat-msg--${msg.role}${msg.timestamp >= openedAt ? ' app__chat-msg--new' : ''}`}>
-                {msg.role === 'assistant' && (
-                  <span className="app__chat-avatar" aria-hidden="true">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M12 2l1.9 6.1L20 10l-6.1 1.9L12 18l-1.9-6.1L4 10l6.1-1.9z" />
-                    </svg>
-                  </span>
-                )}
-                <div className="app__chat-msg-body">
-                  {isSharedProject && msg.role === 'user' && msg.author?.name && (
-                    <span className="app__message-author">{msg.author.name}</span>
-                  )}
-                  <div className="app__chat-msg-content">
-                    {msg.role === 'assistant'
-                      ? formatReply(msg.content).map((block, i) =>
-                          block.kind === 'findings' ? (
-                            /*
-                              Folded, with the count showing.
-
-                              After a first generation these were a paragraph of
-                              bullets under the description — eight on the
-                              verification run — so what the person asked for sat
-                              above a wall of review notes. Worth having, not
-                              worth reading first. A <details> rather than state:
-                              it opens and closes from the keyboard, is announced
-                              as expandable, and costs nothing to render closed.
-                            */
-                            <details className="app__findings" key={i}>
-                              <summary className="app__findings-summary">
-                                未解決の指摘 {block.count}件
-                              </summary>
-                              <ul className="app__chat-list app__findings-list">
-                                {block.items.map((item, j) => (
-                                  <li key={j}>
-                                    <span className="app__findings-text">{renderInline(item)}</span>
-                                    {/*
-                                      One finding, one request. The button acts
-                                      on the CURRENT document, which is what
-                                      typing the same sentence would do — so a
-                                      finding read out of an older reply still
-                                      asks about what is on screen now.
-                                    */}
-                                    <button
-                                      type="button"
-                                      className="app__findings-fix"
-                                      onClick={() => handleFixFinding(item)}
-                                      disabled={!displayHtml || rebuilding || isProcessing}
-                                      title="この指摘の修正を依頼します"
-                                    >
-                                      修正を依頼
-                                    </button>
-                                  </li>
-                                ))}
-                              </ul>
-                            </details>
-                          ) : block.kind === 'opinions' ? (
-                            /*
-                              The critic's opinions the run does not repair — see
-                              ReplyBlock 'opinions'. Folded like the findings and
-                              with no fix button: measured, an edit does not move
-                              these, and a button would offer one that does not.
-                              They can still be asked for in words.
-                            */
-                            <details className="app__findings app__findings--opinions" key={i}>
-                              <summary className="app__findings-summary">
-                                デザインについての参考意見 {block.count}件
-                              </summary>
-                              <p className="app__findings-note">
-                                画面の見た目についての批評です。自動修正では改善しにくいことが分かっているため、未解決の指摘には含めていません。気になるものは、具体的に指示すると反映できます。
-                              </p>
-                              <ul className="app__chat-list app__findings-list">
-                                {block.items.map((item, j) => (
-                                  <li key={j}>
-                                    <span className="app__findings-text">{renderInline(item)}</span>
-                                  </li>
-                                ))}
-                              </ul>
-                            </details>
-                          ) : block.kind === 'list' ? (
-                            <ul className="app__chat-list" key={i}>
-                              {block.items.map((item, j) => (
-                                <li key={j}>{renderInline(item)}</li>
-                              ))}
-                            </ul>
-                          ) : (
-                            <p className="app__chat-para" key={i}>
-                              {block.lines.map((line, j) => (
-                                <span className="app__chat-line" key={j}>{renderInline(line)}</span>
-                              ))}
-                            </p>
-                          )
-                        )
-                      : msg.content}
-                  </div>
-                  {msg.proposal && (
-                    <div className="app__proposal-actions">
-                      <button
-                        className="app__proposal-btn app__proposal-btn--primary"
-                        onClick={() => handleApprovePlan(msg.proposal!)}
-                        disabled={isProcessing}
-                        type="button"
-                      >
-                        このプランで作成
-                      </button>
-                      <span className="app__proposal-hint">
-                        変更したい点があれば、そのまま入力してください
-                      </span>
-                    </div>
-                  )}
-                  {/*
-                    Rendered through ProjectThumbnail rather than a raw iframe.
-                    The raw frame used sandbox="" — no scripts — which paints blank
-                    for everything this app produces: an HTML mock hides every screen
-                    behind `.screen{display:none}` until its router runs, and a React
-                    project is source blocks around an empty <div id="root">. So the
-                    preview under each reply was blank in every case.
-                  */}
-                  {msg.role === 'assistant' && thumbnailFor(msg) && (
-                    <div className="app__chat-thumbnail">
-                      <ProjectThumbnail html={thumbnailFor(msg)} title="プレビューサムネイル" />
-                    </div>
-                  )}
-                  {/*
-                    The run that produced this reply, kept.
-                    Closed by default — the reply is the answer and the
-                    transcript is the working — and `<details>` rather than
-                    component state so it survives re-renders and prints.
-                  */}
-                  {msg.phases && msg.phases.length > 0 && (
-                    <details className="app__chat-transcript">
-                      <summary className="app__chat-transcript-summary">
-                        生成過程を表示
-                        <span className="app__chat-transcript-count">{msg.phases.length}ステップ</span>
-                      </summary>
-                      <ReasoningTranscript phases={msg.phases} isActive={false} dense />
-                    </details>
-                  )}
-                  <div className="app__chat-meta">
-                    {/*
-                      What produced this reply. The tier is the one that ran, so
-                      a thread built with `auto` reads "Opus" rather than "自動"
-                      — which is the question this answers.
-                    */}
-                    {msg.runInfo && (
-                      <span
-                        className="app__chat-run"
-                        title={`このUIを生成したモデル: ${MODEL_LABELS[msg.runInfo.modelTier] ?? msg.runInfo.modelTier} / デザインプリセット: ${presetFullLabel(msg.runInfo.preset)}${effortLabel(msg.runInfo.effort) ? ` / モード: ${effortFullLabel(msg.runInfo.effort)}` : ''}`}
-                      >
-                        {MODEL_LABELS[msg.runInfo.modelTier] ?? msg.runInfo.modelTier}
-                        <span className="app__chat-run-sep" aria-hidden="true">·</span>
-                        {presetChip(msg.runInfo.preset)}
-                        {/* Only when it is not the default: a chip on every reply
-                            saying 「構築」 is noise, and the thing worth noticing is
-                            that this one build was cheaper or dearer than usual. */}
-                        {effortLabel(msg.runInfo.effort) && (
-                          <>
-                            <span className="app__chat-run-sep" aria-hidden="true">·</span>
-                            {effortLabel(msg.runInfo.effort)}
-                          </>
-                        )}
-                      </span>
-                    )}
-                    {/*
-                      A score from a build that never rendered is not on the same
-                      scale as one that did: every runtime deduction — dead
-                      controls, empty containers, unreachable screens, contrast —
-                      is unreachable without browser facts. Measured on one brief,
-                      下書き scored 76 against 仕上げ's 52, and the unchecked one
-                      was not better, it was unexamined. The mark says which
-                      scale it is.
-                    */}
-                    {msg.score && (
-                      <span
-                        className="app__chat-score"
-                        title={scoreTitle(msg.runInfo)}
-                      >
-                        Score {msg.score}
-                        {msg.runInfo && msg.runInfo.scoreVerified === false && (
-                          <span className="app__chat-score-unverified"> 静的のみ</span>
-                        )}
-                        {msg.runInfo && msg.runInfo.scoreVerified !== false && isOlderRubric(msg.runInfo.scoreParts?.rubric) && (
-                          <span className="app__chat-score-unverified"> 旧基準</span>
-                        )}
-                      </span>
-                    )}
-                    {/*
-                      No 「未修正」 count beside the score, and the reason is that
-                      it answered a different question from the one next to it.
-
-                      `unrepairedDefects` counts what the repair budget declined
-                      to spend a call on. 「未解決の指摘」 in the reply counts what
-                      was still open when the run ended. A defect can be in both,
-                      in either, or in neither — a finding the budget skipped may
-                      be fixed by another file's repair, and one it did spend a
-                      call on may still be open. So two numbers sat a centimetre
-                      apart, both labelled as things that were not fixed, and
-                      disagreed. Reported by the user as exactly that.
-
-                      The reply's count is the one that answers what a person is
-                      asking, because it is the list they can act on — and every
-                      item in it now has a button. The budget figure stays in the
-                      job metadata and in the log, where the measurement lives.
-                    */}
-                    {msg.toolsUsed && msg.toolsUsed.length > 0 && (
-                      <span className="app__chat-tools">{msg.toolsUsed.join(', ')}</span>
-                    )}
-                    {msg.tokenUsage && (
-                      <span className="app__chat-tokens">
-                        {(msg.tokenUsage.inputTokens + msg.tokenUsage.outputTokens).toLocaleString()} tokens
-                      </span>
-                    )}
-                    <span className="app__chat-timestamp">{formatRelativeTime(msg.timestamp)}</span>
-                  </div>
-                </div>
-              </div>
+              <ChatMessageItem
+                key={msg.id}
+                msg={msg}
+                openedAt={openedAt}
+                showAuthor={isSharedProject}
+                thumbnail={msg.role === 'assistant' ? thumbnailFor(msg) : null}
+                canFix={Boolean(displayHtml) && !rebuilding && !isProcessing}
+                isProcessing={isProcessing}
+                clock={clock}
+                actions={messageActions}
+              />
             ))}
             {/*
               Said in the thread, where the missing messages would have been.

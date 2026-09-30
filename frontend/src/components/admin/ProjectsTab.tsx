@@ -4,6 +4,7 @@ import { Preview } from '../workspace/Preview';
 import { isOlderScoreScale } from '../../utils/projects/scoreScale';
 import { versionQualityLabel, versionQualityTitle } from '../../utils/projects/versionQuality';
 import { formatNumber, formatDate } from './shared';
+import { useProgressiveCount, ROW_CHUNK } from '../../hooks/useProgressiveCount';
 import { requestErrorMessage } from '../../utils/requests/request';
 
 /**
@@ -147,6 +148,9 @@ export function ProjectsTab({
    * the other with the same label would invite them to be compared.
    */
   const counted = projects.filter((p) => p.totalTokens !== undefined);
+  // Hundreds of accounts, and an account's projects: drawn a few screens at a time.
+  const { count: drawnUsers, sentinel: userSentinel } = useProgressiveCount(matches.length, matches, ROW_CHUNK);
+  const { count: drawnProjects, sentinel: projectSentinel } = useProgressiveCount(shownProjects.length, shownProjects, ROW_CHUNK);
 
   return (
     <div className="adm-tabpane">
@@ -196,7 +200,7 @@ export function ProjectsTab({
 
       {!chosen && (
         <div className="adm-userpicks">
-          {matches.map((u) => (
+          {matches.slice(0, drawnUsers).map((u) => (
             <button
               key={u.userId}
               type="button"
@@ -228,6 +232,7 @@ export function ProjectsTab({
               {userSearch ? '該当するユーザーがいません' : 'ユーザーがいません'}
             </div>
           )}
+          {drawnUsers < matches.length && <div className="adm-more" ref={userSentinel} aria-hidden="true" />}
         </div>
       )}
 
@@ -275,7 +280,7 @@ export function ProjectsTab({
                   </tr>
                 </thead>
                 <tbody>
-                  {shownProjects.map((p) => (
+                  {shownProjects.slice(0, drawnProjects).map((p) => (
                     <tr
                       key={p.projectId}
                       className={`adm-tr adm-tr--click${p.projectId === projectId ? ' adm-tr--active' : ''}`}
@@ -304,6 +309,7 @@ export function ProjectsTab({
                   )}
                 </tbody>
               </table>
+              {drawnProjects < shownProjects.length && <div className="adm-more" ref={projectSentinel} aria-hidden="true" />}
             </div>
           </div>
 

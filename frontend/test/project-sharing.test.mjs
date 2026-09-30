@@ -81,7 +81,7 @@ const check = (name, got, want) => {
   check('and no rename', /readOnly=\{readOnly\}\s*aria-label="プロジェクト名"/.test(app), true);
   check('and no thread save', /if \(readOnly\) return;/.test(app), true);
   check('every prompt records its author', /author: selfAuthor,/.test(app), true);
-  check('and a shared thread shows it', /isSharedProject && msg\.role === 'user' && msg\.author\?\.name/.test(app), true);
+  check('and a shared thread shows it', /showAuthor && msg\.role === 'user' && msg\.author\?\.name/.test(app) && /showAuthor=\{isSharedProject\}/.test(app), true);
   check('the share button is always there, with the project and role', /<ShareButton html=\{displayHtml \?\? null\} title=\{projectTitle\} projectId=\{project\.projectId\} role=\{project\.access\?\.role \?\? 'owner'\} \/>/.test(app), true);
   check('a version is loaded through its project', /loadVersion\(versionId, project\.projectId\)/.test(app), true);
   const chat = read('src/hooks/useChatHistory.ts');

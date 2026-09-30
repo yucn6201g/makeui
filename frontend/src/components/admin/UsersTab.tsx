@@ -1,9 +1,10 @@
 /**
  * The users tab: the accounts, with their group, budget, permitted models and display name.
  */
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { useProgressiveCount, ROW_CHUNK } from '../../hooks/useProgressiveCount';
 import { type UserUsageSummary, type CognitoUser, type ModelId } from '../../hooks/useAdmin';
-import { UNLIMITED, ALL_MODELS, formatDate, asMoney, usd } from './shared';
+import { UNLIMITED, ALL_MODELS, formatDate, asMoney, usd, usageByEmail } from './shared';
 import { BudgetEditor, ModelPicker, NameEditor } from './editors';
 import { PASSWORD_HINT, PASSWORD_RULE, passwordProblem } from '../../utils/account/passwordPolicy';
 import { requestErrorMessage } from '../../utils/requests/request';
@@ -48,8 +49,8 @@ export function UsersTab({
   /** And neither is what the account may spend. */
   canSetLimits: boolean;
 }) {
-  const usageOf = (email: string): UserUsageSummary | undefined =>
-    usage.find((u) => u.email && u.email.toLowerCase() === email.toLowerCase());
+  const usageIndex = useMemo(() => usageByEmail(usage), [usage]);
+  const usageOf = (email: string): UserUsageSummary | undefined => usageIndex.get(email.toLowerCase());
   const [showForm, setShowForm] = useState(false);
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
@@ -69,6 +70,8 @@ export function UsersTab({
       || u.email.toLowerCase().includes(q)
       || u.username.toLowerCase().includes(q);
   });
+  // A few screens of rows, and more as the end comes near — see useProgressiveCount.
+  const { count: drawn, sentinel } = useProgressiveCount(filtered.length, search, ROW_CHUNK);
 
   const handleCreate = async () => {
     if (!displayName.trim() || !email.trim() || !password.trim()) {
@@ -258,7 +261,7 @@ export function UsersTab({
               </tr>
             </thead>
             <tbody>
-              {filtered.map((u) => (
+              {filtered.slice(0, drawn).map((u) => (
                 <tr key={u.username} className="adm-tr">
                   <td className="adm-td">
                     <NameEditor user={u} onRename={onRename} />
@@ -354,6 +357,7 @@ export function UsersTab({
               )}
             </tbody>
           </table>
+          {drawn < filtered.length && <div className="adm-more" ref={sentinel} aria-hidden="true" />}
         </div>
       )}
     </div>

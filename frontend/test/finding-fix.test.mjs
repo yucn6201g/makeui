@@ -72,12 +72,13 @@ check('the thread shows a sentence, not the instruction',
 check('and it still quotes the finding', findingFixMessage(FINDING).includes(FINDING), true);
 
 // --- the button ----------------------------------------------------------------
-check('every finding gets one', /onClick=\{\(\) => handleFixFinding\(item\)\}/.test(app), true);
+// Through the thread's stable actions since the messages were memoised (2026-09-27).
+check('every finding gets one', /onClick=\{\(\) => actions\.fixFinding\(item\)\}/.test(app) && /fixFinding: \(finding\) => messageHandlers\.current\.fixFinding\(finding\)/.test(app) && /messageHandlers\.current = \{ fixFinding: handleFixFinding, approvePlan: handleApprovePlan \};/.test(app), true);
 check('it is a real button, not a link', /className="app__findings-fix"[\s\S]{0,200}type="button"|type="button"[\s\S]{0,200}className="app__findings-fix"/.test(app), true);
 // A click while something is running would queue a second job against a
 // document that is about to change.
 check('it is disabled while a run is in flight',
-  /className="app__findings-fix"[\s\S]{0,300}disabled=\{!displayHtml \|\| rebuilding \|\| isProcessing\}/.test(app), true);
+  /className="app__findings-fix"[\s\S]{0,300}disabled=\{!canFix\}/.test(app) && /canFix=\{Boolean\(displayHtml\) && !rebuilding && !isProcessing\}/.test(app), true);
 check('and the handler refuses the same cases',
   /const handleFixFinding = \(finding: string\) => \{\s*\n\s*if \(!displayHtml \|\| rebuilding \|\| isProcessing\) return;/.test(app), true);
 // One finding per request — the pipeline's own measurement, not a preference.

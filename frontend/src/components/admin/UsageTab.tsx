@@ -2,6 +2,7 @@
  * The usage tab: what each account spent in a period, split by model, against its budget.
  */
 import { useState, useMemo } from 'react';
+import { useProgressiveCount, ROW_CHUNK } from '../../hooks/useProgressiveCount';
 import { type UserUsageSummary } from '../../hooks/useAdmin';
 import { UNLIMITED, formatNumber, formatDate, downloadCSV, asMoney, usd, Period, THIS_MONTH } from './shared';
 import { ByModel, PeriodPicker } from './editors';
@@ -235,6 +236,8 @@ export function UsageTab({
       return sortAsc ? cmp : -cmp;
     });
   }, [users, search, sortKey, sortAsc]);
+  // A few screens of rows, and more as the end comes near — see useProgressiveCount.
+  const { count: drawn, sentinel } = useProgressiveCount(sorted.length, sorted, ROW_CHUNK);
 
   /**
    * Drawn rather than typed. The arrows used to be the characters ↑ ↓ ↕, which
@@ -320,7 +323,7 @@ export function UsageTab({
             </tr>
           </thead>
           <tbody>
-            {sorted.map((user) => (
+            {sorted.slice(0, drawn).map((user) => (
               <UsageRow key={user.userId} user={user} priced={priced} oneMonth={oneMonth} />
             ))}
             {sorted.length === 0 && (
@@ -339,6 +342,7 @@ export function UsageTab({
             )}
           </tbody>
         </table>
+        {drawn < sorted.length && <div className="adm-more" ref={sentinel} aria-hidden="true" />}
       </div>
       </>
       )}

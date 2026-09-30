@@ -42,6 +42,7 @@ const row = (sub, month, total, requests, per = {}) => ({
 });
 
 let items = [];
+const scannedSegments = new Set();
 let directory = ['alice', 'bob'];
 
 const { DynamoDBClient } = await import('@aws-sdk/client-dynamodb');
@@ -50,7 +51,11 @@ DynamoDBClient.prototype.send = async function stub(command) {
   if (name === 'ScanCommand') {
     const from = command.input.ExpressionAttributeValues[':from'].S;
     const to = command.input.ExpressionAttributeValues[':to'].S;
-    return { Items: items.filter((i) => i.sk.S >= from && i.sk.S <= to) };
+    // Each segment answers its own share, as DynamoDB does: a scan that ignored them would count everything four times.
+    const segment = command.input.Segment ?? 0;
+    const segments = command.input.TotalSegments ?? 1;
+    scannedSegments.add(`${segment}/${segments}`);
+    return { Items: items.filter((i) => i.sk.S >= from && i.sk.S <= to).filter((_, n) => n % segments === segment) };
   }
   throw new Error(`unstubbed dynamo: ${name}`);
 };
@@ -189,6 +194,9 @@ const CognitoErr = (await import('@aws-sdk/client-cognito-identity-provider')).C
 CognitoErr.prototype.send = async function () { throw new Error('ServiceUnavailable'); };
 series = await getMonthlySeries('2026-09', '2026-09');
 check('a directory that cannot be read does not empty the chart', series[0].totalTokens, 10099);
+
+// The whole-table reads are split into segments read in parallel (2026-09-27).
+check('the scan is read in segments, all of them', [...scannedSegments].sort(), ['0/4', '1/4', '2/4', '3/4']);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

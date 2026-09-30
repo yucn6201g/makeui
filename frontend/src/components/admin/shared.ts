@@ -47,9 +47,25 @@ export function formatNumber(n: number): string {
   return n.toString();
 }
 
+/*
+ * One formatter for every row. `toLocaleString` with options builds a new
+ * Intl.DateTimeFormat per call, which a 500-row table paid 500 times (2026-09-27).
+ */
+const DATE_FORMAT = new Intl.DateTimeFormat('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
 export function formatDate(iso: string | undefined): string {
   if (!iso) return '-';
-  return new Date(iso).toLocaleString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+  return DATE_FORMAT.format(new Date(iso));
+}
+
+/**
+ * Usage rows by lower-cased email, for tables that show an account's usage
+ * beside its directory row. A `find` per row was quadratic: 250,000 comparisons
+ * for 500 accounts, on every render of the table (2026-09-27).
+ */
+export function usageByEmail(usage: UserUsageSummary[]): Map<string, UserUsageSummary> {
+  const map = new Map<string, UserUsageSummary>();
+  for (const u of usage) if (u.email) map.set(u.email.toLowerCase(), u);
+  return map;
 }
 
 export function downloadCSV(users: UserUsageSummary[]) {

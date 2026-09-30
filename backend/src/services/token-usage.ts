@@ -6,6 +6,7 @@ import {
   GetItemCommand,
   BatchGetItemCommand,
   ScanCommand,
+  type ScanCommandInput,
 } from '@aws-sdk/client-dynamodb';
 import { CognitoIdentityProviderClient, ListUsersCommand } from '@aws-sdk/client-cognito-identity-provider';
 import { logger } from '../utils/logger.js';
@@ -1159,24 +1160,51 @@ function mergeMonths(items: Record<string, any>[]): Record<string, any> {
  * that has to render either way, and the callers below treat a missing entry as
  * zero — which is also the honest answer for an account with no projects.
  */
-async function getProjectCounts(): Promise<Map<string, number>> {
-  const counts = new Map<string, number>();
-  try {
+/**
+ * Segments a whole-table read is split into, read at once.
+ *
+ * The admin screens read the table end to end — usage rows by month, project
+ * rows to count — and did it one page after another, one scan after another.
+ * The table was 0.7 MB on 2026-09-27; every account-month and every project
+ * adds to it, and a sequential scan's time grows with it page for page. Four
+ * segments read in parallel take about a quarter of the wall time for the same
+ * read capacity.
+ */
+export const SCAN_SEGMENTS = 4;
+
+/** Every item a filtered scan matches, the segments read in parallel. */
+export async function scanAll(input: Omit<ScanCommandInput, 'Segment' | 'TotalSegments' | 'ExclusiveStartKey'>): Promise<Record<string, any>[]> {
+  const segment = async (n: number): Promise<Record<string, any>[]> => {
+    const items: Record<string, any>[] = [];
     let lastKey: Record<string, any> | undefined;
     do {
       const response = await client.send(new ScanCommand({
-        TableName: TABLE_NAME,
-        FilterExpression: 'begins_with(sk, :p)',
-        ExpressionAttributeValues: { ':p': { S: 'PROJECT#' } },
-        ProjectionExpression: 'pk',
+        ...input,
+        Segment: n,
+        TotalSegments: SCAN_SEGMENTS,
         ...(lastKey ? { ExclusiveStartKey: lastKey } : {}),
       }));
-      for (const item of response.Items ?? []) {
-        const sub = item.pk?.S?.replace('USER#', '') ?? '';
-        if (sub) counts.set(sub, (counts.get(sub) ?? 0) + 1);
-      }
+      items.push(...(response.Items ?? []));
       lastKey = response.LastEvaluatedKey;
     } while (lastKey);
+    return items;
+  };
+  return (await Promise.all(Array.from({ length: SCAN_SEGMENTS }, (_, n) => segment(n)))).flat();
+}
+
+async function getProjectCounts(): Promise<Map<string, number>> {
+  const counts = new Map<string, number>();
+  try {
+    const items = await scanAll({
+      TableName: TABLE_NAME,
+      FilterExpression: 'begins_with(sk, :p)',
+      ExpressionAttributeValues: { ':p': { S: 'PROJECT#' } },
+      ProjectionExpression: 'pk',
+    });
+    for (const item of items) {
+      const sub = item.pk?.S?.replace('USER#', '') ?? '';
+      if (sub) counts.set(sub, (counts.get(sub) ?? 0) + 1);
+    }
   } catch (error) {
     logger.error('Failed to count projects per account', { error: String(error) });
   }
@@ -1228,21 +1256,14 @@ export async function getMonthlySeries(
   to: string = from,
 ): Promise<MonthTotals[]> {
   try {
-    const items: Record<string, any>[] = [];
-    let lastKey: Record<string, any> | undefined;
-    do {
-      const response = await client.send(new ScanCommand({
-        TableName: TABLE_NAME,
-        FilterExpression: 'sk BETWEEN :from AND :to',
-        ExpressionAttributeValues: {
-          ':from': { S: `MONTH#${from}` },
-          ':to': { S: `MONTH#${to}` },
-        },
-        ...(lastKey ? { ExclusiveStartKey: lastKey } : {}),
-      }));
-      items.push(...(response.Items ?? []));
-      lastKey = response.LastEvaluatedKey;
-    } while (lastKey);
+    const items = await scanAll({
+      TableName: TABLE_NAME,
+      FilterExpression: 'sk BETWEEN :from AND :to',
+      ExpressionAttributeValues: {
+        ':from': { S: `MONTH#${from}` },
+        ':to': { S: `MONTH#${to}` },
+      },
+    });
 
     /*
      * Only rows that belong to somebody, on the same rule the account listing
@@ -1335,30 +1356,22 @@ export async function getAllUsersUsage(
   const monthKey = from === to ? from : `${from}〜${to}`;
 
   try {
-    const allItems: Record<string, any>[] = [];
-    let lastEvaluatedKey: Record<string, any> | undefined;
-
-    do {
-      const command = new ScanCommand({
-        TableName: TABLE_NAME,
-        /*
-         * A range rather than one key. `MONTH#` sorts clear of every other sort
-         * key this table uses — CHAT#, CONFIG and EVENT# below it, PROJECT# and
-         * VERSION# above — so a BETWEEN over `MONTH#<from>`..`MONTH#<to>`
-         * cannot pick up a row of another kind.
-         */
-        FilterExpression: 'sk BETWEEN :from AND :to',
-        ExpressionAttributeValues: {
-          ':from': { S: `MONTH#${from}` },
-          ':to': { S: `MONTH#${to}` },
-        },
-        ...(lastEvaluatedKey ? { ExclusiveStartKey: lastEvaluatedKey } : {}),
-      });
-
-      const response = await client.send(command);
-      allItems.push(...(response.Items ?? []));
-      lastEvaluatedKey = response.LastEvaluatedKey;
-    } while (lastEvaluatedKey);
+    // The project count is a second whole-table read; started now, it runs beside this one.
+    const projectCountsRead = getProjectCounts();
+    const allItems = await scanAll({
+      TableName: TABLE_NAME,
+      /*
+       * A range rather than one key. `MONTH#` sorts clear of every other sort
+       * key this table uses — CHAT#, CONFIG and EVENT# below it, PROJECT# and
+       * VERSION# above — so a BETWEEN over `MONTH#<from>`..`MONTH#<to>`
+       * cannot pick up a row of another kind.
+       */
+      FilterExpression: 'sk BETWEEN :from AND :to',
+      ExpressionAttributeValues: {
+        ':from': { S: `MONTH#${from}` },
+        ':to': { S: `MONTH#${to}` },
+      },
+    });
 
     const emailMap = await getCognitoEmailMap();
 
@@ -1434,7 +1447,7 @@ export async function getAllUsersUsage(
      * same CONFIG item, and this listed them with a GetItem apiece.
      */
     const configs = await readUserConfigs(userIds);
-    const projectCounts = await getProjectCounts();
+    const projectCounts = await projectCountsRead;
 
     const users: UserUsageSummary[] = rows.map((item, i) => ({
       userId: userIds[i],

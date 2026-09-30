@@ -29,8 +29,16 @@ export function chunkForScreen(width = window.innerWidth, height = window.innerH
  * caller passes what the list is a view OF, not the items, so a list that
  * merely gains a project is not cut back.
  */
-export function useProgressiveCount(total: number, resetKey: unknown): { count: number; sentinel: (el: Element | null) => void } {
-  const [chunk] = useState(() => (typeof window === 'undefined' ? 24 : chunkForScreen()));
+/** Table rows drawn per step: a few screens of them, which is still one short commit. */
+export const ROW_CHUNK = 60;
+
+export function useProgressiveCount(
+  total: number,
+  resetKey: unknown,
+  /** A fixed step, for rows; cards size theirs from the screen. */
+  step?: number,
+): { count: number; sentinel: (el: Element | null) => void } {
+  const [chunk] = useState(() => step ?? (typeof window === 'undefined' ? 24 : chunkForScreen()));
   const [state, setState] = useState({ key: resetKey, count: chunk });
   let count = state.count;
   if (state.key !== resetKey) {

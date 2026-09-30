@@ -87,7 +87,8 @@ globalThis.__ddb = (cmd) => {
   const i = cmd.input;
   if (i.FilterExpression?.includes('BETWEEN')) {
     asked = [i.ExpressionAttributeValues[':from'].S, i.ExpressionAttributeValues[':to'].S];
-    return { Items: STORED.filter((it) => it.sk.S >= asked[0] && it.sk.S <= asked[1]) };
+    // One segment's share each, as DynamoDB answers a segmented scan.
+    return { Items: STORED.filter((it) => it.sk.S >= asked[0] && it.sk.S <= asked[1]).filter((_, n) => n % (i.TotalSegments ?? 1) === (i.Segment ?? 0)) };
   }
   if (i.RequestItems) return { Responses: { [Object.keys(i.RequestItems)[0]]: [] } };
   return { Item: undefined };

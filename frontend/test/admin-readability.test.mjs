@@ -172,7 +172,9 @@ const check = (name, got, want) => {
    * field both hold.
    */
   check('joined to the usage row by the one field both carry',
-    /usage\.find\(\(x\) => x\.email && x\.email === u\.email\)/.test(groups), true);
+    // Through an index built once rather than a find per row (2026-09-27).
+    /const row = u\.email \? usageIndex\.get\(u\.email\.toLowerCase\(\)\) : undefined;/.test(groups)
+      && /const usageIndex = useMemo\(\(\) => usageByEmail\(usage\), \[usage\]\);/.test(groups), true);
   /*
    * Five now: a budget column was added between the group and the models, so a
    * member's own allowance can be set from the list they are being managed in.

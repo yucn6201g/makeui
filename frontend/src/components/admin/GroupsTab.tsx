@@ -1,7 +1,8 @@
 import { useState, useMemo } from 'react';
 import { type UserUsageSummary, type CognitoUser, type ModelId, type UserGroup } from '../../hooks/useAdmin';
 import { Dropdown } from '../common/Dropdown';
-import { UNLIMITED, ALL_MODELS, asMoney, usd } from './shared';
+import { UNLIMITED, ALL_MODELS, asMoney, usd, usageByEmail } from './shared';
+import { useProgressiveCount, ROW_CHUNK } from '../../hooks/useProgressiveCount';
 import { BudgetEditor, ModelPicker } from './editors';
 import { requestErrorMessage } from '../../utils/requests/request';
 import { isCommitEnter } from '../../utils/editing/enterKey';
@@ -156,6 +157,10 @@ export function GroupsTab({
   }, [users, userSearch, group]);
 
   const members = group ? users.filter((u) => u.group === group.name) : [];
+  // Looked up once, not searched for per row: both lists run to hundreds (2026-09-27).
+  const usageIndex = useMemo(() => usageByEmail(usage), [usage]);
+  const userIndex = useMemo(() => new Map(users.map((u) => [u.username, u])), [users]);
+  const { count: drawnUsers, sentinel: userSentinel } = useProgressiveCount(shownUsers.length, shownUsers, ROW_CHUNK);
 
   return (
     <div className="adm-tabpane adm-tabpane--groups">
@@ -211,7 +216,7 @@ export function GroupsTab({
               </thead>
               <tbody>
                 {shownGroups.map((g) => {
-                  const admin = users.find((u) => u.username === g.admin);
+                  const admin = g.admin ? userIndex.get(g.admin) : undefined;
                   return (
                     <tr
                       key={g.name}
@@ -346,7 +351,7 @@ export function GroupsTab({
                     </tr>
                   </thead>
                   <tbody>
-                    {shownUsers.map((u) => {
+                    {shownUsers.slice(0, drawnUsers).map((u) => {
                       const here = u.group === group.name;
                       const working = busy === `mem:${u.username}` || busy === `adm:${u.username}`;
                       /** Removing this person would leave the group unadministered. */
@@ -356,7 +361,7 @@ export function GroupsTab({
                        * as well — a usage row is keyed by `sub` and a directory
                        * row is not, and the address is the only field both hold.
                        */
-                      const row = usage.find((x) => x.email && x.email === u.email);
+                      const row = u.email ? usageIndex.get(u.email.toLowerCase()) : undefined;
                       return (
                         <tr key={u.username} className={`adm-tr${here ? ' adm-tr--active' : ''}`}>
                           <td className="adm-td">
@@ -500,6 +505,7 @@ export function GroupsTab({
                     )}
                   </tbody>
                 </table>
+                {drawnUsers < shownUsers.length && <div className="adm-more" ref={userSentinel} aria-hidden="true" />}
               </div>
             </>
           )}

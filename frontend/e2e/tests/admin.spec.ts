@@ -1,6 +1,6 @@
 import { test, expect } from '../fixtures/test';
 import { SUPER_ADMIN, type TestUser } from '../fixtures/auth';
-import { mockAdmin, THIS_MONTH } from '../fixtures/admin';
+import { mockAdmin, THIS_MONTH, ADMIN_USAGE, ADMIN_USERS } from '../fixtures/admin';
 
 const GROUP_ADMIN: TestUser = { email: 'e2e-grpadm@example.invalid', username: 'e2e-grpadm@example.invalid', groups: ['grpadm:design'] };
 
@@ -146,5 +146,65 @@ test.describe('a group administrator', () => {
     await expect(panel.getByRole('button', { name: /^モデル/ })).toHaveCount(0);
     // The model inventory is the account's infrastructure, not a group's business.
     expect(api.all('GET', '/admin/models')).toEqual([]);
+  });
+});
+
+/*
+ * Hundreds of accounts (2026-09-27). The users table drew every row with its
+ * editors in one commit and joined each to its usage with a search of the whole
+ * list — 1.6 s on a slower machine for 500 accounts. Rows are drawn a few
+ * screens at a time now; what is asserted is that the list is still whole to
+ * anyone who scrolls or searches.
+ */
+test.describe('an account with hundreds of users', () => {
+  test.use({ user: SUPER_ADMIN });
+  test.beforeEach(({ api }) => {
+    mockAdmin(api);
+    const usage = [], users = [];
+    for (let i = 0; i < 300; i++) {
+      usage.push({ ...ADMIN_USAGE[1], userId: `sub-${i}`, email: `u${i}@example.invalid`, displayName: `利用者 ${i}`, projectCount: 1 });
+      users.push({ ...ADMIN_USERS[1], username: `u${i}@example.invalid`, email: `u${i}@example.invalid`, displayName: `利用者 ${i}` });
+    }
+    api.on('GET', '/admin/usage', { body: { users: usage } });
+    api.on('GET', '/admin/users', { body: { users } });
+  });
+
+  test('the users table draws a few screens, the rest on scrolling, and search reaches all of them', async ({ page }) => {
+    await page.goto('/');
+    await page.getByRole('button', { name: '管理画面を開く' }).click();
+    const panel = page.getByRole('region', { name: '管理画面' });
+    await expect(panel.getByRole('button', { name: /^ユーザー管理/ }).locator('.adm-tab-badge')).toHaveText('300');
+    await panel.getByRole('button', { name: /^ユーザー管理/ }).click();
+    const rows = panel.locator('tbody tr.adm-tr');
+    await expect(rows.first()).toBeVisible();
+    const first = await rows.count();
+    expect(first).toBeGreaterThan(0);
+    expect(first).toBeLessThan(300);
+
+    // Every row is still there for whoever scrolls to it.
+    await expect(async () => {
+      await rows.last().scrollIntoViewIfNeeded();
+      expect(await rows.count()).toBe(300);
+    }).toPass({ timeout: 15_000 });
+
+    // And a search looks through the whole list, not the rows drawn so far.
+    await panel.getByRole('button', { name: /^使用量/ }).click();
+    await panel.getByRole('button', { name: /^ユーザー管理/ }).click();
+    await panel.getByPlaceholder(/検索/).first().fill('u299@');
+    await expect(rows).toHaveCount(1);
+    await expect(rows.first()).toContainText('u299@example.invalid');
+  });
+
+  test('the usage table draws a few screens, the rest on scrolling', async ({ page }) => {
+    await page.goto('/');
+    await page.getByRole('button', { name: '管理画面を開く' }).click();
+    const table = page.getByRole('table', { name: 'ユーザー使用量一覧' });
+    const rows = table.locator('tbody tr.adm-tr');
+    await expect(rows.first()).toBeVisible();
+    expect(await rows.count()).toBeLessThan(300);
+    await expect(async () => {
+      await rows.last().scrollIntoViewIfNeeded();
+      expect(await rows.count()).toBe(300);
+    }).toPass({ timeout: 15_000 });
   });
 });
